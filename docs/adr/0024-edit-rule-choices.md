@@ -13,8 +13,12 @@ one, and can change without superseding anything.
   split. The break ends its line: the caret before it stays on that line, a break at the end of a paragraph leaves an
   empty last line the caret can sit on, and the break is never drawn (a selection that covers only a break shows a small
   block). It is one undo step of its own. When the paragraph has a line limit and already shows that many lines,
-  Shift+Enter is refused, so it never inserts a break the user cannot see. A trailing break whose empty line the limit
-  hides is not hidden text: the caret stops before it, typing there works, and Delete removes it.
+  Shift+Enter is refused; the paragraph that keeps its format is the first one of the selection, so a selection that
+  spans paragraphs is refused too. Text can still end up hidden behind a break from another source (paste, typed
+  U+2028, a join of paragraphs with different limits, host data): Delete at the visible end removes that break and the
+  text shows again. Reflow after a mid-text break, which can push text past the limit, is tracked in issue #26. A trailing
+  break whose empty line the limit hides is not hidden text: the caret stops before it, typing there works, and Delete
+  removes it.
 - **Tab and its variants leave only when the field has nowhere to go.** Tab, Shift+Tab, Ctrl+Tab and Ctrl+Shift+Tab
   first move to the next, previous, last or first editable place; they raise `LeaveRequested` only when there is none
   (ADR 0021). The event reports a logical direction (Next or Previous; in a right-to-left paragraph Left is Next) and
