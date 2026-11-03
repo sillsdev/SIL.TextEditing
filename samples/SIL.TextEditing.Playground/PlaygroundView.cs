@@ -295,6 +295,7 @@ namespace SIL.TextEditing.Playground
             {
                 if (_active == session && d.Label != "type") Log("edit: " + d.Label + " (paragraphs " + d.Start + ".." + (d.Start + Math.Max(d.Before.Count, d.After.Count) - 1) + ")");
             };
+            field.Editor.UndoGroupEnded += id => { if (_active == session) Log("undo step " + id + " ended: the host closes its undo task"); };
             field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) RefreshInspector(); };
             field.Editor.CaretMoved += () => { if (_active == session) { UpdateWsLabel(); RefreshInspector(); } };
             field.GotFocus += (s, e) => Activate(session);

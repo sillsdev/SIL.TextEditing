@@ -22,6 +22,7 @@ namespace SIL.TextEditing.Avalonia
         readonly List<ParagraphLayout?> _layouts = new List<ParagraphLayout?>();
         readonly InputMethodClient _ime;
         double _layoutWidth = -1;
+        global::Avalonia.Threading.DispatcherTimer? _pauseTimer;
         string? _preedit;
         string? _heldHigh;
         int _preeditCursor;
@@ -52,7 +53,8 @@ namespace SIL.TextEditing.Avalonia
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
             GotFocus += (o, e) => InvalidateVisual();
-            LostFocus += (o, e) => InvalidateVisual();
+            LostFocus += (o, e) => { Editor.CloseUndoGroup(); InvalidateVisual(); };
+            Editor.Committed += d => RestartPauseTimer();
             ActualThemeVariantChanged += (o, e) => InvalidateVisual();
         }
 
@@ -237,6 +239,27 @@ namespace SIL.TextEditing.Avalonia
         }
 
         // ------------------------------------------------ caret movement
+
+        // ADR 0023: a pause of TypingPause ends the typing step even when nothing else follows.
+        void RestartPauseTimer()
+        {
+            if (_pauseTimer == null)
+            {
+                _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
+                _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
+            }
+            _pauseTimer.Stop();
+            if (!Editor.HasOpenUndoGroup) return;
+            _pauseTimer.Interval = Editor.TypingPause;
+            _pauseTimer.Start();
+        }
+
+        protected override void OnDetachedFromVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
+        {
+            _pauseTimer?.Stop();
+            Editor.CloseUndoGroup();
+            base.OnDetachedFromVisualTree(e);
+        }
 
         void OnCaretMoved()
         {

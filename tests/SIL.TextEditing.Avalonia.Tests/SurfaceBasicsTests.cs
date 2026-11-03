@@ -138,8 +138,8 @@ namespace SIL.TextEditing.Avalonia.Tests
             foreach (var c in "abc") field.Type(c.ToString());
             Assert.Equal(3, undo.Done.Count);
             field.Press(Key.Z, KeyModifiers.Control);
-            Assert.Equal("hello worldab", field.Editor.Document.Paragraphs[0].Text);
-            Assert.Single(undo.Undone);
+            Assert.Equal("hello world", field.Editor.Document.Paragraphs[0].Text);   // the typing was one undo step (ADR 0023)
+            Assert.Equal(1, undo.UndoneSteps);
         });
 
         [Fact]

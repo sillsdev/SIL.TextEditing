@@ -51,6 +51,11 @@ namespace SIL.TextEditing
         public TextPosition CaretBefore { get; set; }
         public TextPosition CaretAfter { get; set; }
         public string Label { get; set; } = string.Empty;
+        /// <summary>The undo step this change belongs to (ADR 0023), numbered from 1 per editor; 0 means a change that was
+        /// not made by the editor and is a step of its own.</summary>
+        public long UndoGroup { get; set; }
+        /// <summary>True on the first delta of an undo step: the host opens an undo task here.</summary>
+        public bool StartsUndoGroup { get; set; }
 
         public EditDelta Inverse()
         {

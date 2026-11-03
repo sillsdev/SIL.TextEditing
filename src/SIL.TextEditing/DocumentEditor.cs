@@ -87,6 +87,7 @@ namespace SIL.TextEditing
             p.Paragraph = Math.Max(0, Math.Min(Document.Paragraphs.Count - 1, p.Paragraph));
             p.Offset = Math.Max(0, Math.Min(Document.Paragraphs[p.Paragraph].Length, p.Offset));
             if (!extend && !IsReadOnly) p = NearestEditable(p, direction);
+            if (!p.Equals(Caret) || (!extend && !p.Equals(Anchor))) CloseUndoGroup();   // a caret move ends a typing step (ADR 0023)
             Caret = p;
             if (!extend) Anchor = p;
             _wsOverride = false;
@@ -132,6 +133,7 @@ namespace SIL.TextEditing
 
         void Finish(EditDelta d, TextPosition caret)
         {
+            AssignUndoGroup(d);
             Caret = Anchor = caret;
             d.CaretAfter = caret;
             _wsOverride = false;
@@ -139,6 +141,7 @@ namespace SIL.TextEditing
             Committed?.Invoke(d);
             DocumentChanged?.Invoke(d.Start, d.Before.Count, d.After.Count);
             CaretMoved?.Invoke();
+            EndSingleEditGroup();
         }
 
         // ---- editing ----
@@ -160,19 +163,27 @@ namespace SIL.TextEditing
         void InsertOne(string text)
         {
             if (!CanEditSelectionOrCaret()) return;
-            if (HasSelection) DeleteSelection("type");
-            var ws = ActiveWs;
-            var d = Begin(Caret.Paragraph, Caret.Paragraph, "type");
-            var para = Document.Paragraphs[Caret.Paragraph];
-            para.Insert(Caret.Offset, text, ws, InheritProps(Caret, ws));
-            d.After.Add(para.Clone());
-            bool keepOverride = _wsOverride;
-            Finish(d, new TextPosition(Caret.Paragraph, Caret.Offset + text.Length));
-            if (keepOverride)
+            // Typing over a selection is one step with the deletion; it never joins an earlier step.
+            if (HasSelection) CloseUndoGroup();
+            _typingWs = ActiveWs;
+            _typing = true;
+            try
             {
-                _wsOverride = true;
-                ActiveWs = ws;
+                if (HasSelection) DeleteSelection("type");
+                var ws = ActiveWs;
+                var d = Begin(Caret.Paragraph, Caret.Paragraph, "type");
+                var para = Document.Paragraphs[Caret.Paragraph];
+                para.Insert(Caret.Offset, text, ws, InheritProps(Caret, ws));
+                d.After.Add(para.Clone());
+                bool keepOverride = _wsOverride;
+                Finish(d, new TextPosition(Caret.Paragraph, Caret.Offset + text.Length));
+                if (keepOverride)
+                {
+                    _wsOverride = true;
+                    ActiveWs = ws;
+                }
             }
+            finally { _typing = false; }
         }
 
         public void DeleteSelection(string label = "delete")
@@ -345,6 +356,7 @@ namespace SIL.TextEditing
             var c = d.CaretAfter;
             c.Paragraph = Math.Min(c.Paragraph, Document.Paragraphs.Count - 1);
             c.Offset = Math.Min(c.Offset, Document.Paragraphs[c.Paragraph].Length);
+            CloseUndoGroup();   // a change the host applies (undo, redo, a command) ends any typing step
             Caret = Anchor = c;
             _wsOverride = false;
             RefreshWs();
@@ -365,6 +377,7 @@ namespace SIL.TextEditing
                 p.Offset = Math.Min(p.Offset, replacement.Length);
                 return p;
             }
+            CloseUndoGroup();
             Caret = Map(Caret);
             Anchor = Map(Anchor);
             RefreshWs();
@@ -374,13 +387,27 @@ namespace SIL.TextEditing
     }
 
     /// <summary>A stand-in for the host's single undo stack (LCModel's, in FieldWorks): it receives deltas from the
-    /// editor and applies them back. The editor never undoes itself.</summary>
+    /// editor and applies them back. The editor never undoes itself. Deltas that share an
+    /// <see cref="EditDelta.UndoGroup"/> are one step: undo and redo move a whole step at a time (ADR 0023).</summary>
     public sealed class SimpleUndoStack
     {
         DocumentEditor? _editor;
 
+        /// <summary>Every delta done, oldest first (a typing step holds several).</summary>
         public List<EditDelta> Done { get; } = new List<EditDelta>();
         public List<EditDelta> Undone { get; } = new List<EditDelta>();
+
+        /// <summary>The number of undo steps: a group of deltas counts once, an ungrouped delta counts as one.</summary>
+        public int DoneSteps => Steps(Done);
+        public int UndoneSteps => Steps(Undone);
+
+        static int Steps(List<EditDelta> deltas)
+        {
+            int n = 0;
+            for (int i = 0; i < deltas.Count; i++)
+                if (i == 0 || deltas[i].UndoGroup == 0 || deltas[i].UndoGroup != deltas[i - 1].UndoGroup) n++;
+            return n;
+        }
 
         public void Attach(DocumentEditor editor)
         {
@@ -395,20 +422,30 @@ namespace SIL.TextEditing
         public bool Undo()
         {
             if (Done.Count == 0 || _editor == null) return false;
-            var d = Done[Done.Count - 1];
-            Done.RemoveAt(Done.Count - 1);
-            Undone.Add(d);
-            _editor.Apply(d.Inverse());
+            long group = Done[Done.Count - 1].UndoGroup;
+            do
+            {
+                var d = Done[Done.Count - 1];
+                Done.RemoveAt(Done.Count - 1);
+                Undone.Add(d);
+                _editor.Apply(d.Inverse());
+            }
+            while (Done.Count > 0 && group != 0 && Done[Done.Count - 1].UndoGroup == group);
             return true;
         }
 
         public bool Redo()
         {
             if (Undone.Count == 0 || _editor == null) return false;
-            var d = Undone[Undone.Count - 1];
-            Undone.RemoveAt(Undone.Count - 1);
-            Done.Add(d);
-            _editor.Apply(d);
+            long group = Undone[Undone.Count - 1].UndoGroup;
+            do
+            {
+                var d = Undone[Undone.Count - 1];
+                Undone.RemoveAt(Undone.Count - 1);
+                Done.Add(d);
+                _editor.Apply(d);
+            }
+            while (Undone.Count > 0 && group != 0 && Undone[Undone.Count - 1].UndoGroup == group);
             return true;
         }
     }

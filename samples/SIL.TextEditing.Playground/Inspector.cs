@@ -28,7 +28,8 @@ namespace SIL.TextEditing.Playground
             else sb.Append("none");
             sb.AppendLine();
             sb.Append("ws at caret ").Append(editor.WsAtCaret()).Append("   active ws ").Append(editor.ActiveWs).AppendLine();
-            sb.Append("undo ").Append(undo.Done.Count).Append(" done, ").Append(undo.Undone.Count).Append(" undone").AppendLine();
+            sb.Append("undo ").Append(undo.DoneSteps).Append(" done, ").Append(undo.UndoneSteps).Append(" undone (steps; ")
+                .Append(undo.Done.Count).Append(" edits done)").AppendLine();
             sb.Append("paragraphs ").Append(doc.Paragraphs.Count).AppendLine();
 
             int first = 0, last = doc.Paragraphs.Count - 1;
