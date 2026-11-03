@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace SIL.TextEditing
 {
@@ -286,19 +287,52 @@ namespace SIL.TextEditing
     {
         public const int Arabic = 10, RomanUpper = 11, RomanLower = 12, LetterUpper = 13, LetterLower = 14, Arabic01 = 15, BulletBase = 100;
 
-        // The bullet glyphs of the FieldWorks styles dialog, in scheme order from 100.
-        static readonly int[] Bullets =
+        // Bullet scheme number -> Unicode code point. The scheme numbers are stored in documents, so this mapping is persisted
+        // compatibility data (ADR 0010): a scheme must keep drawing the glyph it has always meant. Two pairs of schemes (116 and
+        // 117, 121 and 122) map to the same glyph; that is deliberate, kept so documents that use either number still draw.
+        static readonly Dictionary<int, int> BulletGlyphs = new Dictionary<int, int>
         {
-            0x00B7, 0x2022, 0x25CF, 0x274D, 0x25AA, 0x25A0, 0x25AB, 0x25A1, 0x2751, 0x2752,
-            0x2B27, 0x29EB, 0x25C6, 0x2756, 0x2318, 0x261E, 0x271E, 0x271E, 0x2730, 0x27A2,
-            0x27B2, 0x2794, 0x2794, 0x21E8, 0x2713
+            [100] = 0x00B7,   // middle dot
+            [101] = 0x2022,   // bullet
+            [102] = 0x25CF,   // black circle
+            [103] = 0x274D,   // shadowed white circle
+            [104] = 0x25AA,   // black small square
+            [105] = 0x25A0,   // black square
+            [106] = 0x25AB,   // white small square
+            [107] = 0x25A1,   // white square
+            [108] = 0x2751,   // lower right shadowed white square
+            [109] = 0x2752,   // upper right shadowed white square
+            [110] = 0x2B27,   // black medium lozenge
+            [111] = 0x29EB,   // black lozenge
+            [112] = 0x25C6,   // black diamond
+            [113] = 0x2756,   // black diamond minus white x
+            [114] = 0x2318,   // place of interest sign
+            [115] = 0x261E,   // white right pointing index
+            [116] = 0x271E,   // shadowed white latin cross
+            [117] = 0x271E,   // the same cross again (duplicate kept for data compatibility)
+            [118] = 0x2730,   // shadowed white star
+            [119] = 0x27A2,   // three-d top-lighted rightwards arrowhead
+            [120] = 0x27B2,   // circled heavy white rightwards arrow
+            [121] = 0x2794,   // heavy wide-headed rightwards arrow
+            [122] = 0x2794,   // the same arrow again (duplicate kept for data compatibility)
+            [123] = 0x21E8,   // rightwards white arrow
+            [124] = 0x2713,   // check mark
         };
 
-        /// <summary>The font a bullet is drawn in.</summary>
+        /// <summary>The font a bullet is drawn in (the one font known to have all the bullet glyphs).</summary>
         public const string BulletFont = "Quivira";
 
-        public static bool IsBullet(int scheme) => scheme >= BulletBase && scheme < BulletBase + Bullets.Length;
+        /// <summary>Numbers above this are written as plain digits in the roman schemes.</summary>
+        const int MaxRoman = 14999;
+
+        /// <summary>The letter schemes count A to Z, then AA to ZZ, and so on; after this number the count starts over at A.</summary>
+        const int LetterCycle = 780;
+
+        public static bool IsBullet(int scheme) => BulletGlyphs.ContainsKey(scheme);
         public static bool IsNumber(int scheme) => scheme >= Arabic && scheme <= Arabic01;
+
+        /// <summary>The Unicode code point a bullet scheme draws, or 0 when the scheme is not a bullet.</summary>
+        public static int BulletGlyph(int scheme) => BulletGlyphs.TryGetValue(scheme, out var glyph) ? glyph : 0;
 
         /// <summary>The number of paragraph <paramref name="index"/> in its run. A paragraph starts a new sequence when its scheme
         /// differs from the previous paragraph's (it then has its start-at value, else 1) or when it has a start-at value the
@@ -320,7 +354,7 @@ namespace SIL.TextEditing
         public static string Label(ParaFormat format, int number)
         {
             int scheme = format.BulNumScheme;
-            if (IsBullet(scheme)) return char.ConvertFromUtf32(Bullets[scheme - BulletBase]);
+            if (IsBullet(scheme)) return char.ConvertFromUtf32(BulletGlyphs[scheme]);
             if (!IsNumber(scheme)) return string.Empty;
             return format.BulNumTextBefore + Number(scheme, number) + format.BulNumTextAfter;
         }
@@ -331,26 +365,33 @@ namespace SIL.TextEditing
             switch (scheme)
             {
                 case Arabic01: return n >= 0 && n < 10 ? "0" + n.ToString(inv) : n.ToString(inv);
-                case RomanUpper: return n > 0 && n <= 14999 ? Roman(n).ToUpperInvariant() : n.ToString(inv);
-                case RomanLower: return n > 0 && n <= 14999 ? Roman(n) : n.ToString(inv);
+                case RomanUpper: return n > 0 && n <= MaxRoman ? Roman(n).ToUpperInvariant() : n.ToString(inv);
+                case RomanLower: return n > 0 && n <= MaxRoman ? Roman(n) : n.ToString(inv);
                 case LetterUpper: return Letters(n, 'A');
                 case LetterLower: return Letters(n, 'a');
                 default: return n.ToString(inv);
             }
         }
 
-        static readonly string[] Ones = { "", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix" };
-        static readonly string[] Tens = { "", "x", "xx", "xxx", "xl", "l", "lx", "lxx", "lxxx", "xc" };
-        static readonly string[] Hundreds = { "", "c", "cc", "ccc", "cd", "d", "dc", "dcc", "dccc", "cm" };
+        // Roman numerals written greedily from the largest value down, with the subtractive pairs (cm, cd, xc, xl, ix, iv).
+        static readonly int[] RomanValues = { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 };
+        static readonly string[] RomanSymbols = { "m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i" };
 
-        static string Roman(int n) => new string('m', n / 1000) + Hundreds[(n / 100) % 10] + Tens[(n / 10) % 10] + Ones[n % 10];
+        static string Roman(int n)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < RomanValues.Length; i++)
+                while (n >= RomanValues[i]) { sb.Append(RomanSymbols[i]); n -= RomanValues[i]; }
+            return sb.ToString();
+        }
 
-        /// <summary>A, B, ... Z, AA, BB, ... ZZ, AAA, ...: the letter repeated; the count wraps at 780.</summary>
+        /// <summary>The letter scheme: A to Z for 1 to 26, then each letter doubled (AA to ZZ), then tripled, and so on, starting
+        /// over at A after <see cref="LetterCycle"/>.</summary>
         static string Letters(int n, char first)
         {
             if (n < 1) return n.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (n > 780) n = ((n - 1) % 780) + 1;
-            return new string((char)(first + (n - 1) % 26), (n - 1) / 26 + 1);
+            int position = (n - 1) % LetterCycle;
+            return new string((char)(first + position % 26), position / 26 + 1);
         }
 
         /// <summary>The character properties packed in a style's number font string: for each property its number and its value as
