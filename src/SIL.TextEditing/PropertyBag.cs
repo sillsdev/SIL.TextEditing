@@ -99,10 +99,43 @@ namespace SIL.TextEditing
         public const int Bold = 3;
         public const int Superscript = 4;
         public const int Underline = 5;
+        /// <summary>Baseline offset (ktptOffset), in 1/1000 point; positive raises the text.</summary>
+        public const int Offset = 7;
         /// <summary>Font size; with variation <see cref="VariationMilliPoint"/> the value is in 1/1000 point.</summary>
         public const int FontSize = 6;
         public const int ForeColor = 8;
         public const int BackColor = 9;
+        /// <summary>Underline colour (ktptUnderColor); default variation, a BGR colour.</summary>
+        public const int UnderColor = 10;
+        public const int Align = 17;
+        /// <summary>First-line indent (ktptFirstIndent); negative is a hanging indent.</summary>
+        public const int FirstIndent = 18;
+        /// <summary>ktptLeadingIndent = ktptMarginLeading.</summary>
+        public const int LeadingIndent = 19;
+        /// <summary>ktptTrailingIndent = ktptMarginTrailing.</summary>
+        public const int TrailingIndent = 20;
+        /// <summary>ktptSpaceBefore = ktptMswMarginTop: added to the space after the paragraph above.</summary>
+        public const int SpaceBefore = 21;
+        /// <summary>ktptSpaceAfter = ktptMarginBottom.</summary>
+        public const int SpaceAfter = 22;
+        /// <summary>Line height: positive is at least, negative is exact; with <see cref="VariationRelative"/> a fraction (10000 = 1) of 1.4 times the font size.</summary>
+        public const int LineHeight = 24;
+        /// <summary>Paragraph background colour (ktptParaColor; FieldWorks treats it as the back colour).</summary>
+        public const int ParaColor = 25;
+        /// <summary>ktptMarginTop: the CSS-style top margin (the gap between paragraphs is the larger of it and the sum of space after and space before).</summary>
+        public const int MarginTop = 50;
+        public const int PadLeading = 134;
+        public const int PadTrailing = 135;
+        public const int PadTop = 136;
+        public const int PadBottom = 137;
+        public const int BorderTop = 138;
+        public const int BorderBottom = 139;
+        public const int BorderLeading = 140;
+        public const int BorderTrailing = 141;
+        public const int BorderColor = 142;
+        public const int BulNumScheme = 143;
+        public const int BulNumStartAt = 144;
+        public const int MaxLines = 151;
 
         // String properties.
         public const int FontFamily = 1;
@@ -113,13 +146,31 @@ namespace SIL.TextEditing
         /// <summary>The style name (ktptNamedStyle); one property for both character and paragraph styles.</summary>
         public const int NamedStyle = 133;
         public const int FontVariations = 130;
+        public const int BulNumTxtBefore = 145;
+        public const int BulNumTxtAfter = 146;
+        /// <summary>Packed font properties of a bullet or number: for each integer property its number and the low and high 16 bits of the value, ending with <see cref="FontFamily"/> and the family name.</summary>
+        public const int BulNumFontInfo = 147;
+
+        // Underline types (ktptUnderline values).
+        public const int UnderlineNone = 0;
+        public const int UnderlineDotted = 1;
+        public const int UnderlineDashed = 2;
+        public const int UnderlineSingle = 3;
+        public const int UnderlineDouble = 4;
+        public const int UnderlineStrikethrough = 5;
+        public const int UnderlineSquiggle = 6;
 
         // Variations of an integer property.
         public const int VariationDefault = 0;
         public const int VariationMilliPoint = 1;
+        /// <summary>A fraction of the inherited value; the denominator is 10000.</summary>
+        public const int VariationRelative = 2;
+        /// <summary>The value comes from an enumeration (font size names, toggles).</summary>
+        public const int VariationEnum = 3;
 
         // Toggle values (ktpt Bold and Italic): 0 off, 1 force on.
         public const int ToggleOff = 0;
         public const int ToggleOn = 1;
+        public const int ToggleInvert = 2;
     }
 }
