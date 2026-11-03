@@ -428,6 +428,8 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Works out where the first line's text starts and how wide it may be. The first indent moves it in (or, hanging,
         /// out). A bullet or number sits at the first indent; if the hanging indent is wider than the label and its gap the first
         /// line's text starts where the other lines' do, otherwise it starts after the label, as in FieldWorks.</summary>
+        // Provenance: this rule follows FieldWorks' observable list layout (a 3 pt gap after the label unless it ends in a space; the label
+        // goes in the hanging indent when it fits there, else the text starts after it). The code is ours.
         void PlaceFirstLine(double w, double firstIndent)
         {
             _labelWidth = 0;
