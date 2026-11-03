@@ -261,7 +261,9 @@ namespace SIL.TextEditing
                     newParas.Add(merged);
                     for (int i = 1; i < fragment.Count - 1; i++) newParas.Add(fragment[i].Clone(false));
                     var lastNew = tail.Clone(false);
+                    // The last fragment paragraph holds the tail's new neighbour text, so its Style and Props travel together.
                     lastNew.Style = fragment[fragment.Count - 1].Style;
+                    lastNew.Props = fragment[fragment.Count - 1].Props.Clone();
                     var runs = fragment[fragment.Count - 1].Runs.Select(r => r.Clone()).ToList();
                     int off = runs.Sum(r => r.Text.Length);
                     runs.AddRange(tail.Runs.Select(r => r.Clone()));

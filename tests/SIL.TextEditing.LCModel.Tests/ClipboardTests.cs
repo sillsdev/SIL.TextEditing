@@ -33,8 +33,32 @@ namespace SIL.TextEditing.LCModel.Tests
                 new TextParagraph(null, Mixed(), null),
             }, H);
             var payload = TsStringClipboard.ToPayload(doc.Paragraphs, H);
-            Assert.Equal("\u00E9col\u00E9 \u00E0\nPlain bold on bold off bold invert styled big red", payload.PlainTextNfc);
+            Assert.Equal("\u00E9col\u00E9 \u00E0; Plain bold on bold off bold invert styled big red", payload.PlainTextNfc);
             Assert.Contains("<Str", payload.TsStringXml);
+            Assert.Equal("\u00E9col\u00E9 \u00E0; Plain bold on bold off bold invert styled big red",
+                TsStringClipboard.FromXml(payload.TsStringXml, H).Text.Normalize(NormalizationForm.FormC));
+        }
+
+        [Fact]
+        public void Paragraph_separator_is_a_parameter_that_defaults_to_FieldWorks()
+        {
+            var doc = TsStringConversion.ToDocument(new[] { new TextParagraph(null, Nfd(), null), new TextParagraph(null, Fr2(), null) }, H);
+            Assert.Equal("\u00E9col\u00E9 \u00E0; deux", TsStringClipboard.ToPayload(doc.Paragraphs, H).PlainTextNfc);
+            var lf = TsStringClipboard.ToPayload(doc.Paragraphs, H, "\n");
+            Assert.Equal("\u00E9col\u00E9 \u00E0\ndeux", lf.PlainTextNfc);
+            Assert.Equal(2, TsStringClipboard.FromXmlToFragment(lf.TsStringXml, H, "\n").Count);
+            Assert.Single(TsStringClipboard.FromXmlToFragment(lf.TsStringXml, H));      // FieldWorks pastes one paragraph
+        }
+
+        static ITsString Fr2() => Build(("deux", Props(Handles.Fr)));
+
+        [Fact]
+        public void Hangul_and_composition_exclusions_serialize_and_read_back_without_ICU_setup()
+        {
+            // Hangul syllables decompose to jamo in NFD; U+0958 (Devanagari QA) is a composition exclusion.
+            var s = Build(("\uD55C\uAE00 \u0958 \u212B", Props(Handles.En)));
+            var back = TsStringClipboard.FromXml(TsStringClipboard.ToXml(s, H), H);
+            Assert.Equal(s.Text.Normalize(NormalizationForm.FormD), back.Text.Normalize(NormalizationForm.FormD));
         }
 
         [Fact]
@@ -46,7 +70,8 @@ namespace SIL.TextEditing.LCModel.Tests
                 new TextParagraph(System.Guid.NewGuid(), Mixed(), null),
             }, H);
             var payload = TsStringClipboard.ToPayload(doc.Paragraphs, H);
-            var fragment = TsStringClipboard.FromXmlToFragment(payload.TsStringXml, H);
+            payload = TsStringClipboard.ToPayload(doc.Paragraphs, H, "\n");
+            var fragment = TsStringClipboard.FromXmlToFragment(payload.TsStringXml, H, "\n");
             Assert.Equal(2, fragment.Count);
             Assert.All(fragment, p => Assert.Null(p.Key));
             Assert.Equal("e\u0301cole\u0301 a\u0300", fragment[0].Text);

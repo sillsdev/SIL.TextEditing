@@ -165,5 +165,33 @@ namespace SIL.TextEditing.LCModel.Tests
             Assert.Equal(Dump(original.get_Properties(3)), Dump(edited.get_Properties(3)));
             Assert.Equal("boZld invert ", edited.get_RunText(3));
         }
+
+        [Fact]
+        public void Multi_paragraph_paste_gives_the_last_paragraph_the_fragments_style_and_props_together()
+        {
+            var headRules = TsStringUtils.MakePropsBldr();
+            headRules.SetStrPropValue(NamedStyle, "Normal");
+            headRules.SetIntPropValues(18, VarMilli, 1000);
+            var fragRules = TsStringUtils.MakePropsBldr();
+            fragRules.SetStrPropValue(NamedStyle, "Quote");
+            fragRules.SetIntPropValues(18, VarMilli, 9000);
+            var doc = TsStringConversion.ToDocument(new[] { new TextParagraph(null, Build(("headtail", Props(Handles.En))), headRules.GetTextProps()) }, H);
+            var fragment = new List<Paragraph>
+            {
+                TsStringConversion.ToParagraph(Build(("one", Props(Handles.En))), headRules.GetTextProps(), null, H),
+                TsStringConversion.ToParagraph(Build(("two", Props(Handles.En))), fragRules.GetTextProps(), null, H),
+            };
+            var editor = new DocumentEditor(doc);
+            editor.SetCaret(new TextPosition(0, 4));
+            editor.Paste(fragment);
+            var paras = doc.Paragraphs;
+            Assert.Equal("headone", paras[0].Text);
+            Assert.Equal("Normal", paras[0].Style);                                   // the head keeps its own
+            Assert.Equal(1000, paras[0].Props.IntProps[18].Value);
+            Assert.Equal("twotail", paras[1].Text);
+            Assert.Equal("Quote", paras[1].Style);
+            Assert.Equal("Quote", paras[1].Props.StrProps[NamedStyle]);               // never disagree
+            Assert.Equal(9000, paras[1].Props.IntProps[18].Value);
+        }
     }
 }

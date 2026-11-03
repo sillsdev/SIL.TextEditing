@@ -29,7 +29,18 @@ namespace SIL.TextEditing.LCModel
             readonly ILgWritingSystemFactory _factory;
             public FactoryHandles(ILgWritingSystemFactory factory) { _factory = factory; }
             public int GetHandle(string wsId) => _factory.GetWsFromStr(wsId);
-            public string GetId(int handle) => handle == 0 ? string.Empty : _factory.GetStrFromWs(handle) ?? string.Empty;
+            public string GetId(int handle)
+            {
+                if (handle == 0) return string.Empty;
+                try
+                {
+                    return _factory.GetStrFromWs(handle) ?? string.Empty;
+                }
+                catch (Exception)
+                {
+                    return string.Empty;   // a real factory may throw for a handle it does not know
+                }
+            }
         }
     }
 }
