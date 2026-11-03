@@ -37,6 +37,7 @@ namespace SIL.TextEditing.Avalonia
         readonly InputMethodClient _ime;
         IStyleResolver? _styles;
         double _layoutWidth = -1;
+        global::Avalonia.Threading.DispatcherTimer? _pauseTimer;
         string? _preedit;
         string? _heldHigh;
         int _preeditCursor;
@@ -67,7 +68,8 @@ namespace SIL.TextEditing.Avalonia
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
             GotFocus += (o, e) => InvalidateVisual();
-            LostFocus += (o, e) => InvalidateVisual();
+            LostFocus += (o, e) => { Editor.CloseUndoGroup(); InvalidateVisual(); };
+            Editor.Committed += d => RestartPauseTimer();
             ActualThemeVariantChanged += (o, e) => InvalidateVisual();
         }
 
@@ -100,6 +102,26 @@ namespace SIL.TextEditing.Avalonia
         public IBrush Foreground { get; set; } = Brushes.Black;
         public IBrush Background { get; set; } = Brushes.White;
         public bool ShowCaretAlways { get; set; }
+        /// <summary>A field-level read-only flag (forwards to <see cref="DocumentEditor.IsReadOnly"/>): selection and copy
+        /// work, nothing changes the text. Runs can also be read-only one by one (ADR 0019).</summary>
+        public bool IsReadOnly
+        {
+            get => Editor.IsReadOnly;
+            set
+            {
+                if (Editor.IsReadOnly == value) return;
+                Editor.IsReadOnly = value;
+                if (value && _preedit != null) SetPreedit(null, null);   // an input method cannot go on composing into read-only text
+                _peer?.RaiseReadOnlyChanged(!value, value);
+            }
+        }
+        /// <summary>Single-paragraph mode (ADR 0012; forwards to <see cref="DocumentEditor.SingleParagraph"/>): Enter does not
+        /// split the paragraph but is passed to the host through <see cref="EnterRequested"/>.</summary>
+        public bool SingleParagraph
+        {
+            get => Editor.SingleParagraph;
+            set => Editor.SingleParagraph = value;
+        }
         /// <summary>The wrap width used when the available width is unbounded.</summary>
         public double PreferredWidth { get; set; } = 400;
         /// <summary>The number of paragraph layouts built so far, for measuring relayout cost.</summary>
@@ -109,6 +131,13 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Raised synchronously when the active writing system changes: old, new.</summary>
         public event Action<string, string>? ActiveWsChanged;
+        /// <summary>Raised in single-paragraph mode when Enter is pressed (Shift+Enter is not passed on: it inserts a hard line break): the host decides what it means, as a
+        /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it
+        /// also keeps bubbling.</summary>
+        public event Action<KeyModifiers>? EnterRequested;
+        /// <summary>Tab, Shift+Tab, Ctrl+Tab or an arrow key that cannot move further (Tab and its variants first move to the next, previous, last or first editable place) asks to leave the field (ADR 0021); the
+        /// host moves focus.</summary>
+        public event EventHandler<LeaveRequestedEventArgs>? LeaveRequested;
         /// <summary>The editor asks the host to undo (Ctrl+Z); the host owns the undo stack.</summary>
         public event Action? UndoRequested;
         public event Action? RedoRequested;
@@ -256,7 +285,7 @@ namespace SIL.TextEditing.Avalonia
             var c = Editor.Caret;
             var pl = ParagraphLayoutFor(c.Paragraph);
             var r = pl.CaretRect(c.Offset, false, CurrentHit());
-            if (_preedit != null) r = pl.CaretRect(c.Offset + _preeditCursor, false);
+            if (_preedit != null && pl.PreeditAt >= 0) r = pl.CaretRect(pl.PreeditAt + _preeditCursor, true);   // inside the preedit, in effective offsets
             return new Rect(r.X, r.Y + ParagraphTop(c.Paragraph), 1.5, r.Height);
         }
 
@@ -284,7 +313,7 @@ namespace SIL.TextEditing.Avalonia
                         foreach (var r in pl.SelectionRects(s, e))
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
-                    foreach (var li in pl.Lines) li.Line.Draw(context, new Point(li.X, y + li.TextY));
+                    foreach (var li in pl.Lines) if (!li.IsEmpty) li.Line.Draw(context, new Point(li.X, y + li.TextY));
                     pl.DrawLabel(context, y);
                     if (ObjectAsGlyph)
                     {
@@ -303,6 +332,48 @@ namespace SIL.TextEditing.Avalonia
 
         // ------------------------------------------------ caret movement
 
+        // ADR 0023: a pause of TypingPause ends the typing step even when nothing else follows.
+        void RestartPauseTimer()
+        {
+            // The editor has no thread affinity, but a DispatcherTimer does: an edit from another thread hands the timer to the
+            // UI thread. A field that is not on screen has no timer (it closes the step when it leaves the screen).
+            if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            {
+                global::Avalonia.Threading.Dispatcher.UIThread.Post(RestartPauseTimer);
+                return;
+            }
+            if (!_onScreen)
+            {
+                _pauseTimer?.Stop();
+                return;
+            }
+            if (_pauseTimer == null)
+            {
+                _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
+                _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
+            }
+            _pauseTimer.Stop();
+            if (!Editor.HasOpenUndoGroup) return;
+            _pauseTimer.Interval = Editor.TypingPause;
+            _pauseTimer.Start();
+        }
+
+        bool _onScreen;
+
+        protected override void OnAttachedToVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
+        {
+            _onScreen = true;
+            base.OnAttachedToVisualTree(e);
+        }
+
+        protected override void OnDetachedFromVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
+        {
+            _onScreen = false;
+            _pauseTimer?.Stop();
+            Editor.CloseUndoGroup();
+            base.OnDetachedFromVisualTree(e);
+        }
+
         /// <summary>The text a caret can reach in a paragraph: all of it, or the part a line limit leaves showing.</summary>
         int VisibleLength(int paragraph) => ParagraphLayoutFor(paragraph).VisibleEnd;
 
@@ -312,7 +383,7 @@ namespace SIL.TextEditing.Avalonia
         {
             if (p.Paragraph < 0 || p.Paragraph >= _layouts.Count) return p;
             var pl = ParagraphLayoutFor(p.Paragraph);
-            return pl.Truncated && p.Offset > pl.VisibleEnd ? new TextPosition(p.Paragraph, pl.VisibleEnd) : p;
+            return (pl.Truncated || pl.HiddenTrailingBreak) && p.Offset > pl.VisibleEnd ? new TextPosition(p.Paragraph, pl.VisibleEnd) : p;
         }
 
         void OnCaretMoved()
@@ -349,7 +420,7 @@ namespace SIL.TextEditing.Avalonia
             _hit = hit;
             _hitPosition = p;
             _moving = true;
-            try { Editor.SetCaret(p, extend); }
+            try { Editor.SetCaret(p, extend, p.CompareTo(Editor.Caret)); }
             finally { _moving = false; }
         }
 
@@ -411,6 +482,24 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
+        // ADR 0021: a Left or Right that moves nothing, with no selection to collapse, asks to leave the field.
+        void MoveOrLeave(bool left, bool ctrl, bool shift)
+        {
+            var before = Editor.Caret;
+            bool hadSelection = Editor.HasSelection;
+            bool forward = Editor.Document.Paragraphs[before.Paragraph].Rtl ? left : !left;
+            if (ctrl) MoveByWord(left, shift); else MoveVisualLeftRight(left, shift);
+            if (!shift && !hadSelection && Editor.Caret.Equals(before))
+                RaiseLeave(forward ? LeaveDirection.Next : LeaveDirection.Previous, left ? LeaveKey.Left : LeaveKey.Right, false, double.NaN);
+        }
+
+        bool RaiseLeave(LeaveDirection direction, LeaveKey key, bool toEnd, double goalX)
+        {
+            var args = new LeaveRequestedEventArgs(direction, key, toEnd, goalX);
+            LeaveRequested?.Invoke(this, args);
+            return args.Handled;
+        }
+
         void MoveVertical(bool down, bool extend)
         {
             var c = Editor.Caret;
@@ -425,13 +514,23 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (pl.Lines.Count > 0 && li + 1 < pl.Lines.Count) y = top + pl.Lines[li + 1].Y + 1;
                 else if (c.Paragraph + 1 < _layouts.Count) y = top + pl.Height + 1;
-                else { Move(new TextPosition(c.Paragraph, pl.VisibleEnd), extend, true); return; }
+                else
+                {
+                    if (!extend && RaiseLeave(LeaveDirection.Next, LeaveKey.Down, false, gx)) return;
+                    Move(new TextPosition(c.Paragraph, pl.VisibleEnd), extend, true);
+                    return;
+                }
             }
             else
             {
                 if (li > 0) y = top + pl.Lines[li - 1].Y + 1;
                 else if (c.Paragraph > 0) y = top - 1;
-                else { Move(new TextPosition(c.Paragraph, 0), extend, true); return; }
+                else
+                {
+                    if (!extend && RaiseLeave(LeaveDirection.Previous, LeaveKey.Up, false, gx)) return;
+                    Move(new TextPosition(c.Paragraph, 0), extend, true);
+                    return;
+                }
             }
             var target = Locate(new Point(gx, y));
             _goalX = gx;
@@ -473,8 +572,16 @@ namespace SIL.TextEditing.Avalonia
             var lastPara = _layouts.Count - 1;
             switch (key)
             {
-                case Key.Left: if (ctrl) MoveByWord(true, shift); else MoveVisualLeftRight(true, shift); return true;
-                case Key.Right: if (ctrl) MoveByWord(false, shift); else MoveVisualLeftRight(false, shift); return true;
+                case Key.Left: MoveOrLeave(true, ctrl, shift); return true;
+                case Key.Right: MoveOrLeave(false, ctrl, shift); return true;
+                case Key.Tab when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0:
+                {
+                    // FieldWorks moves to the next (previous) editable place first and leaves only when there is none;
+                    // Ctrl+Tab goes to the last place and Ctrl+Shift+Tab to the first, and leaves only from there.
+                    var which = ctrl ? (shift ? EditablePlace.First : EditablePlace.Last) : (shift ? EditablePlace.Previous : EditablePlace.Next);
+                    if (Editor.TryGetEditablePlace(which, out var place)) { Move(place, false); return true; }
+                    return RaiseLeave(shift ? LeaveDirection.Previous : LeaveDirection.Next, LeaveKey.Tab, ctrl, double.NaN);
+                }
                 case Key.Up: MoveVertical(false, shift); return true;
                 case Key.Down: MoveVertical(true, shift); return true;
                 case Key.Home:
@@ -498,14 +605,22 @@ namespace SIL.TextEditing.Avalonia
                     return true;
                 }
                 case Key.Back: if (!JoinsIntoHiddenEnd()) Editor.Backspace(); return true;
-                case Key.Delete: if (!AtHiddenEdge()) Editor.DeleteForward(); return true;
-                case Key.Enter: if (!AtHiddenEdge()) Editor.Enter(); return true;
+                case Key.Delete: if (!AtHiddenEdge() || NextIsBreak()) Editor.DeleteForward(); return true;
+                case Key.Enter when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0:
+                    // A hard line break inside the paragraph in either mode (our default in single-paragraph mode); refused when its
+                    // new line would be hidden by the line limit.
+                    if (!AtHiddenEdge() && !BreakWouldBeHidden()) Editor.InsertLineBreak();
+                    return true;
+                case Key.Enter:
+                    if (SingleParagraph) { EnterRequested?.Invoke(modifiers); return false; }
+                    if (!AtHiddenEdge()) Editor.Enter();
+                    return true;
                 case Key.A when ctrl:
                     Editor.Anchor = new TextPosition(0, 0);
                     Move(new TextPosition(lastPara, Editor.Document.Paragraphs[lastPara].Length), true);
                     return true;
-                case Key.Z when ctrl: UndoRequested?.Invoke(); return true;
-                case Key.Y when ctrl: RedoRequested?.Invoke(); return true;
+                case Key.Z when ctrl: Editor.CloseUndoGroup(); UndoRequested?.Invoke(); return true;   // the host's task must end before it undoes
+                case Key.Y when ctrl: Editor.CloseUndoGroup(); RedoRequested?.Invoke(); return true;
                 case Key.C when ctrl: _ = CopyAsync(false); return true;
                 case Key.X when ctrl: _ = CopyAsync(true); return true;
                 case Key.V when ctrl: _ = PasteAsync(); return true;
@@ -524,13 +639,37 @@ namespace SIL.TextEditing.Avalonia
             return pl.Truncated && c.Offset >= pl.VisibleEnd;
         }
 
+        /// <summary>True when a hard line break would add a line nobody can see. The paragraph that keeps its format is the first one
+        /// of the selection (a selection that spans paragraphs is replaced by one paragraph of the first one's head, the break and the
+        /// last one's tail), so that paragraph's limit decides: refused when the selection spans paragraphs, or when the paragraph
+        /// already shows as many lines as its limit allows (an empty paragraph is one line).</summary>
+        bool BreakWouldBeHidden()
+        {
+            Editor.Ordered(out var first, out var last);
+            var pl = ParagraphLayoutFor(first.Paragraph);
+            int max = pl.Format.MaxLines;
+            return max > 0 && (first.Paragraph != last.Paragraph || Math.Max(1, pl.Lines.Count) >= max);
+        }
+
+        /// <summary>True when the character after the caret is a hard line break. Delete may remove it at the visible end of a
+        /// line-limited paragraph: it only removes an invisible separator and so shows the text behind it.</summary>
+        bool NextIsBreak()
+        {
+            if (Editor.HasSelection) return false;
+            var c = Editor.Caret;
+            var text = Editor.Document.Paragraphs[c.Paragraph].Text;
+            return c.Offset < text.Length && text[c.Offset] == DocumentEditor.LineSeparator;
+        }
+
         /// <summary>True when Backspace at the start of a paragraph would join it onto a line-limited paragraph whose end is hidden:
         /// the joined text would vanish from view, so the join is refused.</summary>
         bool JoinsIntoHiddenEnd()
         {
             if (Editor.HasSelection) return false;
             var c = Editor.Caret;
-            return c.Offset == 0 && c.Paragraph > 0 && ParagraphLayoutFor(c.Paragraph - 1).Truncated;
+            if (c.Offset != 0 || c.Paragraph == 0) return false;
+            var above = ParagraphLayoutFor(c.Paragraph - 1);
+            return above.Truncated || above.HiddenTrailingBreak;
         }
 
         /// <summary>Inserts a held lone high surrogate as it is (it never got its low half).</summary>
@@ -610,6 +749,12 @@ namespace SIL.TextEditing.Avalonia
         {
             var para = Editor.Document.Paragraphs[loc.Character.Paragraph];
             if (_dragUnit == DragUnit.Paragraph) { start = new TextPosition(loc.Character.Paragraph, 0); end = new TextPosition(loc.Character.Paragraph, para.Length); return; }
+            if (loc.Character.Offset >= para.Length && para.Length > 0)
+            {
+                // The pointer is on the empty line after a trailing break: no character is under it, so a double click selects nothing.
+                start = end = new TextPosition(loc.Character.Paragraph, para.Length);
+                return;
+            }
             WordBreaks.WordAt(para.Text, loc.Character.Offset, out int s, out int en);
             start = new TextPosition(loc.Character.Paragraph, s);
             end = new TextPosition(loc.Character.Paragraph, en);
@@ -652,6 +797,7 @@ namespace SIL.TextEditing.Avalonia
         public async Task CopyAsync(bool cut)
         {
             if (!Editor.HasSelection) return;
+            if (cut && !Editor.CanEdit) return;   // Cut is disabled where Delete is: it must not leave the text on the clipboard either
             var fragment = Editor.GetFragment();
             var xml = Interchange.ToXml(fragment);
             var plain = TextNormalizer.Normalize(string.Join("\n", fragment.Select(p => p.Text)), System.Text.NormalizationForm.FormC);
@@ -670,7 +816,7 @@ namespace SIL.TextEditing.Avalonia
                 return;
             }
             var text = await ClipboardCompat.GetTextAsync(topLevel);
-            if (!string.IsNullOrEmpty(text)) Editor.TypeText(text ?? string.Empty);
+            if (!string.IsNullOrEmpty(text)) Editor.PasteText(text ?? string.Empty);
         }
 
         // ------------------------------------------------ IME
@@ -678,6 +824,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Shows an uncommitted composition string inline at the caret; it never enters the model.</summary>
         public void SetPreedit(string? text, int? cursor)
         {
+            if (text != null && !Editor.CanEdit) text = null;   // an input method cannot compose into text that may not be edited
             if (!string.IsNullOrEmpty(text) && AtHiddenEdge()) text = null;   // no composition at the end of hidden text
             _preedit = string.IsNullOrEmpty(text) ? null : text;
             _preeditCursor = cursor ?? (_preedit?.Length ?? 0);
@@ -743,10 +890,13 @@ namespace SIL.TextEditing.Avalonia
 
             public FieldPeer(RichTextField field) : base(field) { _field = field; _lastValue = field.AutomationValue; }
 
-            // The field has no read-only state yet, so it reports editable.
-            public bool IsReadOnly => false;
+            // True when the whole field is read-only (a field-level flag, ADR 0019); read-only runs inside an editable field do not count.
+            public bool IsReadOnly => _field.IsReadOnly;
             public string? Value => _field.AutomationValue;
             public void SetValue(string? value) { }
+
+            public void RaiseReadOnlyChanged(bool old, bool now) =>
+                RaisePropertyChangedEvent(global::Avalonia.Automation.ValuePatternIdentifiers.IsReadOnlyProperty, old, now);
 
             public void RaiseValueChanged()
             {

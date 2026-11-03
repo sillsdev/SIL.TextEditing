@@ -11,7 +11,7 @@ namespace SIL.TextEditing
     /// owns it (see <see cref="SimpleUndoStack"/> for a stand-in). Paragraph identity follows the rules in
     /// <see cref="ReplaceRange"/> and <see cref="Enter"/>.
     /// </summary>
-    public sealed class DocumentEditor
+    public sealed partial class DocumentEditor
     {
         bool _wsOverride;
 
@@ -82,10 +82,12 @@ namespace SIL.TextEditing
             return set;
         }
 
-        public void SetCaret(TextPosition p, bool extend = false)
+        public void SetCaret(TextPosition p, bool extend = false, int direction = 0)
         {
             p.Paragraph = Math.Max(0, Math.Min(Document.Paragraphs.Count - 1, p.Paragraph));
             p.Offset = Math.Max(0, Math.Min(Document.Paragraphs[p.Paragraph].Length, p.Offset));
+            if (!extend && !IsReadOnly) p = NearestEditable(p, direction);
+            if (!p.Equals(Caret) || (!extend && !p.Equals(Anchor))) CloseUndoGroup();   // a caret move ends a typing step (ADR 0023)
             Caret = p;
             if (!extend) Anchor = p;
             _wsOverride = false;
@@ -116,9 +118,9 @@ namespace SIL.TextEditing
         {
             var para = Document.Paragraphs[p.Paragraph];
             var b = para.RunBefore(p.Offset, out _);
-            if (b != null && !b.IsObject && b.Ws == ws) return b.Props;
+            if (b != null && !b.IsObject && b.Ws == ws && AllowsEditing(b)) return b.Props;
             var a = para.RunAfter(p.Offset, out _);
-            if (a != null && !a.IsObject && a.Ws == ws) return a.Props;
+            if (a != null && !a.IsObject && a.Ws == ws && AllowsEditing(a)) return a.Props;
             return null;
         }
 
@@ -131,6 +133,7 @@ namespace SIL.TextEditing
 
         void Finish(EditDelta d, TextPosition caret)
         {
+            AssignUndoGroup(d);
             Caret = Anchor = caret;
             d.CaretAfter = caret;
             _wsOverride = false;
@@ -138,6 +141,7 @@ namespace SIL.TextEditing
             Committed?.Invoke(d);
             DocumentChanged?.Invoke(d.Start, d.Before.Count, d.After.Count);
             CaretMoved?.Invoke();
+            EndSingleEditGroup();
         }
 
         // ---- editing ----
@@ -148,7 +152,10 @@ namespace SIL.TextEditing
         {
             if (string.IsNullOrEmpty(text)) return;
             text = Normalized(text);
-            var parts = text.Replace("\r\n", "\n").Split('\n');
+            if (SingleParagraph) text = OneLine(text);
+            else text = text.Replace("\r\n", "\n");
+            if (text.Length == 0) return;
+            var parts = text.Split('\n');
             for (int i = 0; i < parts.Length; i++)
             {
                 if (i > 0) Enter();
@@ -156,21 +163,54 @@ namespace SIL.TextEditing
             }
         }
 
+        /// <summary>Inserts text a user pasted (the clipboard had plain text only): the same result as <see cref="TypeText"/>, but
+        /// the whole insertion, line breaks and the replaced selection included, is one undo step of its own that neither
+        /// joins the typing before it nor the typing after it.</summary>
+        public void PasteText(string text)
+        {
+            if (string.IsNullOrEmpty(text) || !CanEditSelectionOrCaret()) return;
+            // Text that is only separators adds nothing in single-paragraph mode, but a paste still replaces the selection.
+            if (SingleParagraph && HasSelection && OneLine(Normalized(text)).Length == 0) { InOneUndoStep(() => DeleteSelection("type")); return; }
+            InOneUndoStep(() => TypeText(text));
+        }
+
+        /// <summary>The hard line break Shift+Enter inserts: U+2028, a line break inside the paragraph (FieldWorks does the same in
+        /// multi-paragraph views).</summary>
+        public const char LineSeparator = (char)0x2028;
+
+        /// <summary>Shift+Enter: inserts a <see cref="LineSeparator"/> at the caret (over the selection) without splitting the
+        /// paragraph, in single-paragraph mode too (there it is our default: FieldWorks passes Shift+Enter to the parent of a view
+        /// that does not accept Return). It is one undo step of its own.</summary>
+        public void InsertLineBreak()
+        {
+            if (!CanEditSelectionOrCaret()) return;
+            InOneUndoStep(() => InsertOne(LineSeparator.ToString()));
+        }
+
         void InsertOne(string text)
         {
-            if (HasSelection) DeleteSelection("type");
-            var ws = ActiveWs;
-            var d = Begin(Caret.Paragraph, Caret.Paragraph, "type");
-            var para = Document.Paragraphs[Caret.Paragraph];
-            para.Insert(Caret.Offset, text, ws, InheritProps(Caret, ws));
-            d.After.Add(para.Clone());
-            bool keepOverride = _wsOverride;
-            Finish(d, new TextPosition(Caret.Paragraph, Caret.Offset + text.Length));
-            if (keepOverride)
+            if (!CanEditSelectionOrCaret()) return;
+            // Typing over a selection is one step with the deletion; it never joins an earlier step.
+            if (HasSelection && !_batch) CloseUndoGroup();
+            _typingWs = ActiveWs;
+            _typing = true;
+            try
             {
-                _wsOverride = true;
-                ActiveWs = ws;
+                if (HasSelection) DeleteSelection("type");
+                var ws = ActiveWs;
+                var d = Begin(Caret.Paragraph, Caret.Paragraph, "type");
+                var para = Document.Paragraphs[Caret.Paragraph];
+                para.Insert(Caret.Offset, text, ws, InheritProps(Caret, ws));
+                d.After.Add(para.Clone());
+                bool keepOverride = _wsOverride;
+                Finish(d, new TextPosition(Caret.Paragraph, Caret.Offset + text.Length));
+                if (keepOverride)
+                {
+                    _wsOverride = true;
+                    ActiveWs = ws;
+                }
             }
+            finally { _typing = false; }
         }
 
         public void DeleteSelection(string label = "delete")
@@ -214,6 +254,21 @@ namespace SIL.TextEditing
         /// </summary>
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
+            if (IsReadOnly || !CanEditRange(a, b)) return;
+            if (fragment != null)
+            {
+                // Pasted text takes the editability of where it lands: a copied read-only run must not become text the user
+                // cannot remove from an editable field.
+                fragment = fragment.Select(p => p.Clone()).ToList();
+                foreach (var p in fragment)
+                    foreach (var r in p.Runs)
+                        r.Props.IntProps.Remove(TextPropertyNumbers.Editable);
+            }
+            if (SingleParagraph && fragment != null)
+            {
+                if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
+                foreach (var p in fragment) SeparatorsToSpaces(p);
+            }
             // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
             if (fragment != null && Document.Normalization is NormalizationForm form)
             {
@@ -283,6 +338,7 @@ namespace SIL.TextEditing
         /// stays on the right; anywhere else the left keeps the identity and the right is new.</summary>
         public void Enter()
         {
+            if (SingleParagraph || !CanEditSelectionOrCaret()) return;
             if (HasSelection) DeleteSelection("enter-del");
             var d = Begin(Caret.Paragraph, Caret.Paragraph, "enter");
             var orig = Document.Paragraphs[Caret.Paragraph];
@@ -341,6 +397,7 @@ namespace SIL.TextEditing
             var c = d.CaretAfter;
             c.Paragraph = Math.Min(c.Paragraph, Document.Paragraphs.Count - 1);
             c.Offset = Math.Min(c.Offset, Document.Paragraphs[c.Paragraph].Length);
+            CloseUndoGroup();   // a change the host applies (undo, redo, a command) ends any typing step
             Caret = Anchor = c;
             _wsOverride = false;
             RefreshWs();
@@ -361,6 +418,7 @@ namespace SIL.TextEditing
                 p.Offset = Math.Min(p.Offset, replacement.Length);
                 return p;
             }
+            CloseUndoGroup();
             Caret = Map(Caret);
             Anchor = Map(Anchor);
             RefreshWs();
@@ -370,13 +428,27 @@ namespace SIL.TextEditing
     }
 
     /// <summary>A stand-in for the host's single undo stack (LCModel's, in FieldWorks): it receives deltas from the
-    /// editor and applies them back. The editor never undoes itself.</summary>
+    /// editor and applies them back. The editor never undoes itself. Deltas that share an
+    /// <see cref="EditDelta.UndoGroup"/> are one step: undo and redo move a whole step at a time (ADR 0023).</summary>
     public sealed class SimpleUndoStack
     {
         DocumentEditor? _editor;
 
+        /// <summary>Every delta done, oldest first (a typing step holds several).</summary>
         public List<EditDelta> Done { get; } = new List<EditDelta>();
         public List<EditDelta> Undone { get; } = new List<EditDelta>();
+
+        /// <summary>The number of undo steps: a group of deltas counts once, an ungrouped delta counts as one.</summary>
+        public int DoneSteps => Steps(Done);
+        public int UndoneSteps => Steps(Undone);
+
+        static int Steps(List<EditDelta> deltas)
+        {
+            int n = 0;
+            for (int i = 0; i < deltas.Count; i++)
+                if (i == 0 || deltas[i].UndoGroup == 0 || deltas[i].UndoGroup != deltas[i - 1].UndoGroup) n++;
+            return n;
+        }
 
         public void Attach(DocumentEditor editor)
         {
@@ -391,20 +463,30 @@ namespace SIL.TextEditing
         public bool Undo()
         {
             if (Done.Count == 0 || _editor == null) return false;
-            var d = Done[Done.Count - 1];
-            Done.RemoveAt(Done.Count - 1);
-            Undone.Add(d);
-            _editor.Apply(d.Inverse());
+            long group = Done[Done.Count - 1].UndoGroup;
+            do
+            {
+                var d = Done[Done.Count - 1];
+                Done.RemoveAt(Done.Count - 1);
+                Undone.Add(d);
+                _editor.Apply(d.Inverse());
+            }
+            while (Done.Count > 0 && group != 0 && Done[Done.Count - 1].UndoGroup == group);
             return true;
         }
 
         public bool Redo()
         {
             if (Undone.Count == 0 || _editor == null) return false;
-            var d = Undone[Undone.Count - 1];
-            Undone.RemoveAt(Undone.Count - 1);
-            Done.Add(d);
-            _editor.Apply(d);
+            long group = Undone[Undone.Count - 1].UndoGroup;
+            do
+            {
+                var d = Undone[Undone.Count - 1];
+                Undone.RemoveAt(Undone.Count - 1);
+                Done.Add(d);
+                _editor.Apply(d);
+            }
+            while (Undone.Count > 0 && group != 0 && Undone[Undone.Count - 1].UndoGroup == group);
             return true;
         }
     }

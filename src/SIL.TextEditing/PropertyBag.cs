@@ -105,6 +105,9 @@ namespace SIL.TextEditing
         public const int FontSize = 6;
         public const int ForeColor = 8;
         public const int BackColor = 9;
+        /// <summary>ktptEditable (155): whether the run may be edited, one of the <c>Editable*</c> values (ADR 0019). Absent
+        /// means editable.</summary>
+        public const int Editable = 155;
         /// <summary>Underline colour (ktptUnderColor); default variation, a BGR colour.</summary>
         public const int UnderColor = 10;
         public const int Align = 17;
@@ -167,6 +170,11 @@ namespace SIL.TextEditing
         public const int VariationRelative = 2;
         /// <summary>The value comes from an enumeration (font size names, toggles).</summary>
         public const int VariationEnum = 3;
+
+        // Values of Editable (the TptEditable enum).
+        public const int EditableNo = 0;
+        public const int EditableYes = 1;
+        public const int EditableSemi = 2;
 
         // Toggle values (ktpt Bold and Italic): 0 off, 1 force on.
         public const int ToggleOff = 0;

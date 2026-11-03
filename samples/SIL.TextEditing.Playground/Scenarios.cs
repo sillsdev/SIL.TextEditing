@@ -35,6 +35,7 @@ namespace SIL.TextEditing.Playground
         public const string Paragraphs = "Paragraph formatting";
         public const string Opaque = "Unknown properties";
         public const string Long = "Long document (200 paragraphs)";
+        public const string ReadOnlyRuns = "Read-only runs";
         public const string ManyFields = "Many fields";
         public const string Empty = "Empty";
 
@@ -51,6 +52,7 @@ namespace SIL.TextEditing.Playground
             new Scenario(Drawing, "Every drawing property of a FieldWorks text string, from the run's own properties and from the host's named styles (the playground keeps a small stylesheet). Pick a style in the toolbar to apply it.", _ => One(DrawingDoc())),
             new Scenario(Paragraphs, "Every paragraph drawing property from the host's paragraph styles and from a paragraph's own properties: alignment, first-line and hanging indents, margins, spacing, line height, colour, borders, a line limit, bullets and numbers. Pick a paragraph style in the toolbar to try one on the paragraph at the caret.", _ => One(ParagraphsDoc())),
             new Scenario(Opaque, "Runs with property numbers the editor does not understand, and a paragraph style. They must survive typing, formatting, split, join, undo and copy and paste untouched.", _ => One(OpaqueDoc())),
+            new Scenario(ReadOnlyRuns, "A label that may not be edited in front of editable text, a semi-editable run, and a paragraph that is all read-only. The caret moves to the nearest place where editing is allowed; typing, Delete, Backspace, cut and paste are refused across read-only text; selection and copy still work.", _ => One(ReadOnlyDoc())),
             new Scenario(Long, "200 paragraphs in mixed writing systems: scrolling, caret at the far end, and cost of edits in a long document.", _ => One(LongDoc(200))),
             new Scenario(ManyFields, "N small fields in one window: tab between them by clicking, undo is per field, the inspector follows the focused field.", ManyDocs, many: true),
             new Scenario(Empty, "One empty paragraph: type from scratch.", _ => One(EmptyDoc())),
@@ -311,6 +313,31 @@ namespace SIL.TextEditing.Playground
             charStyle.Runs.Add(new Run { Ws = "fr", Text = ", puis du texte ordinaire." });
 
             return Doc(styled, p, charStyle);
+        }
+
+        static Run Marked(string ws, string text, int editable)
+        {
+            var r = new Run { Ws = ws, Text = text };
+            r.Props.SetInt(TextPropertyNumbers.Editable, editable);
+            return r;
+        }
+
+        static Document ReadOnlyDoc()
+        {
+            var labelled = new Paragraph { DefaultWs = "en" };
+            labelled.Runs.Add(Marked("en", "Gloss: ", TextPropertyNumbers.EditableNo));
+            labelled.Runs.Add(new Run { Ws = "en", Text = "edit this part" });
+            labelled.Runs.Add(Marked("en", " [fixed]", TextPropertyNumbers.EditableNo));
+            labelled.Runs.Add(new Run { Ws = "en", Text = " and this" });
+
+            var semi = new Paragraph { DefaultWs = "en" };
+            semi.Runs.Add(Marked("en", "type-ahead: ", TextPropertyNumbers.EditableSemi));
+            semi.Runs.Add(new Run { Ws = "en", Text = "typed" });
+
+            var locked = new Paragraph { DefaultWs = "en" };
+            locked.Runs.Add(Marked("en", "Entirely read-only paragraph.", TextPropertyNumbers.EditableNo));
+
+            return Doc(labelled, semi, locked, Para("en", false, "en", "An ordinary paragraph."));
         }
 
         static readonly string[] Words = { "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet" };

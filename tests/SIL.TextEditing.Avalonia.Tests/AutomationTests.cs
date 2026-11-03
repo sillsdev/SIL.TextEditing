@@ -32,6 +32,20 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void The_peer_reports_the_field_level_read_only_flag_and_not_read_only_runs() => Headless.Run(() =>
+        {
+            var doc = OneParagraph("ab");
+            doc.Paragraphs[0].Runs[0].Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            var field = Fixtures.Field(doc);
+            var peer = Peer(field);
+            Assert.False(((IValueProvider)peer).IsReadOnly);
+            field.IsReadOnly = true;
+            Assert.True(((IValueProvider)peer).IsReadOnly);
+            field.IsReadOnly = false;
+            Assert.False(((IValueProvider)peer).IsReadOnly);
+        });
+
+        [Fact]
         public void Without_a_host_name_the_peer_has_no_hard_coded_one() => Headless.Run(() =>
         {
             Assert.DoesNotContain("Rich text field", Peer(Fixtures.Field(OneParagraph("a"))).GetName() ?? "");

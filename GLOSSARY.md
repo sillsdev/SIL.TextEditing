@@ -26,6 +26,17 @@ _Avoid_: opaque, unknown, lossy
 A picture, link or other object that sits inline in a run as a single placeholder character.
 _Avoid_: ORC (in prose)
 
+**Hard line break**:
+A line break inside a paragraph (U+2028), which Shift+Enter inserts. It is not a paragraph separator.
+_Avoid_: soft return, soft break
+
+**Editable place**:
+A stretch of insertion points in one paragraph where editing is allowed, with no read-only text inside it. Tab moves between editable places.
+
+**Read-only text**:
+Text the user cannot change: a run whose editable property is not-editable, or any text in a field whose read-only flag is on. It can still be selected and copied. Semi-editable text can be changed but not formatted.
+_Avoid_: locked, disabled
+
 ## Writing systems
 
 **Writing system**:
@@ -50,3 +61,13 @@ The application that owns the data, the undo history, the styles and the keyboar
 **Field**:
 One `RichTextField`: one editable text on screen.
 _Avoid_: editor (for a single control), text box
+
+## Editing
+
+**Undo step**:
+One thing the host undoes with one Undo: a run of consecutive typing, or a single command such as a delete or a paste. Each delta carries the number of the step it belongs to (ADR 0023).
+_Avoid_: undo group (in prose; `UndoGroup` is the member name), undo unit
+
+**Leave request**:
+The event a field raises, with a direction, when a key such as Tab or an arrow cannot move the caret any further inside it, so the host can move focus (ADR 0021).
+_Avoid_: focus request, tab-out

@@ -7,7 +7,7 @@ namespace SIL.TextEditing.Tests
     public class HostUndoTests
     {
         [Fact]
-        public void Each_keystroke_is_one_delta_and_host_undo_restores_text_and_caret()
+        public void Each_keystroke_is_one_delta_and_host_undo_restores_the_whole_typing_step()
         {
             var e = new DocumentEditor(OneParagraph("hello world"));
             var undo = new SimpleUndoStack();
@@ -18,14 +18,13 @@ namespace SIL.TextEditing.Tests
             Assert.Equal(3, undo.Done.Count);
             Assert.Equal("hello worldabc", e.Document.Paragraphs[0].Text);
 
-            undo.Undo();
-            undo.Undo();
+            Assert.Equal(1, undo.DoneSteps);
             undo.Undo();
             Assert.Equal("hello world", e.Document.Paragraphs[0].Text);
             Assert.Equal(11, e.Caret.Offset);
             Assert.Equal(before, Interchange.Json(e.Document));
             undo.Redo();
-            Assert.Equal("hello worlda", e.Document.Paragraphs[0].Text);
+            Assert.Equal("hello worldabc", e.Document.Paragraphs[0].Text);
         }
 
         [Fact]

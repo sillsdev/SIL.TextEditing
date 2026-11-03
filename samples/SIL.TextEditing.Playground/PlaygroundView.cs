@@ -40,6 +40,9 @@ namespace SIL.TextEditing.Playground
             public const string Cut = "CutButton";
             public const string Copy = "CopyButton";
             public const string Paste = "PasteButton";
+            public const string ReadOnly = "ReadOnlyCheck";
+            public const string SingleParagraph = "SingleParagraphCheck";
+            public const string HostHandlesLeave = "HostHandlesLeaveCheck";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
             public const string DefaultVernacular = "DefaultVernacularButton";
             public const string WsLabel = "WsLabel";
@@ -73,6 +76,9 @@ namespace SIL.TextEditing.Playground
         readonly StackPanel _fieldStack = new StackPanel();
         readonly ComboBox _picker;
         readonly ComboBox _countPicker;
+        CheckBox _readOnlyCheck = null!;
+        CheckBox _singleParagraphCheck = null!;
+        CheckBox _leaveHandled = null!;
         readonly TextBlock _description;
         readonly TextBlock _wsLabel;
         readonly TextBlock _selectionLabel;
@@ -158,6 +164,28 @@ namespace SIL.TextEditing.Playground
             toolbar.Children.Add(Tool(Names.Cut, "Cut", "Cut the selection (Ctrl+X)", () => ClipboardIdle = CopyAsync(true)));
             toolbar.Children.Add(Tool(Names.Copy, "Copy", "Copy the selection (Ctrl+C)", () => ClipboardIdle = CopyAsync(false)));
             toolbar.Children.Add(Tool(Names.Paste, "Paste", "Paste (Ctrl+V)", () => ClipboardIdle = PasteAsync()));
+            toolbar.Children.Add(Spacer());
+            _readOnlyCheck = new CheckBox { Name = Names.ReadOnly, Content = "Read-only field", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_readOnlyCheck, "Field-level read-only: selection and copy work, nothing changes the text");
+            _readOnlyCheck.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                _active.Field.IsReadOnly = _readOnlyCheck.IsChecked == true;
+                Log("field read-only: " + (_active.Field.IsReadOnly ? "on" : "off"));
+            };
+            toolbar.Children.Add(_readOnlyCheck);
+            _singleParagraphCheck = new CheckBox { Name = Names.SingleParagraph, Content = "Single paragraph", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_singleParagraphCheck, "Single-paragraph mode: Enter goes to the host instead of splitting the paragraph");
+            _singleParagraphCheck.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                _active.Field.SingleParagraph = _singleParagraphCheck.IsChecked == true;
+                Log("single paragraph: " + (_active.Field.SingleParagraph ? "on" : "off"));
+            };
+            toolbar.Children.Add(_singleParagraphCheck);
+            _leaveHandled = new CheckBox { Name = Names.HostHandlesLeave, Content = "Host takes leave requests", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_leaveHandled, "Tab, Shift+Tab, Ctrl+Tab and arrows at the field's edge raise LeaveRequested; when ticked the host marks it handled, so Tab does not move focus");
+            toolbar.Children.Add(_leaveHandled);
 
             var wsBar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
             wsBar.Children.Add(_wsLabel);
@@ -263,6 +291,10 @@ namespace SIL.TextEditing.Playground
             var documents = scenario.Build(FieldCount);
             for (int i = 0; i < documents.Count; i++) AddSession(documents[i], i + 1, scenario.Many);
             _active = _sessions[0];
+            _syncing = true;
+            _readOnlyCheck.IsChecked = false;
+            _singleParagraphCheck.IsChecked = false;
+            _syncing = false;
             _selectionState = string.Empty;
             Log("scenario: " + scenario.Name + (scenario.Many ? " (" + documents.Count + " fields)" : string.Empty));
             UpdateWsLabel();
@@ -292,6 +324,13 @@ namespace SIL.TextEditing.Playground
                 UpdateWsLabel();
                 Log("caret ws " + o + " -> " + n + ": would switch keyboard to " + n);
             };
+            field.LeaveRequested += (o, e) =>
+            {
+                if (_active != session) return;
+                Log("leave requested: " + e.Direction + " by " + e.Key + (e.ToEnd ? " (to the " + (e.Direction == LeaveDirection.Next ? "last" : "first") + " field)" : string.Empty) + (double.IsNaN(e.GoalX) ? string.Empty : " at x " + Math.Round(e.GoalX)) + (_leaveHandled.IsChecked == true ? ": the host moved focus" : string.Empty));
+                e.Handled = _leaveHandled.IsChecked == true;
+            };
+            field.EnterRequested += m => Log("Enter passed to the host" + (m == KeyModifiers.None ? string.Empty : " (" + m + ")") + ": the host's default button would run");
             field.UndoRequested += () => { Activate(session); UndoLast("Ctrl+Z in the field"); };
             field.RedoRequested += () => { Activate(session); RedoLast("Ctrl+Y in the field"); };
             field.SelectionWsState += state =>
@@ -304,6 +343,7 @@ namespace SIL.TextEditing.Playground
             {
                 if (_active == session && d.Label != "type") Log("edit: " + d.Label + " (paragraphs " + d.Start + ".." + (d.Start + Math.Max(d.Before.Count, d.After.Count) - 1) + ")");
             };
+            field.Editor.UndoGroupEnded += id => { if (_active == session) Log("undo step " + id + " ended: the host closes its undo task"); };
             field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) RefreshInspector(); };
             field.Editor.CaretMoved += () => { if (_active == session) { UpdateWsLabel(); RefreshInspector(); } };
             field.GotFocus += (s, e) => Activate(session);
@@ -326,6 +366,10 @@ namespace SIL.TextEditing.Playground
             _active = session;
             _selectionState = string.Empty;
             _selectionLabel.Text = string.Empty;
+            _syncing = true;
+            _readOnlyCheck.IsChecked = session.Field.IsReadOnly;
+            _singleParagraphCheck.IsChecked = session.Field.SingleParagraph;
+            _syncing = false;
             Log("focus: field " + session.Number);
             UpdateWsLabel();
             RefreshInspector();
@@ -472,6 +516,11 @@ namespace SIL.TextEditing.Playground
             if (!editor.HasSelection)
             {
                 Log("format: " + label + " needs a selection");
+                return false;
+            }
+            if (!editor.CanFormatSelection)
+            {
+                Log("format: " + label + " refused, the selection holds text that may not be edited");
                 return false;
             }
             editor.Ordered(out var a, out var b);

@@ -19,6 +19,18 @@ namespace SIL.TextEditing
 
         public bool IsObject => ObjData != null;
 
+        /// <summary>The run's editable property (ktptEditable); a run without it is <see cref="RunEditable.Editable"/>.</summary>
+        public RunEditable Editable
+        {
+            get
+            {
+                if (!Props.TryGetInt(TextPropertyNumbers.Editable, out var v)) return RunEditable.Editable;
+                return v == TextPropertyNumbers.EditableNo ? RunEditable.NotEditable
+                    : v == TextPropertyNumbers.EditableSemi ? RunEditable.SemiEditable
+                    : RunEditable.Editable;
+            }
+        }
+
         public Run Clone()
         {
             return new Run { Text = Text, Ws = Ws, ObjData = ObjData, Props = Props.Clone() };
@@ -42,6 +54,10 @@ namespace SIL.TextEditing
             return new Run { Text = ObjectReplacement.ToString(), Ws = ws, ObjData = data };
         }
     }
+
+    /// <summary>The three values of FieldWorks' editable text property (ADR 0019). Semi-editable text ("type-ahead") takes typing
+    /// and deletion like editable text but cannot be formatted.</summary>
+    public enum RunEditable { NotEditable, Editable, SemiEditable }
 
     /// <summary>A run's place in a paragraph, as ITsString GetRunInfo reports it.</summary>
     public readonly struct RunSpan
