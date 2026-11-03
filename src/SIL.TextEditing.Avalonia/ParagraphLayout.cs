@@ -345,7 +345,9 @@ namespace SIL.TextEditing.Avalonia
             layout.ApplyBox(pf, width, paragraph.Rtl, foreground);
             if (pf.BulNumScheme != 0)
             {
-                var lf = FormatResolver.ResolveChar(paragraph, defaultRun, styles, baseWs.Size);
+                // The label takes the paragraph style's character format and the number font, not the first run's own look (its
+                // superscript, underline or background).
+                var lf = FormatResolver.ResolveChar(paragraph, new Run { Ws = defaultRun.Ws }, styles, baseWs.Size);
                 if (pf.BulNumFontInfo.Length > 0) lf.ApplyOver(BulletNumbers.ParseFontInfo(pf.BulNumFontInfo));
                 if (BulletNumbers.IsBullet(pf.BulNumScheme)) lf.FontFamily = BulletNumbers.BulletFont;
                 layout._labelFormat = lf;

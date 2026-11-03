@@ -448,6 +448,26 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void A_label_does_not_inherit_the_first_runs_superscript_underline_or_background() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 3000))
+            {
+                var plain = s.Field.ParagraphLayoutFor(Number1).LabelProperties!;
+                var run = s.Editor.Document.Paragraphs[Number1].Runs[0];
+                run.Props.SetInt(TextPropertyNumbers.Superscript, 1).SetInt(TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineDouble)
+                    .SetInt(TextPropertyNumbers.BackColor, 0x99FFFF).SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn);
+                s.Field.RefreshFromDocument();
+                var label = s.Field.ParagraphLayoutFor(Number1).LabelProperties!;
+                Assert.Equal(BaselineAlignment.Baseline, label.BaselineAlignment);
+                Assert.Null(label.TextDecorations);
+                Assert.Equal(plain.FontRenderingEmSize, label.FontRenderingEmSize);
+                Assert.Equal(plain.Typeface.Weight, label.Typeface.Weight);
+                // The text itself still has them.
+                Assert.Equal(BaselineAlignment.Superscript, s.Field.ParagraphLayoutFor(Number1).Lines[0].Line.TextRuns[0].Properties!.BaselineAlignment);
+            }
+        });
+
+        [Fact]
         public void Bullets_and_numbers_count_runs_of_paragraphs_and_use_the_before_and_after_text() => Headless.Run(() =>
         {
             Assert.Equal(4, BulletNumbers.Sequence(i => new ParaFormat { BulNumScheme = BulletNumbers.Arabic }, 3));
