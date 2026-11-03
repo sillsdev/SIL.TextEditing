@@ -22,11 +22,16 @@ namespace SIL.TextEditing
             return (before != null && before.Editable == RunEditable.Editable) || (after != null && after.Editable == RunEditable.Editable);
         }
 
-        /// <summary>True when every character in [a, b) is in an editable run (a collapsed range asks about the point).</summary>
+        /// <summary>True when every character in [a, b) is in an editable run (a collapsed range asks about the point), and
+        /// the text on both sides of every paragraph mark in the range may be edited at the mark, because a paragraph mark
+        /// belongs to both of its neighbours.</summary>
         public bool CanEditRange(TextPosition a, TextPosition b)
         {
             if (a.CompareTo(b) > 0) { var t = a; a = b; b = t; }
             if (a.Equals(b)) return IsEditableAt(a);
+            for (int pi = a.Paragraph; pi < b.Paragraph; pi++)
+                if (!IsEditableAt(new TextPosition(pi, Document.Paragraphs[pi].Length)) || !IsEditableAt(new TextPosition(pi + 1, 0)))
+                    return false;
             for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
             {
                 var p = Document.Paragraphs[pi];
