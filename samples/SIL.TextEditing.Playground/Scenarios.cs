@@ -215,9 +215,9 @@ namespace SIL.TextEditing.Playground
                 NamedStyle("en", "super", "Superscript"),
                 new Run { Ws = "en", Text = " and " },
                 NamedStyle("en", "sub", "Subscript"),
-                new Run { Ws = "en", Text = ", raised 4 pt: " },
+                new Run { Ws = "en", Text = ", raised 4 pt (not drawn yet): " },
                 Styled("en", "up", TextPropertyNumbers.Offset, 4000, mp),
-                new Run { Ws = "en", Text = ", lowered: " },
+                new Run { Ws = "en", Text = ", lowered (not drawn yet): " },
                 Styled("en", "down", TextPropertyNumbers.Offset, -4000, mp),
                 new Run { Ws = "en", Text = "." });
             var features = Runs("en", "",
@@ -248,6 +248,14 @@ namespace SIL.TextEditing.Playground
             arabic.Style = "Hanging";
             var arabicCentred = Para("ar", true, "ar", "فقرة عربية موسطة");
             arabicCentred.Style = "Centered";
+
+            const string ArabicSentence = "هذه فقرة عربية طويلة بما يكفي لتلتف على عدة أسطر عندما تكون النافذة ضيقة، وتبين أين تقع الهوامش والمسافات البادئة في الاتجاه من اليمين إلى اليسار. ";
+            Paragraph ArabicStyled(string style, string text)
+            {
+                var a = Para("ar", true, "ar", text);
+                a.Style = style;
+                return a;
+            }
             return Doc(heading, plain,
                 Styled("Centered", "Centred. " + Sentence), Styled("Right", "Right. " + Sentence), Styled("Trailing", "Trailing (right in LTR). " + Sentence),
                 Styled("Justified", "Justified, but not its last line. " + Sentence + Sentence),
@@ -258,7 +266,10 @@ namespace SIL.TextEditing.Playground
                 Styled("List Number", "First numbered paragraph. " + Sentence), Styled("List Number", "Second numbered paragraph."), Styled("List Number", "Third."),
                 Styled("List Roman", "In roman numerals."), Styled("List Roman", "Roman two."), Styled("List Letter", "A letter."), Styled("List Letter", "Another letter."),
                 Styled("List Bullet", "A bullet. " + Sentence), Styled("List Bullet", "Another bullet."),
-                arabic, arabicCentred);
+                arabic, arabicCentred,
+                ArabicStyled("List Number", "فقرة مرقمة: " + ArabicSentence), ArabicStyled("List Number", "فقرة مرقمة ثانية."),
+                Styled("List Flush", "Numbered with no hanging indent: the text starts after the number. " + Sentence),
+                ArabicStyled("Centered", ArabicSentence + ArabicSentence), ArabicStyled("List Bullet", "نقطة: " + ArabicSentence));
         }
 
         static Run Fonts(string family)

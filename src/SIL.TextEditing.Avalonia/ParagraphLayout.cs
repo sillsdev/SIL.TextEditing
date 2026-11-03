@@ -344,6 +344,7 @@ namespace SIL.TextEditing.Avalonia
             var paragraphProperties = new ParagraphProperties(paragraph.Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, defaultProperties, Alignment(pf.Align));
             double w = Math.Max(layout.ContentWidth, 10);
             double firstIndent = pf.FirstIndent;
+            layout.PlaceFirstLine(w, firstIndent);
             double lineHeightRule = pf.LineHeight;
             if (source.Text.Length == 0)
             {
@@ -369,9 +370,9 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (pf.MaxLines > 0 && layout.Lines.Count >= pf.MaxLines) { layout.Truncated = true; break; }
                 bool first = layout.Lines.Count == 0;
-                // The first line starts firstIndent further in (or, hanging, further out); the others use the whole text area.
-                double lineWidth = first ? Math.Max(w - firstIndent, 1) : w;
-                double lineX = layout.ContentLeft + (first && !paragraph.Rtl ? firstIndent : 0);
+                // The first line starts where PlaceFirstLine put it; the others use the whole text area.
+                double lineWidth = first ? layout._firstWidth : w;
+                double lineX = first ? layout._firstX : layout.ContentLeft;
                 var line = formatter.FormatLine(source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
                 double slot = layout.SlotHeight(line.Height);
@@ -387,6 +388,30 @@ namespace SIL.TextEditing.Avalonia
         }
 
         // ---- paragraph formatting ----
+
+        double _firstX, _firstWidth, _labelWidth;
+
+        /// <summary>The extra space a bullet or number needs after it: three points unless it ends with a space.</summary>
+        const double LabelGap = 3;
+
+        /// <summary>Works out where the first line's text starts and how wide it may be. The first indent moves it in (or, hanging,
+        /// out). A bullet or number sits at the first indent; if the hanging indent is wider than the label and its gap the first
+        /// line's text starts where the other lines' do, otherwise it starts after the label, as in FieldWorks.</summary>
+        void PlaceFirstLine(double w, double firstIndent)
+        {
+            _labelWidth = 0;
+            var label = LabelLine(LabelText);
+            if (label != null) _labelWidth = label.WidthIncludingTrailingWhitespace + (LabelText[LabelText.Length - 1] == ' ' ? 0 : LabelGap);
+            if (_labelWidth > 0 && firstIndent < 0 && -firstIndent > _labelWidth)
+            {
+                _firstWidth = w;
+                _firstX = ContentLeft;
+                return;
+            }
+            double taken = firstIndent + _labelWidth;
+            _firstWidth = Math.Max(w - taken, 1);
+            _firstX = ContentLeft + (Rtl ? 0 : taken);
+        }
 
         /// <summary>The space above the first line (space before, margin, border, padding) and below the last.</summary>
         public double TopInset { get; private set; }
@@ -460,22 +485,34 @@ namespace SIL.TextEditing.Avalonia
             var props = MakeProperties(_labelFormat, _labelWs, _labelWsTag, _labelForeground ?? Brushes.Black);
             var source = new ParagraphSource { Text = text };
             source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = text.Length, Properties = props });
-            _label = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props), null);
+            _label = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left), null);   // Left: drawn from its own x, not from the right of the 100000 wide line
             _labelText = text;
             return _label;
+        }
+
+        /// <summary>The bullet or number's box in paragraph coordinates, or an empty rectangle when the paragraph has none: its text only,
+        /// at the first indent on the leading side (the gap that follows it is not part of it).</summary>
+        public Rect LabelRect
+        {
+            get
+            {
+                var label = LabelLine(LabelText);
+                if (label == null) return default;
+                double lineTop = Lines.Count > 0 ? Lines[0].TextY : EmptyLineTop;
+                double width = label.WidthIncludingTrailingWhitespace;
+                double x = Rtl ? ContentLeft + ContentWidth - Format.FirstIndent - width : ContentLeft + Format.FirstIndent;
+                return new Rect(x, lineTop, width, label.Height);
+            }
         }
 
         /// <summary>Draws the paragraph's bullet or number at the start of its first line, on the same baseline.</summary>
         public void DrawLabel(DrawingContext context, double top)
         {
             var label = LabelLine(LabelText);
+            var box = LabelRect;
             if (label == null) return;
-            double lineTop, baseline, x;
-            if (Lines.Count > 0) { lineTop = Lines[0].TextY; baseline = Lines[0].Line.Baseline; }
-            else { lineTop = EmptyLineTop; baseline = label.Baseline; }
-            double firstLineLeft = ContentLeft + (Rtl ? 0 : Format.FirstIndent);
-            x = Rtl ? ContentLeft + ContentWidth - Format.FirstIndent - label.WidthIncludingTrailingWhitespace : firstLineLeft;
-            label.Draw(context, new Point(x, top + lineTop + baseline - label.Baseline));
+            double baseline = Lines.Count > 0 ? Lines[0].Line.Baseline : label.Baseline;
+            label.Draw(context, new Point(box.X, top + box.Y + baseline - label.Baseline));
         }
 
         // ---- model offset <-> effective offset; they differ only while a preedit is shown ----
@@ -666,8 +703,8 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The caret's x in a paragraph with no text: where the first line would start, following the alignment.</summary>
         double EmptyCaretX()
         {
-            double firstLeft = ContentLeft + (Rtl ? 0 : Format.FirstIndent);
-            double width = Math.Max(ContentWidth - Format.FirstIndent, 1);
+            double firstLeft = _firstX;
+            double width = _firstWidth;
             bool right = Format.Align == 3 || (Format.Align == 4 && !Rtl) || ((Format.Align == 0 || Format.Align == 5) && Rtl);
             if (Format.Align == 2) return firstLeft + width / 2;
             return right ? firstLeft + width : firstLeft;

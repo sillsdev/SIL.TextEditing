@@ -58,6 +58,7 @@ namespace SIL.TextEditing.Playground
             ["List Bullet"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-18), 1).SetInt(TextPropertyNumbers.BulNumScheme, 101),
             ["List Number"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-24), 1).SetInt(TextPropertyNumbers.BulNumScheme, 10)
                 .SetStr(TextPropertyNumbers.BulNumTxtAfter, "."),
+            ["List Flush"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.BulNumScheme, 10).SetStr(TextPropertyNumbers.BulNumTxtAfter, "."),
             ["List Roman"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-30), 1).SetInt(TextPropertyNumbers.BulNumScheme, 12)
                 .SetStr(TextPropertyNumbers.BulNumTxtBefore, "(").SetStr(TextPropertyNumbers.BulNumTxtAfter, ")"),
             ["List Letter"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-24), 1).SetInt(TextPropertyNumbers.BulNumScheme, 14)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -16,7 +17,8 @@ namespace SIL.TextEditing.Playground.Tests
     {
         // Paragraph indexes in Scenarios.ParagraphsDoc.
         const int Plain = 1, Centred = 2, Right = 3, Trailing = 4, Justified = 5, FirstLine = 6, Hanging = 7, Quote = 8, OwnCentred = 9,
-            Double = 10, Exact = 11, Boxed = 12, TwoLines = 13, Number1 = 14, Number3 = 16, Roman1 = 17, Letter1 = 19, Bullet1 = 21, Arabic = 23, ArabicCentred = 24;
+            Double = 10, Exact = 11, Boxed = 12, TwoLines = 13, Number1 = 14, Number3 = 16, Roman1 = 17, Letter1 = 19, Bullet1 = 21, Arabic = 23, ArabicCentred = 24,
+            ArabicNumber1 = 25, ArabicNumber2 = 26, Flush = 27, ArabicLong = 28, ArabicBullet = 29;
 
         static double Left(LineInfo li) => li.X + li.Line.Start;
 
@@ -147,22 +149,52 @@ namespace SIL.TextEditing.Playground.Tests
             return s.Field.TranslatePoint(new Point(r.X, s.Field.ParagraphTop(paragraph) + r.Y + r.Height / 2), TopLevel.GetTopLevel(s.Field)!)!.Value;
         }
 
-        internal static Color Pixel(Session s, double x, double y)
+        /// <summary>The field's rendered pixels, read once.</summary>
+        internal sealed class Shot
         {
-            var field = s.Field;
-            var size = new PixelSize((int)Math.Ceiling(field.Bounds.Width), (int)Math.Ceiling(field.Bounds.Height));
-            using (var bitmap = new RenderTargetBitmap(size))
+            readonly byte[] _buffer;
+            readonly int _stride;
+            public Shot(Session s)
             {
-                bitmap.Render(field);
-                int stride = size.Width * 4;
-                var buffer = new byte[stride * size.Height];
-                var handle = System.Runtime.InteropServices.GCHandle.Alloc(buffer, System.Runtime.InteropServices.GCHandleType.Pinned);
-                try { bitmap.CopyPixels(new PixelRect(0, 0, size.Width, size.Height), handle.AddrOfPinnedObject(), buffer.Length, stride); }
-                finally { handle.Free(); }
-                int o = (int)y * stride + (int)x * 4;
-                return Color.FromRgb(buffer[o + 2], buffer[o + 1], buffer[o]);
+                var field = s.Field;
+                var size = new PixelSize((int)Math.Ceiling(field.Bounds.Width), (int)Math.Ceiling(field.Bounds.Height));
+                Width = size.Width;
+                Height = size.Height;
+                using (var bitmap = new RenderTargetBitmap(size))
+                {
+                    bitmap.Render(field);
+                    _stride = size.Width * 4;
+                    _buffer = new byte[_stride * size.Height];
+                    var handle = System.Runtime.InteropServices.GCHandle.Alloc(_buffer, System.Runtime.InteropServices.GCHandleType.Pinned);
+                    try { bitmap.CopyPixels(new PixelRect(0, 0, size.Width, size.Height), handle.AddrOfPinnedObject(), _buffer.Length, _stride); }
+                    finally { handle.Free(); }
+                }
+            }
+
+            public int Width { get; }
+            public int Height { get; }
+
+            public Color At(double x, double y)
+            {
+                int o = (int)y * _stride + (int)x * 4;
+                return Color.FromRgb(_buffer[o + 2], _buffer[o + 1], _buffer[o]);
+            }
+
+            /// <summary>True when the pixel is dark: text ink on a white or pale page.</summary>
+            public bool IsInk(double x, double y) { var c = At(x, y); return c.R < 140 && c.G < 140 && c.B < 140; }
+
+            /// <summary>The columns in [from, to) that have dark ink anywhere in the rows [top, bottom).</summary>
+            public List<int> InkColumns(double from, double to, double top, double bottom)
+            {
+                var result = new List<int>();
+                for (int x = Math.Max(0, (int)Math.Floor(from)); x < Math.Min(Width, (int)Math.Ceiling(to)); x++)
+                    for (int y = Math.Max(0, (int)Math.Floor(top)); y < Math.Min(Height, (int)Math.Ceiling(bottom)); y++)
+                        if (IsInk(x, y)) { result.Add(x); break; }
+                return result;
             }
         }
+
+        internal static Color Pixel(Session s, double x, double y) => new Shot(s).At(x, y);
 
         [Fact]
         public void A_paragraph_colour_fills_the_box_and_borders_are_drawn_in_the_border_colour() => Headless.Run(() =>
@@ -207,19 +239,83 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(1, BulletNumbers.Sequence(i => s.Field.ParagraphLayoutFor(i).Format, Letter1));
                 Assert.True(BulletNumbers.IsBullet(s.Field.ParagraphLayoutFor(Bullet1).Format.BulNumScheme));
                 Assert.Equal("3.", BulletNumbers.Label(pl.Format, 3));
-                // List Number: leading 36, hanging 24: the label and the first line start at 36, the other lines at 60.
-                Assert.Equal(36, pl.Lines[0].X, 3);
+                // List Number: leading 36, hanging 24: the label sits at 36, in the hanging space; every line of text starts at 60.
                 Assert.Equal(60, pl.ContentLeft, 3);
-                double top = s.Field.ParagraphTop(Number3);
-                bool left = false, margin = true;
-                for (int x = 36; x < 46 && !left; x++)
-                    for (int y = (int)(top + pl.Lines[0].TextY); y < top + pl.Lines[0].TextY + pl.Lines[0].Line.Height && !left; y++)
-                        left = Pixel(s, x, y).R < 128;
-                Assert.True(left, "ink at the start of the first line");
-                for (int x = 0; x < 35; x++)
-                    for (int y = (int)top; y < top + pl.Height; y++)
-                        margin &= Pixel(s, x, y).R > 200;
-                Assert.True(margin, "nothing left of the hanging indent");
+                Assert.Equal(60, pl.Lines[0].X, 3);
+                Assert.Equal(36, pl.LabelRect.X, 3);
+            }
+        });
+
+        static double TextLeft(ParagraphLayout pl) => Left(pl.Lines[0]);
+        static double TextRight(ParagraphLayout pl) => Left(pl.Lines[0]) + pl.Lines[0].Line.Width;
+
+        [Fact]
+        public void The_label_of_a_list_paragraph_ends_before_its_first_line_of_text_starts_in_left_to_right_and_right_to_left_lists() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 3000))
+            {
+                foreach (int p in new[] { Number1, Number1 + 1, Number3, Roman1, Letter1, Bullet1, Bullet1 + 1, Flush })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    var label = pl.LabelRect;
+                    Assert.False(pl.Rtl);
+                    Assert.True(label.Right + 3 <= TextLeft(pl) + 0.01, "paragraph " + p + ": label " + label + " text from " + TextLeft(pl));
+                    Assert.True(label.X >= 0);
+                }
+                foreach (int p in new[] { ArabicNumber1, ArabicNumber2, ArabicBullet })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    var label = pl.LabelRect;
+                    Assert.True(pl.Rtl);
+                    Assert.True(label.X >= TextRight(pl) + 3 - 0.01, "paragraph " + p + ": label " + label + " text to " + TextRight(pl));
+                    Assert.True(label.Right <= pl.LayoutWidth + 0.01);
+                }
+                // With room in the hanging indent the first line lines up with the others; with none, the text starts after the label.
+                var hang = s.Field.ParagraphLayoutFor(Number1);
+                Assert.Equal(hang.ContentLeft, TextLeft(hang), 1);
+                Assert.Equal(hang.ContentLeft, Left(hang.Lines[1]), 1);
+                var flush = s.Field.ParagraphLayoutFor(Flush);
+                Assert.Equal(36, flush.LabelRect.X, 3);
+                Assert.Equal(flush.LabelRect.Right + 3, TextLeft(flush), 1);
+                Assert.Equal(36, Left(flush.Lines[1]), 1);
+                var arabic = s.Field.ParagraphLayoutFor(ArabicNumber1);
+                Assert.Equal(arabic.LayoutWidth - 36, arabic.LabelRect.Right, 3);
+            }
+        });
+
+        [Fact]
+        public void Pixels_show_the_label_clear_of_the_first_letter_in_left_to_right_and_right_to_left_lists() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 4500))
+            {
+                var shot = new Shot(s);
+                Assert.True(s.Field.ParagraphTop(ArabicBullet) < shot.Height, "the arabic list is inside the rendered area");
+                foreach (int p in new[] { Number3, Roman1, Letter1, Bullet1, Flush })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    double top = s.Field.ParagraphTop(p) + pl.Lines[0].TextY, bottom = top + pl.Lines[0].Line.Height;
+                    var label = pl.LabelRect;
+                    var labelInk = shot.InkColumns(label.X - 1, label.Right + 1, top, bottom);
+                    var textInk = shot.InkColumns(TextLeft(pl) - 1, TextLeft(pl) + 60, top, bottom);
+                    Assert.NotEmpty(labelInk);
+                    Assert.NotEmpty(textInk);
+                    Assert.True(labelInk.Max() < textInk.Min(), "paragraph " + p + ": label ink to " + labelInk.Max() + ", text ink from " + textInk.Min());
+                    // The columns between the label's ink and the text's ink are empty, and nothing is left of the label.
+                    Assert.Empty(shot.InkColumns(labelInk.Max() + 1, textInk.Min(), top, bottom));
+                    Assert.Empty(shot.InkColumns(0, label.X - 1, top, bottom));
+                }
+                foreach (int p in new[] { ArabicNumber1, ArabicBullet })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    double top = s.Field.ParagraphTop(p) + pl.Lines[0].TextY, bottom = top + pl.Lines[0].Line.Height;
+                    var label = pl.LabelRect;
+                    var labelInk = shot.InkColumns(label.X - 1, label.Right + 1, top, bottom);
+                    var textInk = shot.InkColumns(TextRight(pl) - 60, TextRight(pl) + 8, top, bottom);
+                    Assert.NotEmpty(labelInk);
+                    Assert.NotEmpty(textInk);
+                    Assert.True(labelInk.Min() > textInk.Max(), "paragraph " + p + ": label ink from " + labelInk.Min() + ", text ink to " + textInk.Max());
+                    Assert.Empty(shot.InkColumns(textInk.Max() + 1, labelInk.Min(), top, bottom));
+                }
             }
         });
 
