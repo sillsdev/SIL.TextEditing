@@ -6,11 +6,15 @@ behaviour is known (ADR 0001), the field matches it. Where it was not confirmed,
 one, and can change without superseding anything.
 
 - **Shift+Enter inserts a hard line break in both modes.** It puts a line separator (U+2028) at the caret, over any
-  selection, without splitting the paragraph, as FieldWorks does. This is the same in single-paragraph mode: Shift+Enter
-  never raises `EnterRequested`. Only plain Enter (and Enter with Ctrl, Alt or Meta) does, because the single-paragraph
-  field cannot split. The break ends its line: the caret before it stays on that line, a break at the end of a
-  paragraph leaves an empty last line the caret can sit on, and the break is never drawn. It is one undo step of its
-  own. Matches FieldWorks.
+  selection, without splitting the paragraph. In multi-paragraph mode this matches FieldWorks. In single-paragraph mode
+  it is our default: a FieldWorks view that does not accept Return hands Shift+Enter to its parent too, and its one
+  single-line widget that does insert a break does so for plain Enter. Either way Shift+Enter never raises
+  `EnterRequested`; only plain Enter (and Enter with Ctrl, Alt or Meta) does, because the single-paragraph field cannot
+  split. The break ends its line: the caret before it stays on that line, a break at the end of a paragraph leaves an
+  empty last line the caret can sit on, and the break is never drawn (a selection that covers only a break shows a small
+  block). It is one undo step of its own. When the paragraph has a line limit and already shows that many lines,
+  Shift+Enter is refused, so it never inserts a break the user cannot see. A trailing break whose empty line the limit
+  hides is not hidden text: the caret stops before it, typing there works, and Delete removes it.
 - **Tab and its variants leave only when the field has nowhere to go.** Tab, Shift+Tab, Ctrl+Tab and Ctrl+Shift+Tab
   first move to the next, previous, last or first editable place; they raise `LeaveRequested` only when there is none
   (ADR 0021). The event reports a logical direction (Next or Previous; in a right-to-left paragraph Left is Next) and
@@ -26,8 +30,14 @@ one, and can change without superseding anything.
   and per paste, but whether LCModel merges consecutive units was not confirmed (feature inventory, group 4).
 - **Paste in single-paragraph mode joins paragraphs with a space.** Non-empty pasted paragraphs become one, with one
   plain space between them unless whitespace is already there; empty paragraphs add nothing, so a trailing newline
-  leaves no trailing space. Separators inside a run (CR, LF, NEL, U+2029) become spaces; U+2028 is kept as a hard line
-  break. Typed text gets the same treatment. Default: FieldWorks' result for a single-line view was not confirmed.
+  leaves no trailing space. Separators inside a run (CR, LF, NEL, U+2029) collapse, across run and paragraph boundaries,
+  to one space, with none at the start or end of the pasted text; U+2028 is kept as a hard line break. Typed text gets the
+  same treatment. Pasting only separators over a selection replaces the selection with nothing. Default: FieldWorks'
+  result for a single-line view was not confirmed.
+- **Enter at an editable and read-only boundary can leave a paragraph the field cannot join back.** Enter between an
+  editable and a read-only run can make a paragraph that is entirely read-only. Backspace into it is refused (ADR 0019),
+  so only the host's undo removes it. Delete in an empty editable paragraph beside read-only text is refused for the
+  same reason.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

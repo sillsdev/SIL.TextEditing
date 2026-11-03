@@ -174,11 +174,13 @@ namespace SIL.TextEditing
             InOneUndoStep(() => TypeText(text));
         }
 
-        /// <summary>The hard line break FieldWorks inserts for Shift+Enter: U+2028, a line break inside the paragraph.</summary>
+        /// <summary>The hard line break Shift+Enter inserts: U+2028, a line break inside the paragraph (FieldWorks does the same in
+        /// multi-paragraph views).</summary>
         public const char LineSeparator = (char)0x2028;
 
         /// <summary>Shift+Enter: inserts a <see cref="LineSeparator"/> at the caret (over the selection) without splitting the
-        /// paragraph, in single-paragraph mode too. It is one undo step of its own.</summary>
+        /// paragraph, in single-paragraph mode too (there it is our default: FieldWorks passes Shift+Enter to the parent of a view
+        /// that does not accept Return). It is one undo step of its own.</summary>
         public void InsertLineBreak()
         {
             if (!CanEditSelectionOrCaret()) return;
