@@ -53,6 +53,7 @@ namespace SIL.TextEditing.Avalonia
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
             GotFocus += (o, e) => InvalidateVisual();
             LostFocus += (o, e) => InvalidateVisual();
+            ActualThemeVariantChanged += (o, e) => InvalidateVisual();
         }
 
         /// <summary>The editing session: caret, selection, active writing system and edit events.</summary>

@@ -1,8 +1,11 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Automation.Provider;
+using Avalonia.Headless;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Xunit;
 using static SIL.TextEditing.Tests.TestDocs;
 
@@ -69,5 +72,43 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(Color.Parse("#112233"), ((ISolidColorBrush)field.ResolveSelectionBrush()).Color);
             Assert.Equal(Color.Parse("#445566"), ((ISolidColorBrush)field.ResolveCaretBrush()).Color);
         });
+
+        [Fact]
+        public void Selection_and_caret_repaint_in_the_new_colour_when_the_theme_variant_changes() => Headless.Run(() =>
+        {
+            var (window, field) = Fixtures.InWindow(OneParagraph("abcdef"));
+            var light = new ResourceDictionary { ["TextControlSelectionHighlightColor"] = Color.Parse("#FF0000") };
+            var dark = new ResourceDictionary { ["TextControlSelectionHighlightColor"] = Color.Parse("#0000FF") };
+            field.Resources.ThemeDictionaries[ThemeVariant.Light] = light;
+            field.Resources.ThemeDictionaries[ThemeVariant.Dark] = dark;
+            window.RequestedThemeVariant = ThemeVariant.Light;
+            field.Editor.Anchor = new TextPosition(0, 0);
+            field.Editor.Caret = new TextPosition(0, 6);
+            field.InvalidateVisual();
+            Headless.Pump();
+            Assert.Equal(Color.Parse("#FF0000"), ((ISolidColorBrush)field.ResolveSelectionBrush()).Color);
+            var before = SelectionPixel(window);
+            window.RequestedThemeVariant = ThemeVariant.Dark;
+            Headless.Pump();
+            Assert.Equal(Color.Parse("#0000FF"), ((ISolidColorBrush)field.ResolveSelectionBrush()).Color);
+            var after = SelectionPixel(window);
+            Assert.True(before.R > before.B, "light variant paints red: " + before);
+            Assert.True(after.B > after.R, "dark variant repaints blue");
+            window.Close();
+        });
+
+        // A pixel inside the selection but outside the glyphs: just under the first line's top-left corner area.
+        static Color SelectionPixel(global::Avalonia.Controls.Window window)
+        {
+            Headless.Pump();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            using var frame = window.CaptureRenderedFrame()!;
+            using var fb = frame.Lock();
+            int x = fb.Size.Width > 0 ? 1 : 0, y = 1;
+            var px = System.Runtime.InteropServices.Marshal.ReadInt32(fb.Address, y * fb.RowBytes + x * 4);
+            bool bgra = fb.Format == global::Avalonia.Platform.PixelFormat.Bgra8888;
+            byte lo = (byte)px, hi = (byte)(px >> 16);
+            return Color.FromArgb((byte)(px >> 24), bgra ? hi : lo, (byte)(px >> 8), bgra ? lo : hi);
+        }
     }
 }
