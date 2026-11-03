@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace SIL.TextEditing
 {
@@ -141,9 +142,12 @@ namespace SIL.TextEditing
 
         // ---- editing ----
 
+        string Normalized(string text) => Document.Normalization is NormalizationForm form ? text.Normalize(form) : text;
+
         public void TypeText(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
+            text = Normalized(text);
             var parts = text.Replace("\r\n", "\n").Split('\n');
             for (int i = 0; i < parts.Length; i++)
             {
@@ -200,7 +204,7 @@ namespace SIL.TextEditing
                     ReplaceRange(Caret, new TextPosition(Caret.Paragraph + 1, 0), null, "join");
                 return;
             }
-            ReplaceRange(Caret, new TextPosition(Caret.Paragraph, GraphemeClusters.Next(p.Text, Caret.Offset)), null, "delete");
+            ReplaceRange(Caret, new TextPosition(Caret.Paragraph, GraphemeClusters.DeleteTarget(p.Text, Caret.Offset)), null, "delete");
         }
 
         /// <summary>
@@ -314,6 +318,13 @@ namespace SIL.TextEditing
         {
             if (fragment == null || fragment.Count == 0) return;
             Ordered(out var a, out var b);
+            if (Document.Normalization is NormalizationForm form)
+            {
+                fragment = fragment.Select(p => p.Clone(true)).ToList();
+                foreach (var p in fragment)
+                    foreach (var r in p.Runs)
+                        if (!r.IsObject) r.Text = r.Text.Normalize(form);
+            }
             ReplaceRange(a, b, fragment, "paste");
         }
 

@@ -61,6 +61,13 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Lay objects out as an EM SPACE and paint the picture over it: the workaround for Avalonia issue 21792
         /// (inline objects in right-to-left text are ordered wrongly in 11.3 and 12.1).</summary>
         public bool ObjectAsGlyph { get; set; }
+        /// <summary>The Unicode form the host stores (FormD for FieldWorks); null keeps text as it arrives. Forwards to
+        /// <see cref="SIL.TextEditing.Document.Normalization"/>.</summary>
+        public System.Text.NormalizationForm? Normalization
+        {
+            get => Editor.Document.Normalization;
+            set => Editor.Document.Normalization = value;
+        }
         public IBrush Foreground { get; set; } = Brushes.Black;
         public IBrush Background { get; set; } = Brushes.White;
         public bool ShowCaretAlways { get; set; }
@@ -241,30 +248,41 @@ namespace SIL.TextEditing.Avalonia
             finally { _moving = false; }
         }
 
-        /// <summary>Left or Right arrow: moves to the next visual caret stop, crossing paragraphs at the edges.</summary>
+        /// <summary>Left or Right arrow, logical as in FieldWorks: Left goes backwards in a left-to-right paragraph and
+        /// forwards in a right-to-left one, Right the reverse, one cluster at a time, even where that moves the caret the
+        /// other way on screen inside mixed text. At a paragraph edge it crosses into the neighbour. The caret is drawn at
+        /// the visual position of its logical offset: after a forward step on the trailing edge of the cluster passed,
+        /// after a backward step on the leading edge of the cluster now after the caret.</summary>
         public bool MoveVisualLeftRight(bool left, bool extend)
         {
             var c = Editor.Caret;
-            var pl = ParagraphLayoutFor(c.Paragraph);
+            var para = Editor.Document.Paragraphs[c.Paragraph];
+            bool forward = para.Rtl ? left : !left;
             if (!extend && Editor.HasSelection)
             {
                 Editor.Ordered(out var a, out var b);
-                var ra = ParagraphLayoutFor(a.Paragraph).CaretRect(a.Offset);
-                var rb = ParagraphLayoutFor(b.Paragraph).CaretRect(b.Offset);
-                Move(((ra.X <= rb.X) == left) && a.Paragraph == b.Paragraph ? a : (a.Paragraph == b.Paragraph ? b : (left ? a : b)), false);
+                Move(forward ? b : a, false);
                 return true;
             }
-            if (pl.MoveVisual(c.Offset, CurrentHit(), left, out var n, out var nh))
-            {
-                Move(new TextPosition(c.Paragraph, n), extend, false, nh);
-                return true;
-            }
-            bool forward = pl.Rtl ? left : !left;
             if (forward)
             {
-                if (c.Paragraph + 1 < Editor.Document.Paragraphs.Count) Move(new TextPosition(c.Paragraph + 1, 0), extend);
+                if (c.Offset < para.Length)
+                {
+                    int n = GraphemeClusters.Next(para.Text, c.Offset);
+                    Move(new TextPosition(c.Paragraph, n), extend, false, ParagraphLayoutFor(c.Paragraph).EndHit(n));
+                }
+                else if (c.Paragraph + 1 < Editor.Document.Paragraphs.Count) Move(new TextPosition(c.Paragraph + 1, 0), extend);
             }
-            else if (c.Paragraph > 0) Move(new TextPosition(c.Paragraph - 1, Editor.Document.Paragraphs[c.Paragraph - 1].Length), extend);
+            else if (c.Offset > 0)
+            {
+                int n = GraphemeClusters.Previous(para.Text, c.Offset);
+                Move(new TextPosition(c.Paragraph, n), extend, false, new CharacterHit(ParagraphLayoutFor(c.Paragraph).ToEffective(n)));
+            }
+            else if (c.Paragraph > 0)
+            {
+                int pi = c.Paragraph - 1, len = Editor.Document.Paragraphs[pi].Length;
+                Move(new TextPosition(pi, len), extend, false, ParagraphLayoutFor(pi).EndHit(len));
+            }
             return true;
         }
 
@@ -484,7 +502,7 @@ namespace SIL.TextEditing.Avalonia
             if (!Editor.HasSelection) return;
             var fragment = Editor.GetFragment();
             var xml = Interchange.ToXml(fragment);
-            var plain = string.Join("\n", fragment.Select(p => p.Text));
+            var plain = string.Join("\n", fragment.Select(p => p.Text)).Normalize(System.Text.NormalizationForm.FormC);
             await ClipboardCompat.SetAsync(TopLevel.GetTopLevel(this), plain, xml);
             if (cut) Editor.DeleteSelection("cut");
         }

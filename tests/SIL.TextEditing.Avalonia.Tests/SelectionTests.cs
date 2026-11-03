@@ -325,7 +325,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             var p = dir == "ltr" ? Ltr("abcdef ghi") : Rtl("مرحبا بالعالم");
             var f = Fixtures.Field(Doc(p), 400);
             f.Editor.SetCaret(new TextPosition(0, 3));
-            // Shift+Right moves the caret visually right: forward in LTR, backward in RTL.
+            // Arrows are logical (ADR 0018): Right is forward in LTR, backward in RTL.
             f.Press(Key.Right, KeyModifiers.Shift);
             f.Press(Key.Right, KeyModifiers.Shift);
             int expected = dir == "ltr" ? 5 : 1;

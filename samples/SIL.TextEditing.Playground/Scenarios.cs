@@ -44,7 +44,7 @@ namespace SIL.TextEditing.Playground
         {
             new Scenario(MixedBidi, "An LTR paragraph with Arabic inside, an RTL paragraph with Latin and digits inside, and a plain Arabic one. Try arrows, mouse selection and typing at the boundaries.", _ => One(MixedDoc())),
             new Scenario(IndicThai, "Hindi conjuncts and vowel signs, Tamil, and Thai with stacked marks. Carets must stop on clusters, never inside one.", _ => One(IndicDoc())),
-            new Scenario(Unicode, "Decomposed accents (NFD) next to composed ones, stacked combining marks, surrogate pairs, emoji sequences and private-use characters. The inspector shows the exact code units.", _ => One(UnicodeDoc())),
+            new Scenario(Unicode, "Decomposed accents (NFD) next to composed ones, stacked combining marks, surrogate pairs, emoji sequences and private-use characters. The inspector shows the exact code units.", _ => One(Stored(UnicodeDoc(), System.Text.NormalizationForm.FormD))),
             new Scenario(Picture, "Inline picture objects (U+FFFC with object data), in LTR text, in RTL text and side by side. Backspace or Delete removes a picture whole. Use Picture to insert one.", _ => One(PictureDoc())),
             new Scenario(Opaque, "Runs with property numbers the editor does not understand, and a paragraph style. They must survive typing, formatting, split, join, undo and copy and paste untouched.", _ => One(OpaqueDoc())),
             new Scenario(Long, "200 paragraphs in mixed writing systems: scrolling, caret at the far end, and cost of edits in a long document.", _ => One(LongDoc(200))),
@@ -58,6 +58,8 @@ namespace SIL.TextEditing.Playground
                 if (s.Name == name) return s;
             throw new ArgumentException("No scenario named " + name, nameof(name));
         }
+
+        static Document Stored(Document d, System.Text.NormalizationForm form) { d.Normalization = form; return d; }
 
         static List<Document> One(Document d) => new List<Document> { d };
 

@@ -9,7 +9,7 @@ using static SIL.TextEditing.Tests.TestDocs;
 namespace SIL.TextEditing.Avalonia.Tests
 {
     /// <summary>
-    /// Visual caret stops, arrow walks, hit testing and selection rectangles over mixed left-to-right and right-to-left
+    /// Visual caret stops, hit testing and selection rectangles over mixed left-to-right and right-to-left
     /// text, with expected values derived by hand from the bidi algorithm. Two Avalonia faults are pinned here as known
     /// failures so a fix shows up as a failing test (and the workaround can go): hit testing in a right-to-left
     /// paragraph on Avalonia 11.3, and inline objects in right-to-left text on both generations.
@@ -100,29 +100,6 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(c.Visual.Length + 1, stops.Count);
             for (int k = 0; k < stops.Count; k++)
                 Assert.True(allowed[k].Contains(stops[k].Offset), c.Name + " stop " + k + " offset " + stops[k].Offset + " not in {" + string.Join("|", allowed[k]) + "}");
-        });
-
-        [Theory, MemberData(nameof(Cases))]
-        public void Right_and_left_arrows_visit_the_visual_order(string which) => Headless.Run(() =>
-        {
-            var c = ByName(which);
-            var field = Build(c);
-            var layout = field.ParagraphLayoutFor(0);
-            var stops = layout.VisualStops(layout.Lines[0]);
-            var allowed = Allowed(c);
-            int n = c.Visual.Length;
-
-            field.Editor.SetCaret(new TextPosition(0, stops[0].Offset));
-            field.SetCaretHit(stops[0].Hit);
-            var right = new List<int> { field.Editor.Caret.Offset };
-            for (int k = 0; k < n + 2; k++) { field.Press(Key.Right); right.Add(field.Editor.Caret.Offset); }
-            for (int k = 0; k <= n; k++) Assert.True(allowed[k].Contains(right[k]), c.Name + " Right press " + k + ": " + string.Join(" ", right));
-
-            field.Editor.SetCaret(new TextPosition(0, stops[n].Offset));
-            field.SetCaretHit(stops[n].Hit);
-            var left = new List<int> { field.Editor.Caret.Offset };
-            for (int k = 0; k < n + 2; k++) { field.Press(Key.Left); left.Add(field.Editor.Caret.Offset); }
-            for (int k = 0; k <= n; k++) Assert.True(allowed[n - k].Contains(left[k]), c.Name + " Left press " + k + ": " + string.Join(" ", left));
         });
 
         [Fact]

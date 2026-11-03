@@ -59,6 +59,20 @@ The playground loads ready-made documents (Latin and Arabic, Indic and Thai shap
 pictures, unknown properties, 200 paragraphs, many fields) and shows what the model holds in a live inspector. A
 person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.md).
 
+## FieldWorks editing semantics (ADR 0018)
+
+- **Arrow keys are logical by paragraph direction.** Left goes backwards in a left-to-right paragraph and forwards in a
+  right-to-left one; Right is the reverse. Inside mixed-direction text the caret may therefore move the other way on
+  screen. Shift+arrows extend the same way, Ctrl+arrows go by word in logical order, Up/Down and Home/End are unchanged.
+  The caret is drawn at the visual place of its logical offset (trailing edge of the cluster passed after a forward step,
+  leading edge of the next cluster after a backward step).
+- **Backspace** removes one code point (a surrogate pair is one); an embedded object goes whole.
+- **Delete** removes one base character and the combining marks (Mn, Mc, Me) after it.
+- **Normalisation.** `Document.Normalization` (also `RichTextField.Normalization`) is a nullable `NormalizationForm`, null by
+  default (text is inserted as it arrives). A host sets `NormalizationForm.FormD` for FieldWorks: typed text, IME commits
+  and pasted text (plain or rich) are converted before insertion and the caret lands after the converted text. Plain
+  text the field puts on the clipboard is always NFC; the internal rich format keeps the stored form.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
@@ -69,7 +83,7 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
   keyboard (Shift+arrows, Ctrl+arrows by word, Home/End by visual line, Ctrl+Home/End, Ctrl+A, Up/Down with the
   preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with
   an apostrophe between letters inside the word; no dictionary, so Thai and Chinese are not split, and it is not UAX #29
-  word breaking. Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
+  word breaking. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
 - **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2);
   an inline object in right-to-left text is mis-ordered on both. `RichTextField.ObjectAsGlyph` is the workaround for the
   second.
