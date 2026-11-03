@@ -328,5 +328,17 @@ namespace SIL.TextEditing.Avalonia.Tests
             field.Press(Key.Back);
             Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
         });
+
+        [Fact]
+        public void A_preedit_before_a_trailing_break_draws_its_caret_after_the_preedit_on_the_same_line() => Headless.Run(() =>
+        {
+            var field = Field("ab" + Break, 2);
+            field.SetPreedit("xy", 2);
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.Equal(2, pl.PreeditAt);
+            var caret = Caret(field);
+            Assert.Equal(pl.Lines[0].TextY, caret.Y, 3);
+            Assert.Equal(pl.CaretRect(4, true).X, caret.X, 3);   // after "abxy"
+        });
     }
 }
