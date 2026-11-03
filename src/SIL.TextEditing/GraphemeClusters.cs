@@ -46,7 +46,7 @@ ClusterFuser.Fuse(text, starts);
 
         /// <summary>
         /// Where Backspace deletes back to: one code point, never half a surrogate pair, so a combining mark goes
-        /// before its base. (Delete removes a whole cluster; see <see cref="Next"/>.)
+        /// before its base. (Delete removes a base and its marks; see <see cref="DeleteTarget"/>.)
         /// </summary>
         public static int BackspaceTarget(string text, int index)
         {
@@ -54,6 +54,28 @@ ClusterFuser.Fuse(text, starts);
             int j = index - 1;
             if (j > 0 && char.IsLowSurrogate(text[j]) && char.IsHighSurrogate(text[j - 1])) j--;
             return j;
+        }
+
+        /// <summary>
+        /// Where Delete deletes forward to: one code point (a surrogate pair counts as one) plus every combining mark
+        /// that follows it (general category Mn, Mc or Me). Not a grapheme cluster: a Hangul syllable sequence or a
+        /// ZWJ emoji sequence goes one piece at a time.
+        /// </summary>
+        public static int DeleteTarget(string text, int index)
+        {
+            if (index >= text.Length) return text.Length;
+            int j = index + CodePointLength(text, index);
+            while (j < text.Length && IsCombiningMark(text, j)) j += CodePointLength(text, j);
+            return j;
+        }
+
+        static int CodePointLength(string text, int i) =>
+            char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]) ? 2 : 1;
+
+        static bool IsCombiningMark(string text, int i)
+        {
+            var c = CharUnicodeInfo.GetUnicodeCategory(text, i);
+            return c == UnicodeCategory.NonSpacingMark || c == UnicodeCategory.SpacingCombiningMark || c == UnicodeCategory.EnclosingMark;
         }
     }
 }

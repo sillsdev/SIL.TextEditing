@@ -100,9 +100,9 @@ namespace SIL.TextEditing.Avalonia
         public Func<string, IImage?>? ObjectImage;
         public bool ObjectAsGlyph;
 
-        public TextRun GetTextRun(int textSourceIndex)
+        public TextRun? GetTextRun(int textSourceIndex)
         {
-            if (textSourceIndex >= Text.Length) return new TextEndOfParagraph();
+            if (textSourceIndex >= Text.Length) return null;
             foreach (var s in Segments)
             {
                 if (textSourceIndex < s.Start || textSourceIndex >= s.End) continue;
@@ -112,7 +112,7 @@ namespace SIL.TextEditing.Avalonia
                     return new ObjectRun(s.Data == null ? null : ObjectImage?.Invoke(s.Data), new Size(32, 24), s.Properties);
                 return new TextCharacters(Text.AsMemory(textSourceIndex, s.End - textSourceIndex), s.Properties);
             }
-            return new TextEndOfParagraph();
+            return null;
         }
     }
 
@@ -284,13 +284,21 @@ namespace SIL.TextEditing.Avalonia
             return effective > PreeditAt ? PreeditAt : effective;
         }
 
-        /// <summary>The last caret offset of a line (effective): the formatter counts the end-of-paragraph marker (+1) and
-        /// any newline in the line length.</summary>
+        /// <summary>The last caret offset of a line (effective): any newline is part of the line length (the text source ends by
+        /// returning null, not a TextEndOfParagraph run: that run broke caret distances in a final right-to-left run).</summary>
         public int TextEnd(LineInfo line) => Math.Min(line.End - line.Line.NewLineLength, EffectiveText.Length);
 
-        LineInfo? LineOf(int effective)
+        LineInfo? LineOf(int effective, CharacterHit? hit = null)
         {
             if (Lines.Count == 0) return null;
+            // Caret affinity at a soft wrap: the end of a wrapped line and the start of the next line are the same
+            // offset. A hit that trails the last character of a line (FirstCharacterIndex inside it) means "end of that
+            // line"; a plain hit at the offset means "start of the next".
+            if (hit.HasValue && hit.Value.TrailingLength > 0 && hit.Value.FirstCharacterIndex + hit.Value.TrailingLength == effective)
+            {
+                foreach (var l in Lines)
+                    if (hit.Value.FirstCharacterIndex >= l.Start && hit.Value.FirstCharacterIndex < l.End) return l;
+            }
             for (int i = 0; i < Lines.Count; i++)
             {
                 var l = Lines[i];
@@ -300,10 +308,32 @@ namespace SIL.TextEditing.Avalonia
             return Lines[Lines.Count - 1];
         }
 
+        /// <summary>The caret hit meaning "after the last character before <paramref name="effective"/>": at a soft wrap it
+        /// keeps the caret at the end of the line instead of the start of the next one.</summary>
+        CharacterHit TrailingHit(int effective)
+        {
+            int p = GraphemeClusters.Previous(EffectiveText, effective);
+            return new CharacterHit(p, effective - p);
+        }
+
+        /// <summary>The caret hit that puts the caret after the character before <paramref name="modelOffset"/>, on the
+        /// same line as that character (the end of a selected word at a soft wrap, say).</summary>
+        public CharacterHit EndHit(int modelOffset) => modelOffset <= 0 ? new CharacterHit(0) : TrailingHit(ToEffective(modelOffset));
+
+        /// <summary>The model offset and caret hit for the end of a line: at a soft wrap the caret stays on this line.</summary>
+        public int LineEnd(int lineIndex, out CharacterHit hit)
+        {
+            var li = Lines[lineIndex];
+            int max = TextEnd(li);
+            bool last = lineIndex == Lines.Count - 1;
+            hit = !last && max > li.Start ? TrailingHit(max) : new CharacterHit(max);
+            return ToModel(max);
+        }
+
         public Rect CaretRect(int modelOffset, bool effective = false, CharacterHit? hit = null)
         {
             int e = effective ? modelOffset : ToEffective(modelOffset);
-            var li = LineOf(e);
+            var li = LineOf(e, hit);
             if (li == null) return new Rect(Rtl ? LayoutWidth : 0, 0, 1, Height);
             var h = hit.HasValue && hit.Value.FirstCharacterIndex + hit.Value.TrailingLength == e ? hit.Value : new CharacterHit(e);
             double x = li.Line.GetDistanceFromCharacterHit(h);
@@ -311,9 +341,20 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>The model offset at a point in paragraph coordinates.</summary>
-        public int HitTest(Point point)
+        public int HitTest(Point point) => HitTestDetailed(point).Offset;
+
+        /// <summary>The result of hit testing: the caret offset, the caret hit that says on which side of a soft wrap or
+        /// bidi boundary the caret sits, and the offset of the character under the point.</summary>
+        public struct HitResult
         {
-            if (Lines.Count == 0) return 0;
+            public int Offset;
+            public CharacterHit CaretHit;
+            public int Character;
+        }
+
+        public HitResult HitTestDetailed(Point point)
+        {
+            if (Lines.Count == 0) return default;
             var li = Lines[Lines.Count - 1];
             foreach (var l in Lines)
             {
@@ -322,9 +363,18 @@ namespace SIL.TextEditing.Avalonia
             var h = li.Line.GetCharacterHitFromDistance(point.X);
             int e = h.FirstCharacterIndex + h.TrailingLength;
             int max = TextEnd(li);
-            if (e > max && li != Lines[Lines.Count - 1]) e = max;
-            int m = ToModel(e);
-            return Math.Max(0, Math.Min(Paragraph.Length, m));
+            bool last = li == Lines[Lines.Count - 1];
+            var caretHit = h;
+            if (e > max) { e = max; caretHit = new CharacterHit(e); }
+            if (!last && e == max && max > li.Start) caretHit = TrailingHit(max);
+            int ch = Math.Max(0, Math.Min(Math.Max(0, EffectiveText.Length - 1), h.FirstCharacterIndex));
+            var result = new HitResult
+            {
+                Offset = Math.Max(0, Math.Min(Paragraph.Length, ToModel(e))),
+                Character = Math.Max(0, Math.Min(Math.Max(0, Paragraph.Length - 1), ToModel(ch))),
+                CaretHit = PreeditAt >= 0 ? new CharacterHit(e) : caretHit,
+            };
+            return result;
         }
 
         public List<Rect> SelectionRects(int from, int to)
@@ -371,51 +421,22 @@ namespace SIL.TextEditing.Avalonia
             var result = new List<Stop>();
             foreach (var c in candidates.OrderBy(s => s.X))
                 if (result.Count == 0 || Math.Abs(result[result.Count - 1].X - c.X) > 0.5) result.Add(c);
+            if (line != Lines[Lines.Count - 1] && max > line.Start)
+            {
+                // The stop at the end of a soft-wrapped line keeps the caret on this line.
+                for (int i = 0; i < result.Count; i++)
+                    if (result[i].Offset == max) result[i] = new Stop { Hit = TrailingHit(max), Offset = max, X = result[i].X };
+            }
             return result;
         }
 
         /// <summary>Model offsets and x of the visual stops of a line, left to right.</summary>
         public List<KeyValuePair<int, double>> Stops(LineInfo line) => VisualStops(line).Select(s => new KeyValuePair<int, double>(s.Offset, s.X)).ToList();
 
-        public int LineIndexOf(int modelOffset)
+        public int LineIndexOf(int modelOffset, CharacterHit? hit = null)
         {
-            var li = LineOf(ToEffective(modelOffset));
+            var li = LineOf(ToEffective(modelOffset), hit);
             return li == null ? 0 : Lines.IndexOf(li);
-        }
-
-        /// <summary>Visual movement: gives the new model offset and caret hit (affinity), or false when the edge of the
-        /// paragraph is reached.</summary>
-        public bool MoveVisual(int modelOffset, CharacterHit? currentHit, bool toLeft, out int newOffset, out CharacterHit newHit)
-        {
-            newOffset = -1;
-            newHit = default;
-            int e = ToEffective(modelOffset);
-            var li = LineOf(e);
-            if (li == null) return false;
-            var h = currentHit.HasValue && currentHit.Value.FirstCharacterIndex + currentHit.Value.TrailingLength == e ? currentHit.Value : new CharacterHit(e);
-            double cx = li.Line.GetDistanceFromCharacterHit(h);
-            Stop? best = null;
-            foreach (var s in VisualStops(li))
-            {
-                if (toLeft) { if (s.X < cx - 0.5 && (best == null || s.X > best.Value.X)) best = s; }
-                else { if (s.X > cx + 0.5 && (best == null || s.X < best.Value.X)) best = s; }
-            }
-            if (best != null)
-            {
-                newOffset = ToModel(best.Value.Offset);
-                newHit = best.Value.Hit;
-                return true;
-            }
-            int index = Lines.IndexOf(li);
-            bool forward = Rtl ? toLeft : !toLeft;
-            int ni = index + (forward ? 1 : -1);
-            if (ni < 0 || ni >= Lines.Count) return false;
-            var stops = VisualStops(Lines[ni]);
-            if (stops.Count == 0) return false;
-            var pick = toLeft ? stops[stops.Count - 1] : stops[0];
-            newOffset = ToModel(pick.Offset);
-            newHit = pick.Hit;
-            return true;
         }
 
         /// <summary>Where object runs sit in glyph mode: the bounds of the EM SPACE stand-in, with the object data.</summary>

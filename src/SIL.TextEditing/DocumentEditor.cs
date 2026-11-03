@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace SIL.TextEditing
 {
@@ -141,9 +142,12 @@ namespace SIL.TextEditing
 
         // ---- editing ----
 
+        string Normalized(string text) => Document.Normalization is NormalizationForm form ? TextNormalizer.Normalize(text, form) : text;
+
         public void TypeText(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
+            text = Normalized(text);
             var parts = text.Replace("\r\n", "\n").Split('\n');
             for (int i = 0; i < parts.Length; i++)
             {
@@ -200,7 +204,7 @@ namespace SIL.TextEditing
                     ReplaceRange(Caret, new TextPosition(Caret.Paragraph + 1, 0), null, "join");
                 return;
             }
-            ReplaceRange(Caret, new TextPosition(Caret.Paragraph, GraphemeClusters.Next(p.Text, Caret.Offset)), null, "delete");
+            ReplaceRange(Caret, new TextPosition(Caret.Paragraph, GraphemeClusters.DeleteTarget(p.Text, Caret.Offset)), null, "delete");
         }
 
         /// <summary>
@@ -210,6 +214,14 @@ namespace SIL.TextEditing
         /// </summary>
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
+            // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
+            if (fragment != null && Document.Normalization is NormalizationForm form)
+            {
+                fragment = fragment.Select(p => p.Clone()).ToList();
+                foreach (var p in fragment)
+                    foreach (var r in p.Runs)
+                        if (!r.IsObject) r.Text = TextNormalizer.Normalize(r.Text, form);
+            }
             var d = Begin(a.Paragraph, b.Paragraph, label);
             var first = Document.Paragraphs[a.Paragraph];
             var last = Document.Paragraphs[b.Paragraph];
@@ -249,7 +261,9 @@ namespace SIL.TextEditing
                     newParas.Add(merged);
                     for (int i = 1; i < fragment.Count - 1; i++) newParas.Add(fragment[i].Clone(false));
                     var lastNew = tail.Clone(false);
+                    // The last fragment paragraph holds the tail's new neighbour text, so its Style and Props travel together.
                     lastNew.Style = fragment[fragment.Count - 1].Style;
+                    lastNew.Props = fragment[fragment.Count - 1].Props.Clone();
                     var runs = fragment[fragment.Count - 1].Runs.Select(r => r.Clone()).ToList();
                     int off = runs.Sum(r => r.Text.Length);
                     runs.AddRange(tail.Runs.Select(r => r.Clone()));
@@ -276,7 +290,7 @@ namespace SIL.TextEditing
             Paragraph left, right;
             if (off == 0)
             {
-                left = new Paragraph { Style = orig.Style, Rtl = orig.Rtl, DefaultWs = orig.DefaultWs };
+                left = new Paragraph { Style = orig.Style, Rtl = orig.Rtl, DefaultWs = orig.DefaultWs, Props = orig.Props.Clone() };
                 right = orig.Clone();
             }
             else
@@ -305,7 +319,7 @@ namespace SIL.TextEditing
                 var p = Document.Paragraphs[pi];
                 int s = pi == a.Paragraph ? a.Offset : 0;
                 int e = pi == b.Paragraph ? b.Offset : p.Length;
-                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Id = p.Id, Runs = p.Slice(s, e) });
+                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = p.Slice(s, e) });
             }
             return result;
         }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace SIL.TextEditing
 {
@@ -27,9 +28,13 @@ namespace SIL.TextEditing
     {
         public List<Paragraph> Paragraphs { get; } = new List<Paragraph>();
 
+        /// <summary>The Unicode form the host stores (<see cref="NormalizationForm.FormD"/> for FieldWorks). Typed, composed and
+        /// pasted text is converted to it before insertion. Null (the default) leaves text as it arrives.</summary>
+        public NormalizationForm? Normalization { get; set; }
+
         public Document Clone()
         {
-            var d = new Document();
+            var d = new Document { Normalization = Normalization };
             foreach (var p in Paragraphs) d.Paragraphs.Add(p.Clone());
             return d;
         }

@@ -13,6 +13,7 @@
   <!-- One source tree, two Avalonia generations. The version per target framework comes from Directory.Packages.props. -->
   <ItemGroup>
     <PackageReference Include="Avalonia" />
+    <PackageReference Include="SIL.WritingSystems" />
     <ProjectReference Include="..\SIL.TextEditing\SIL.TextEditing.csproj" />
   </ItemGroup>
 </Project>

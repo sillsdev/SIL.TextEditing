@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Sample: FieldWorks' shape, a WinForms form on net48 hosting Avalonia 11.3.17 through WinFormsAvaloniaControlHost. -->
+  <!-- Sample: FieldWorks' shape, a WinForms form on net48 hosting the playground (Avalonia 11.3.17) through WinFormsAvaloniaControlHost, between two WinForms TextBoxes. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
@@ -17,6 +17,7 @@
     <PackageReference Include="Avalonia.Win32.Interoperability" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <ProjectReference Include="..\..\src\SIL.TextEditing.Avalonia\SIL.TextEditing.Avalonia.csproj" />
-    <Compile Include="..\Common\SampleUi.cs" Link="SampleUi.cs" />
+    <ProjectReference Include="..\SIL.TextEditing.Playground\SIL.TextEditing.Playground.csproj" />
+    <Compile Include="..\Common\PlaygroundApp.cs" Link="PlaygroundApp.cs" />
   </ItemGroup>
 </Project>

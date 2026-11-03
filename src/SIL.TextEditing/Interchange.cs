@@ -26,19 +26,16 @@ namespace SIL.TextEditing
                 foreach (var p in paragraphs)
                 {
                     w.WriteStartElement("Para");
-                    w.WriteAttributeString("id", p.Id.ToString());
                     w.WriteAttributeString("style", p.Style);
                     w.WriteAttributeString("rtl", p.Rtl ? "1" : "0");
                     w.WriteAttributeString("defws", p.DefaultWs);
+                    WriteBag(w, p.Props);
                     foreach (var r in p.Runs)
                     {
                         w.WriteStartElement("Run");
                         w.WriteAttributeString("ws", r.Ws);
                         if (r.ObjData != null) w.WriteAttributeString("objdata", Escape(r.ObjData));
-                        foreach (var kv in r.Props.IntProps)
-                            w.WriteAttributeString(IntPrefix + kv.Key.ToString(CultureInfo.InvariantCulture), kv.Value.Variation.ToString(CultureInfo.InvariantCulture) + ":" + kv.Value.Value.ToString(CultureInfo.InvariantCulture));
-                        foreach (var kv in r.Props.StrProps)
-                            w.WriteAttributeString(StrPrefix + kv.Key.ToString(CultureInfo.InvariantCulture), Escape(kv.Value));
+                        WriteBag(w, r.Props);
                         w.WriteString(Escape(r.Text));
                         w.WriteEndElement();
                     }
@@ -60,29 +57,16 @@ namespace SIL.TextEditing
             {
                 var p = new Paragraph
                 {
-                    Id = Guid.Parse(pe.GetAttribute("id")),
                     Style = pe.GetAttribute("style"),
                     Rtl = pe.GetAttribute("rtl") == "1",
                     DefaultWs = pe.GetAttribute("defws"),
                 };
+                ReadBag(pe, p.Props);
                 foreach (XmlElement re in pe.SelectNodes("Run")!)
                 {
                     var r = new Run { Ws = re.GetAttribute("ws"), Text = Unescape(re.InnerText) };
                     if (re.HasAttribute("objdata")) r.ObjData = Unescape(re.GetAttribute("objdata"));
-                    foreach (XmlAttribute a in re.Attributes)
-                    {
-                        if (a.Name.StartsWith(IntPrefix, StringComparison.Ordinal))
-                        {
-                            int split = a.Value.IndexOf(':');
-                            r.Props.SetInt(int.Parse(a.Name.Substring(IntPrefix.Length), CultureInfo.InvariantCulture),
-                                int.Parse(a.Value.Substring(split + 1), CultureInfo.InvariantCulture),
-                                int.Parse(a.Value.Substring(0, split), CultureInfo.InvariantCulture));
-                        }
-                        else if (a.Name.StartsWith(StrPrefix, StringComparison.Ordinal))
-                        {
-                            r.Props.SetStr(int.Parse(a.Name.Substring(StrPrefix.Length), CultureInfo.InvariantCulture), Unescape(a.Value));
-                        }
-                    }
+                    ReadBag(re, r.Props);
                     p.Runs.Add(r);
                 }
                 result.Add(p);
@@ -90,14 +74,43 @@ namespace SIL.TextEditing
             return result;
         }
 
+        static void WriteBag(XmlWriter w, PropertyBag bag)
+        {
+            foreach (var kv in bag.IntProps)
+                w.WriteAttributeString(IntPrefix + kv.Key.ToString(CultureInfo.InvariantCulture), kv.Value.Variation.ToString(CultureInfo.InvariantCulture) + ":" + kv.Value.Value.ToString(CultureInfo.InvariantCulture));
+            foreach (var kv in bag.StrProps)
+                w.WriteAttributeString(StrPrefix + kv.Key.ToString(CultureInfo.InvariantCulture), Escape(kv.Value));
+        }
+
+        static void ReadBag(XmlElement element, PropertyBag bag)
+        {
+            foreach (XmlAttribute a in element.Attributes)
+            {
+                if (a.Name.StartsWith(IntPrefix, StringComparison.Ordinal))
+                {
+                    int split = a.Value.IndexOf(':');
+                    bag.SetInt(int.Parse(a.Name.Substring(IntPrefix.Length), CultureInfo.InvariantCulture),
+                        int.Parse(a.Value.Substring(split + 1), CultureInfo.InvariantCulture),
+                        int.Parse(a.Value.Substring(0, split), CultureInfo.InvariantCulture));
+                }
+                else if (a.Name.StartsWith(StrPrefix, StringComparison.Ordinal))
+                {
+                    bag.SetStr(int.Parse(a.Name.Substring(StrPrefix.Length), CultureInfo.InvariantCulture), Unescape(a.Value));
+                }
+            }
+        }
+
         // XML cannot carry control characters; U+FFFC is legal but escaped too so it survives readers that drop it.
         static string Escape(string s)
         {
             var sb = new StringBuilder();
-            foreach (var c in s)
+            for (int i = 0; i < s.Length; i++)
             {
+                char c = s[i];
+                bool pair = char.IsHighSurrogate(c) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]);
+                if (pair) { sb.Append(c).Append(s[++i]); continue; }
                 if (c == '\\') sb.Append("\\\\");
-                else if (c < 0x20 || c == Run.ObjectReplacement) sb.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
+                else if (c < 0x20 || char.IsSurrogate(c) || c == Run.ObjectReplacement) sb.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
                 else sb.Append(c);
             }
             return sb.ToString();
@@ -131,7 +144,7 @@ namespace SIL.TextEditing
             {
                 var p = document.Paragraphs[i];
                 if (i > 0) sb.Append(',');
-                sb.Append("{\"id\":\"").Append(p.Id).Append("\",\"style\":").Append(Quote(p.Style)).Append(",\"rtl\":").Append(p.Rtl ? "true" : "false").Append(",\"runs\":[");
+                sb.Append("{\"key\":").Append(p.Key == null ? "null" : Quote(Convert.ToString(p.Key, System.Globalization.CultureInfo.InvariantCulture) ?? "")).Append(",\"style\":").Append(Quote(p.Style)).Append(",\"rtl\":").Append(p.Rtl ? "true" : "false").Append(",\"runs\":[");
                 int pos = 0;
                 for (int k = 0; k < p.Runs.Count; k++)
                 {

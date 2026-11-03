@@ -4,16 +4,21 @@ using System.Text;
 
 namespace SIL.TextEditing
 {
-    /// <summary>A paragraph: an identity, paragraph properties and a list of runs. Offsets are UTF-16 indices into
+    /// <summary>A paragraph: a host key, paragraph properties and a list of runs. Offsets are UTF-16 indices into
     /// the concatenated run text, equal to ITsString offsets.</summary>
     public sealed class Paragraph
     {
-        public Guid Id { get; set; } = Guid.NewGuid();
+        /// <summary>The host's opaque key for this paragraph (in FieldWorks the StTxtPara GUID); null until the host assigns one.
+        /// The field never interprets it: it only moves it by the split and join rules of <see cref="DocumentEditor"/>.</summary>
+        public object? Key { get; set; }
         public string Style { get; set; } = string.Empty;
         /// <summary>Paragraph direction (ktptRightToLeft).</summary>
         public bool Rtl { get; set; }
         /// <summary>The writing system used for typing in an empty paragraph.</summary>
         public string DefaultWs { get; set; } = "en";
+        /// <summary>The paragraph's own text properties (an ITsString paragraph's StyleRules), opaque like a run's bag: copied through
+        /// every split, join and slice, never interpreted. <see cref="Style"/> and <see cref="Rtl"/> are the two the field reads.</summary>
+        public PropertyBag Props { get; set; } = new PropertyBag();
         public List<Run> Runs { get; set; } = new List<Run>();
 
         public int Length
@@ -37,10 +42,10 @@ namespace SIL.TextEditing
             }
         }
 
-        public Paragraph Clone(bool keepId = true)
+        public Paragraph Clone(bool keepKey = true)
         {
-            var p = new Paragraph { Style = Style, Rtl = Rtl, DefaultWs = DefaultWs };
-            if (keepId) p.Id = Id;
+            var p = new Paragraph { Style = Style, Rtl = Rtl, DefaultWs = DefaultWs, Props = Props.Clone() };
+            if (keepKey) p.Key = Key;
             foreach (var r in Runs) p.Runs.Add(r.Clone());
             return p;
         }
