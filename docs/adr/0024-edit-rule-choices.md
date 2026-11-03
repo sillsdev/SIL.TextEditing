@@ -12,9 +12,10 @@ one, and can change without superseding anything.
   `EnterRequested`; only plain Enter (and Enter with Ctrl, Alt or Meta) does, because the single-paragraph field cannot
   split. The break ends its line: the caret before it stays on that line, a break at the end of a paragraph leaves an
   empty last line the caret can sit on, and the break is never drawn (a selection that covers only a break shows a small
-  block). It is one undo step of its own. When the paragraph has a line limit and already shows that many lines,
-  Shift+Enter is refused; the paragraph that keeps its format is the first one of the selection, so a selection that
-  spans paragraphs is refused too. Text can still end up hidden behind a break from another source (paste, typed
+  block). It is one undo step of its own. Shift+Enter is refused when the paragraph that survives the replace has a line limit and already shows that
+  many lines, or when the selection spans paragraphs and that paragraph has a line limit. The survivor is the first
+  paragraph of the selection, except that when the selection starts at the start of the first paragraph and leaves text in
+  the last, the last one survives (the non-empty side wins), so its limit decides. Text can still end up hidden behind a break from another source (paste, typed
   U+2028, a join of paragraphs with different limits, host data): Delete at the visible end removes that break and the
   text shows again. Reflow after a mid-text break, which can push text past the limit, is tracked in issue #26. A trailing
   break whose empty line the limit hides is not hidden text: the caret stops before it, typing there works, and Delete
