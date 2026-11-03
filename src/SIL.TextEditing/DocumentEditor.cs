@@ -261,7 +261,9 @@ namespace SIL.TextEditing
                     newParas.Add(merged);
                     for (int i = 1; i < fragment.Count - 1; i++) newParas.Add(fragment[i].Clone(false));
                     var lastNew = tail.Clone(false);
+                    // The last fragment paragraph holds the tail's new neighbour text, so its Style and Props travel together.
                     lastNew.Style = fragment[fragment.Count - 1].Style;
+                    lastNew.Props = fragment[fragment.Count - 1].Props.Clone();
                     var runs = fragment[fragment.Count - 1].Runs.Select(r => r.Clone()).ToList();
                     int off = runs.Sum(r => r.Text.Length);
                     runs.AddRange(tail.Runs.Select(r => r.Clone()));
@@ -288,7 +290,7 @@ namespace SIL.TextEditing
             Paragraph left, right;
             if (off == 0)
             {
-                left = new Paragraph { Style = orig.Style, Rtl = orig.Rtl, DefaultWs = orig.DefaultWs };
+                left = new Paragraph { Style = orig.Style, Rtl = orig.Rtl, DefaultWs = orig.DefaultWs, Props = orig.Props.Clone() };
                 right = orig.Clone();
             }
             else
@@ -317,7 +319,7 @@ namespace SIL.TextEditing
                 var p = Document.Paragraphs[pi];
                 int s = pi == a.Paragraph ? a.Offset : 0;
                 int e = pi == b.Paragraph ? b.Offset : p.Length;
-                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Runs = p.Slice(s, e) });
+                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = p.Slice(s, e) });
             }
             return result;
         }
