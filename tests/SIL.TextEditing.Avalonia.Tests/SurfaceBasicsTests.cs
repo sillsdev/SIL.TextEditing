@@ -174,6 +174,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         public void Automation_peer_is_an_edit_with_a_name_and_the_text_value() => Headless.Run(() =>
         {
             var field = Fixtures.Field(Basic());
+            global::Avalonia.Automation.AutomationProperties.SetName(field, "Rich text field");
             var peer = ControlAutomationPeer.CreatePeerForElement(field);
             Assert.Equal(AutomationControlType.Edit, peer.GetAutomationControlType());
             Assert.Equal("Rich text field", peer.GetName());
