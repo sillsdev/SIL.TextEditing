@@ -732,7 +732,8 @@ namespace SIL.TextEditing.Avalonia
                     if (ef <= te && et > te && te < li.End && !li.IsEmpty && EffectiveText[te] == HardLineBreak)
                     {
                         var caret = CaretRect(te, true);
-                        result.Add(new Rect(caret.X, caret.Y, Math.Max(3, caret.Height * 0.25), caret.Height));
+                        double w = Math.Max(3, caret.Height * 0.25);
+                        result.Add(new Rect(Rtl ? caret.X - w : caret.X, caret.Y, w, caret.Height));   // the break follows the text, which is to the left in a right-to-left paragraph
                     }
                     continue;
                 }

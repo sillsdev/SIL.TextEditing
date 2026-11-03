@@ -1,3 +1,4 @@
+using System.Linq;
 using Avalonia;
 using Avalonia.Input;
 using Xunit;
@@ -309,13 +310,14 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
-        public void Text_after_a_break_that_the_limit_hides_still_refuses_Delete_and_typing_at_the_visible_end() => Headless.Run(() =>
+        public void Text_after_a_break_that_the_limit_hides_refuses_typing_at_the_visible_end_and_Delete_only_removes_the_break() => Headless.Run(() =>
         {
             var field = Limited("ab" + Break + "cd", 2, 1);
             Assert.True(field.ParagraphLayoutFor(0).Truncated);
-            field.Press(Key.Delete);
             field.Type("x");
             Assert.Equal("ab" + Break + "cd", Text(field));
+            field.Press(Key.Delete);   // removes only the invisible break
+            Assert.Equal("abcd", Text(field));
         });
 
         [Fact]
@@ -356,6 +358,114 @@ namespace SIL.TextEditing.Avalonia.Tests
             // a break-only middle line
             var mid = Field("a" + Break + Break + "b", 0).ParagraphLayoutFor(0);
             Assert.Single(mid.SelectionRects(2, 3));
+        });
+
+        static Paragraph Limit(string text, int maxLines)
+        {
+            var p = Para("en", "en", text);
+            p.Props.SetInt(TextPropertyNumbers.MaxLines, maxLines);
+            return p;
+        }
+
+        static string[] Texts(RichTextField field) => field.Editor.Document.Paragraphs.Select(x => x.Text).ToArray();
+
+        [Fact]
+        public void Shift_Enter_over_a_selection_that_spans_limited_paragraphs_is_refused() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(Doc(Limit("", 1), Limit("ab", 1)), 520);
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Left, KeyModifiers.Shift);   // the selection is the boundary; the caret sits in the first paragraph
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "", "ab" }, Texts(field));
+            var forward = Fixtures.Field(Doc(Limit("", 1), Limit("ab", 1)), 520);   // and the other way round: caret in the second paragraph
+            forward.Editor.SetCaret(new TextPosition(0, 0));
+            forward.Press(Key.Right, KeyModifiers.Shift);
+            forward.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "", "ab" }, Texts(forward));
+        });
+
+        [Fact]
+        public void Shift_Enter_over_a_selection_spanning_paragraphs_is_refused_when_the_first_has_two_full_lines() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(Doc(Limit("ab" + Break + "cd", 2), Limit("ef", 2)), 520);
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Left, KeyModifiers.Shift);
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "ab" + Break + "cd", "ef" }, Texts(field));
+        });
+
+        [Fact]
+        public void Shift_Enter_in_an_empty_one_line_paragraph_is_refused_but_an_empty_two_line_paragraph_takes_it() => Headless.Run(() =>
+        {
+            var one = Limited("", 0, 1);
+            one.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal("", Text(one));
+            var two = Limited("", 0, 2);   // an empty paragraph is one line, so one more fits
+            two.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(Break, Text(two));
+        });
+
+        static void AssertRecoveredByDelete(RichTextField field, string afterDelete, int caret)
+        {
+            field.Editor.SetCaret(new TextPosition(0, caret));
+            Assert.True(field.ParagraphLayoutFor(0).Truncated);
+            field.Press(Key.Delete);
+            Assert.Equal(afterDelete, Text(field));
+            Assert.False(field.ParagraphLayoutFor(0).Truncated);
+            field.Type("z");
+            Assert.Contains("z", Text(field));
+        }
+
+        [Fact]
+        public void Host_text_with_a_break_the_limit_hides_is_recovered_by_Delete_at_the_visible_end() => Headless.Run(() =>
+        {
+            AssertRecoveredByDelete(Limited("ab" + Break + "cd", 2, 1), "abcd", 2);
+            var start = Limited(Break + "y", 0, 1);
+            Assert.Equal(0, start.ParagraphLayoutFor(0).VisibleEnd);
+            AssertRecoveredByDelete(start, "y", 0);
+        });
+
+        [Fact]
+        public void Typed_U2028_at_the_limit_makes_text_that_Delete_brings_back() => Headless.Run(() =>
+        {
+            var field = Limited("ab", 1, 1);
+            field.Type(Break);
+            Assert.Equal("a" + Break + "b", Text(field));
+            AssertRecoveredByDelete(field, "ab", field.Editor.Caret.Offset);
+        });
+
+        [Fact]
+        public void Pasted_U2028_at_the_limit_makes_text_that_Delete_brings_back() => Headless.Run(async () =>
+        {
+            var (window, field) = Fixtures.InWindow(Doc(Limit("ab", 1)));
+            try
+            {
+                field.Editor.SetCaret(new TextPosition(0, 2));
+                await ClipboardCompat.SetAsync(global::Avalonia.Controls.TopLevel.GetTopLevel(field), "x" + Break + "y", "");
+                await field.PasteAsync();
+                Assert.Equal("abx" + Break + "y", Text(field));
+                AssertRecoveredByDelete(field, "abxy", field.Editor.Caret.Offset);
+            }
+            finally { window.Close(); }
+        });
+
+        [Fact]
+        public void Backspacing_to_the_start_of_hidden_text_leaves_a_state_Delete_recovers() => Headless.Run(() =>
+        {
+            var field = Limited("abx" + Break + "y", 3, 1);
+            for (int i = 0; i < 3; i++) field.Press(Key.Back);
+            Assert.Equal(Break + "y", Text(field));
+            AssertRecoveredByDelete(field, "y", 0);
+        });
+
+        [Fact]
+        public void Selecting_only_a_hard_break_in_a_right_to_left_paragraph_draws_the_block_inside_the_line() => Headless.Run(() =>
+        {
+            var pl = Field("ab" + Break + "cd", 0, rtl: true).ParagraphLayoutFor(0);
+            var block = Assert.Single(pl.SelectionRects(2, 3));
+            var caret = pl.CaretRect(2, true);
+            Assert.True(block.X >= 0 && block.Right <= 520.01, "the block is inside the field");
+            Assert.True(block.Right <= caret.X + 0.01, "in a right-to-left paragraph it is left of the caret");
         });
     }
 }

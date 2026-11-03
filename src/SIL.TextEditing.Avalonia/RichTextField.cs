@@ -605,10 +605,10 @@ namespace SIL.TextEditing.Avalonia
                     return true;
                 }
                 case Key.Back: if (!JoinsIntoHiddenEnd()) Editor.Backspace(); return true;
-                case Key.Delete: if (!AtHiddenEdge()) Editor.DeleteForward(); return true;
+                case Key.Delete: if (!AtHiddenEdge() || NextIsBreak()) Editor.DeleteForward(); return true;
                 case Key.Enter when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0:
                     // A hard line break inside the paragraph in either mode (our default in single-paragraph mode); refused when its
-                    // new line would be hidden by the line limit, so it never inserts a break the user cannot see.
+                    // new line would be hidden by the line limit.
                     if (!AtHiddenEdge() && !BreakWouldBeHidden()) Editor.InsertLineBreak();
                     return true;
                 case Key.Enter:
@@ -639,12 +639,26 @@ namespace SIL.TextEditing.Avalonia
             return pl.Truncated && c.Offset >= pl.VisibleEnd;
         }
 
-        /// <summary>True when the paragraph already shows as many lines as its limit allows, so a hard line break would add a line
-        /// nobody can see.</summary>
+        /// <summary>True when a hard line break would add a line nobody can see. The paragraph that keeps its format is the first one
+        /// of the selection (a selection that spans paragraphs is replaced by one paragraph of the first one's head, the break and the
+        /// last one's tail), so that paragraph's limit decides: refused when the selection spans paragraphs, or when the paragraph
+        /// already shows as many lines as its limit allows (an empty paragraph is one line).</summary>
         bool BreakWouldBeHidden()
         {
-            var pl = ParagraphLayoutFor(Editor.Caret.Paragraph);
-            return pl.Format.MaxLines > 0 && pl.Lines.Count >= pl.Format.MaxLines;
+            Editor.Ordered(out var first, out var last);
+            var pl = ParagraphLayoutFor(first.Paragraph);
+            int max = pl.Format.MaxLines;
+            return max > 0 && (first.Paragraph != last.Paragraph || Math.Max(1, pl.Lines.Count) >= max);
+        }
+
+        /// <summary>True when the character after the caret is a hard line break. Delete may remove it at the visible end of a
+        /// line-limited paragraph: it only removes an invisible separator and so shows the text behind it.</summary>
+        bool NextIsBreak()
+        {
+            if (Editor.HasSelection) return false;
+            var c = Editor.Caret;
+            var text = Editor.Document.Paragraphs[c.Paragraph].Text;
+            return c.Offset < text.Length && text[c.Offset] == DocumentEditor.LineSeparator;
         }
 
         /// <summary>True when Backspace at the start of a paragraph would join it onto a line-limited paragraph whose end is hidden:
