@@ -26,7 +26,6 @@ namespace SIL.TextEditing
                 foreach (var p in paragraphs)
                 {
                     w.WriteStartElement("Para");
-                    if (p.Key != null) w.WriteAttributeString("key", Convert.ToString(p.Key, System.Globalization.CultureInfo.InvariantCulture));
                     w.WriteAttributeString("style", p.Style);
                     w.WriteAttributeString("rtl", p.Rtl ? "1" : "0");
                     w.WriteAttributeString("defws", p.DefaultWs);
@@ -60,7 +59,6 @@ namespace SIL.TextEditing
             {
                 var p = new Paragraph
                 {
-                    Key = pe.HasAttribute("key") ? pe.GetAttribute("key") : null,
                     Style = pe.GetAttribute("style"),
                     Rtl = pe.GetAttribute("rtl") == "1",
                     DefaultWs = pe.GetAttribute("defws"),
@@ -94,10 +92,13 @@ namespace SIL.TextEditing
         static string Escape(string s)
         {
             var sb = new StringBuilder();
-            foreach (var c in s)
+            for (int i = 0; i < s.Length; i++)
             {
+                char c = s[i];
+                bool pair = char.IsHighSurrogate(c) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]);
+                if (pair) { sb.Append(c).Append(s[++i]); continue; }
                 if (c == '\\') sb.Append("\\\\");
-                else if (c < 0x20 || c == Run.ObjectReplacement) sb.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
+                else if (c < 0x20 || char.IsSurrogate(c) || c == Run.ObjectReplacement) sb.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
                 else sb.Append(c);
             }
             return sb.ToString();

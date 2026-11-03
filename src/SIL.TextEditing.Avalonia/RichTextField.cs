@@ -23,6 +23,7 @@ namespace SIL.TextEditing.Avalonia
         readonly InputMethodClient _ime;
         double _layoutWidth = -1;
         string? _preedit;
+        string? _heldHigh;
         int _preeditCursor;
         double _goalX = -1;
         CharacterHit? _hit;
@@ -257,7 +258,7 @@ namespace SIL.TextEditing.Avalonia
         {
             var c = Editor.Caret;
             var para = Editor.Document.Paragraphs[c.Paragraph];
-            bool forward = para.Rtl ? left : !left;
+            bool forward = para.Rtl ? left : !left;   // the direction of the paragraph at the selection's focus (the caret)
             if (!extend && Editor.HasSelection)
             {
                 Editor.Ordered(out var a, out var b);
@@ -408,8 +409,18 @@ namespace SIL.TextEditing.Avalonia
             return false;
         }
 
+        /// <summary>Inserts a held lone high surrogate as it is (it never got its low half).</summary>
+        void FlushHeld()
+        {
+            if (_heldHigh == null) return;
+            var h = _heldHigh;
+            _heldHigh = null;
+            Editor.TypeText(h);
+        }
+
         protected override void OnKeyDown(KeyEventArgs e)
         {
+            FlushHeld();
             if (HandleKey(e.Key, e.KeyModifiers)) e.Handled = true;
             base.OnKeyDown(e);
         }
@@ -417,18 +428,35 @@ namespace SIL.TextEditing.Avalonia
         protected override void OnTextInput(TextInputEventArgs e)
         {
             if (string.IsNullOrEmpty(e.Text)) return;
+            var text = e.Text!;
+            // A platform may deliver one emoji as two events, one per UTF-16 half. A lone high surrogate is held until the
+            // next text arrives so the pair is normalised and inserted whole; any other input flushes it unchanged first.
+            if (_heldHigh != null)
+            {
+                if (char.IsLowSurrogate(text[0])) text = _heldHigh + text;
+                else FlushHeld();
+                _heldHigh = null;
+            }
+            if (TextNormalizer.EndsWithLoneHighSurrogate(text))
+            {
+                _heldHigh = text.Substring(text.Length - 1);
+                text = text.Substring(0, text.Length - 1);
+                e.Handled = true;
+                if (text.Length == 0) return;
+            }
             if (_preedit != null)
             {
                 _preedit = null;
                 _layouts[Editor.Caret.Paragraph]?.Dispose();
                 _layouts[Editor.Caret.Paragraph] = null;
             }
-            Editor.TypeText(e.Text!);
+            Editor.TypeText(text);
             e.Handled = true;
         }
 
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
+            FlushHeld();
             var props = e.GetCurrentPoint(this).Properties;
             if (!props.IsLeftButtonPressed && !props.IsRightButtonPressed) return;
             Focus();
@@ -502,7 +530,7 @@ namespace SIL.TextEditing.Avalonia
             if (!Editor.HasSelection) return;
             var fragment = Editor.GetFragment();
             var xml = Interchange.ToXml(fragment);
-            var plain = string.Join("\n", fragment.Select(p => p.Text)).Normalize(System.Text.NormalizationForm.FormC);
+            var plain = TextNormalizer.Normalize(string.Join("\n", fragment.Select(p => p.Text)), System.Text.NormalizationForm.FormC);
             await ClipboardCompat.SetAsync(TopLevel.GetTopLevel(this), plain, xml);
             if (cut) Editor.DeleteSelection("cut");
         }

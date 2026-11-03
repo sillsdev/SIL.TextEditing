@@ -175,5 +175,72 @@ namespace SIL.TextEditing.Avalonia.Tests
             }
             finally { window.Close(); }
         });
+
+        [Fact]
+        public void A_selection_across_paragraphs_of_different_direction_collapses_by_the_direction_at_its_focus() => Headless.Run(() =>
+        {
+            var rtlPara = Para("ar", "ar", "\u0639\u0631\u0628");
+            rtlPara.Rtl = true;
+            var f = Fixtures.Field(Doc(Para("en", "en", "abc"), rtlPara), 520);
+            // Focus (the caret) in the RTL paragraph: Left is forward there, so it collapses to the later end, the caret.
+            f.Editor.Anchor = new TextPosition(0, 1);
+            f.Editor.SetCaret(new TextPosition(1, 2), true);
+            f.Press(Key.Left);
+            Assert.Equal(new TextPosition(1, 2), f.Editor.Caret);
+            Assert.False(f.Editor.HasSelection);
+            // Focus in the LTR paragraph (selection made backwards): Left is backward there, so it collapses to the earlier end.
+            f.Editor.Anchor = new TextPosition(1, 2);
+            f.Editor.SetCaret(new TextPosition(0, 1), true);
+            f.Press(Key.Left);
+            Assert.Equal(new TextPosition(0, 1), f.Editor.Caret);
+            f.Editor.Anchor = new TextPosition(1, 2);
+            f.Editor.SetCaret(new TextPosition(0, 1), true);
+            f.Press(Key.Right);
+            Assert.Equal(new TextPosition(1, 2), f.Editor.Caret);
+        });
+
+        [Fact]
+        public void An_emoji_typed_as_two_text_input_events_arrives_whole_and_does_not_throw() => Headless.Run(() =>
+        {
+            var f = Field("ab", false);
+            f.Normalization = NormalizationForm.FormD;
+            f.Editor.SetCaret(new TextPosition(0, 1));
+            f.Type("\uD83D");
+            Assert.Equal("ab", f.Editor.Document.Paragraphs[0].Text);   // held until the low half arrives
+            f.Type("\uDE00");
+            Assert.Equal("a\U0001F600b", f.Editor.Document.Paragraphs[0].Text);
+            Assert.Equal(3, f.Editor.Caret.Offset);
+            f.Type("\uD83D");                                          // a high half that never gets its partner
+            f.Type("x");
+            Assert.Equal("a\U0001F600\uD83Dxb", f.Editor.Document.Paragraphs[0].Text);
+        });
+
+        [Fact]
+        public void An_ime_commit_and_plain_text_paste_are_normalised_and_a_lone_surrogate_copies_without_throwing() => Headless.Run(async () =>
+        {
+            var (window, field) = Fixtures.InWindow(OneParagraph("ab"));
+            try
+            {
+                field.Normalization = NormalizationForm.FormD;
+                field.Editor.SetCaret(new TextPosition(0, 1));
+                field.SetPreedit("e", 1);                       // composing, then the commit arrives as text input
+                field.Type("\u00E9");
+                Assert.Equal("ae\u0301b", field.Editor.Document.Paragraphs[0].Text);
+                Assert.Equal(3, field.Editor.Caret.Offset);
+
+                var top = global::Avalonia.Controls.TopLevel.GetTopLevel(field);
+                await ClipboardCompat.SetAsync(top, "\u00E9\u00E9", "");
+                field.Editor.SetCaret(new TextPosition(0, 4));
+                await field.PasteAsync();
+                Assert.Equal("ae\u0301be\u0301e\u0301", field.Editor.Document.Paragraphs[0].Text);
+                Assert.Equal(8, field.Editor.Caret.Offset);
+
+                field.Editor.Document.Paragraphs[0].Runs[0].Text += "\uD83D";
+                field.Editor.Anchor = new TextPosition(0, 0);
+                field.Editor.SetCaret(new TextPosition(0, field.Editor.Document.Paragraphs[0].Length), true);
+                await field.CopyAsync(false);                   // no exception
+            }
+            finally { window.Close(); }
+        });
     }
 }

@@ -142,7 +142,7 @@ namespace SIL.TextEditing
 
         // ---- editing ----
 
-        string Normalized(string text) => Document.Normalization is NormalizationForm form ? text.Normalize(form) : text;
+        string Normalized(string text) => Document.Normalization is NormalizationForm form ? TextNormalizer.Normalize(text, form) : text;
 
         public void TypeText(string text)
         {
@@ -214,6 +214,14 @@ namespace SIL.TextEditing
         /// </summary>
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
+            // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
+            if (fragment != null && Document.Normalization is NormalizationForm form)
+            {
+                fragment = fragment.Select(p => p.Clone()).ToList();
+                foreach (var p in fragment)
+                    foreach (var r in p.Runs)
+                        if (!r.IsObject) r.Text = TextNormalizer.Normalize(r.Text, form);
+            }
             var d = Begin(a.Paragraph, b.Paragraph, label);
             var first = Document.Paragraphs[a.Paragraph];
             var last = Document.Paragraphs[b.Paragraph];
@@ -309,7 +317,7 @@ namespace SIL.TextEditing
                 var p = Document.Paragraphs[pi];
                 int s = pi == a.Paragraph ? a.Offset : 0;
                 int e = pi == b.Paragraph ? b.Offset : p.Length;
-                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Key = p.Key, Runs = p.Slice(s, e) });
+                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Runs = p.Slice(s, e) });
             }
             return result;
         }
@@ -318,13 +326,6 @@ namespace SIL.TextEditing
         {
             if (fragment == null || fragment.Count == 0) return;
             Ordered(out var a, out var b);
-            if (Document.Normalization is NormalizationForm form)
-            {
-                fragment = fragment.Select(p => p.Clone(true)).ToList();
-                foreach (var p in fragment)
-                    foreach (var r in p.Runs)
-                        if (!r.IsObject) r.Text = r.Text.Normalize(form);
-            }
             ReplaceRange(a, b, fragment, "paste");
         }
 
