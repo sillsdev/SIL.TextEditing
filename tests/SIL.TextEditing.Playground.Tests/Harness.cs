@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Media;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
@@ -103,6 +104,41 @@ namespace SIL.TextEditing.Playground.Tests
                 Field.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyUpEvent, Key = key, KeyModifiers = modifiers, Source = Field });
             }
             Headless.Pump();
+        }
+
+        /// <summary>The middle of the character at a model index, in the coordinates of the window.</summary>
+        public Point PointAt(int paragraph, int index)
+        {
+            var pl = Field.ParagraphLayoutFor(paragraph);
+            var li = pl.Lines[pl.LineIndexOf(index)];
+            double x0 = li.Line.GetDistanceFromCharacterHit(new CharacterHit(index)), x1 = li.Line.GetDistanceFromCharacterHit(new CharacterHit(index, 1));
+            return Field.TranslatePoint(new Point((x0 + x1) / 2, Field.ParagraphTop(paragraph) + li.Y + li.Line.Height / 2), _window)!.Value;
+        }
+
+        /// <summary>Presses the left button <paramref name="clicks"/> times at a window point (a double click is 2), as a
+        /// mouse does; an earlier click elsewhere never counts towards this one.</summary>
+        public void MouseClick(Point at, int clicks = 1, RawInputModifiers modifiers = RawInputModifiers.None)
+        {
+            ResetClicks();
+            for (int i = 0; i < clicks; i++) { _window.MouseDown(at, MouseButton.Left, modifiers); _window.MouseUp(at, MouseButton.Left, modifiers); }
+            Headless.Pump();
+        }
+
+        public void MouseDrag(Point from, Point to)
+        {
+            ResetClicks();
+            _window.MouseDown(from, MouseButton.Left);
+            _window.MouseMove(new Point((from.X + to.X) / 2, (from.Y + to.Y) / 2), RawInputModifiers.LeftMouseButton);
+            _window.MouseMove(to, RawInputModifiers.LeftMouseButton);
+            _window.MouseUp(to, MouseButton.Left);
+            Headless.Pump();
+        }
+
+        void ResetClicks()
+        {
+            var far = new Point(_window.Width + 400, _window.Height + 400);
+            _window.MouseDown(far, MouseButton.Left);
+            _window.MouseUp(far, MouseButton.Left);
         }
 
         public void Caret(int paragraph, int offset)

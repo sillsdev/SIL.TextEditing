@@ -86,7 +86,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
-        public void Formatter_text_length_is_model_length_plus_the_end_of_paragraph_marker() => Headless.Run(() =>
+        public void Formatter_text_length_is_the_model_length_because_the_source_ends_without_an_end_of_paragraph_run() => Headless.Run(() =>
         {
             var p = new Paragraph();
             p.Runs.Add(new Run { Ws = "en", Text = "a\U0001F600" });
@@ -94,7 +94,22 @@ namespace SIL.TextEditing.Avalonia.Tests
             p.Runs.Add(new Run { Ws = "fr", Text = "éz" });
             var field = Fixtures.Field(Doc(p), 600);
             var layout = field.ParagraphLayoutFor(0);
-            Assert.Equal(p.Length + 1, layout.Lines.Sum(l => l.Length));
+            Assert.Equal(p.Length, layout.Lines.Sum(l => l.Length));
+        });
+
+        [Fact]
+        public void Caret_stops_inside_a_line_that_ends_in_a_right_to_left_run_are_all_distinct() => Headless.Run(() =>
+        {
+            // With a TextEndOfParagraph run after the text, Avalonia (11.3.17 and 12.1.2) reports every offset of a final
+            // right-to-left run at the same x, so a purely Arabic paragraph had one caret stop. The source now ends by
+            // returning null instead.
+            var p = Para("ar", "ar", "مرحبا بالعالم");
+            p.Rtl = true;
+            var field = Fixtures.Field(Doc(p), 400);
+            var layout = field.ParagraphLayoutFor(0);
+            var stops = layout.VisualStops(layout.Lines[0]);
+            Assert.Equal(p.Length + 1, stops.Count);
+            Assert.True(stops.Zip(stops.Skip(1), (a, b) => b.X - a.X).All(d => d > 2));
         });
 
         [Fact]

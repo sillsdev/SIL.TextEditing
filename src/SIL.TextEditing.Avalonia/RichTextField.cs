@@ -28,6 +28,11 @@ namespace SIL.TextEditing.Avalonia
         CharacterHit? _hit;
         TextPosition _hitPosition;
         bool _dragging;
+        bool _moving;
+        DragUnit _dragUnit;
+        TextPosition _unitStart, _unitEnd;
+
+        enum DragUnit { Character, Word, Paragraph }
 
         static RichTextField()
         {
@@ -166,7 +171,7 @@ namespace SIL.TextEditing.Avalonia
         {
             var c = Editor.Caret;
             var pl = ParagraphLayoutFor(c.Paragraph);
-            var r = pl.CaretRect(c.Offset, false, _hitPosition.Equals(c) ? _hit : null);
+            var r = pl.CaretRect(c.Offset, false, CurrentHit());
             if (_preedit != null) r = pl.CaretRect(c.Offset + _preeditCursor, false);
             return new Rect(r.X, r.Y + ParagraphTop(c.Paragraph), 1.5, r.Height);
         }
@@ -212,6 +217,7 @@ namespace SIL.TextEditing.Avalonia
 
         void OnCaretMoved()
         {
+            if (!_moving) { _goalX = -1; _hit = null; }
             InvalidateVisual();
             _ime.NotifyCaret();
             if (Editor.HasSelection)
@@ -222,10 +228,17 @@ namespace SIL.TextEditing.Avalonia
             else SelectionWsState?.Invoke(Editor.ActiveWs);
         }
 
-        void Move(TextPosition p, bool extend, bool keepGoal = false)
+        /// <summary>The caret hit (affinity) that applies to the current caret, or null when it has none.</summary>
+        CharacterHit? CurrentHit() => _hitPosition.Equals(Editor.Caret) ? _hit : null;
+
+        void Move(TextPosition p, bool extend, bool keepGoal = false, CharacterHit? hit = null)
         {
             if (!keepGoal) _goalX = -1;
-            Editor.SetCaret(p, extend);
+            _hit = hit;
+            _hitPosition = p;
+            _moving = true;
+            try { Editor.SetCaret(p, extend); }
+            finally { _moving = false; }
         }
 
         /// <summary>Left or Right arrow: moves to the next visual caret stop, crossing paragraphs at the edges.</summary>
@@ -241,11 +254,9 @@ namespace SIL.TextEditing.Avalonia
                 Move(((ra.X <= rb.X) == left) && a.Paragraph == b.Paragraph ? a : (a.Paragraph == b.Paragraph ? b : (left ? a : b)), false);
                 return true;
             }
-            if (pl.MoveVisual(c.Offset, _hitPosition.Equals(c) ? _hit : null, left, out var n, out var nh))
+            if (pl.MoveVisual(c.Offset, CurrentHit(), left, out var n, out var nh))
             {
-                Move(new TextPosition(c.Paragraph, n), extend);
-                _hit = nh;
-                _hitPosition = Editor.Caret;
+                Move(new TextPosition(c.Paragraph, n), extend, false, nh);
                 return true;
             }
             bool forward = pl.Rtl ? left : !left;
@@ -257,13 +268,34 @@ namespace SIL.TextEditing.Avalonia
             return true;
         }
 
+        /// <summary>Ctrl+Left or Ctrl+Right: to the previous or next word start (see <see cref="WordBreaks"/>). The word
+        /// order is logical, so in a right-to-left paragraph Ctrl+Left goes to the next word. At a paragraph edge it
+        /// crosses into the neighbouring paragraph.</summary>
+        public void MoveByWord(bool left, bool extend)
+        {
+            var c = Editor.Caret;
+            var para = Editor.Document.Paragraphs[c.Paragraph];
+            bool backward = para.Rtl ? !left : left;
+            if (backward)
+            {
+                if (c.Offset > 0) Move(new TextPosition(c.Paragraph, WordBreaks.PreviousWordStart(para.Text, c.Offset)), extend);
+                else if (c.Paragraph > 0) Move(new TextPosition(c.Paragraph - 1, Editor.Document.Paragraphs[c.Paragraph - 1].Length), extend);
+            }
+            else
+            {
+                if (c.Offset < para.Length) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para.Text, c.Offset)), extend);
+                else if (c.Paragraph + 1 < Editor.Document.Paragraphs.Count) Move(new TextPosition(c.Paragraph + 1, 0), extend);
+            }
+        }
+
         void MoveVertical(bool down, bool extend)
         {
             var c = Editor.Caret;
             var pl = ParagraphLayoutFor(c.Paragraph);
-            var r = pl.CaretRect(c.Offset);
+            var hit = CurrentHit();
+            var r = pl.CaretRect(c.Offset, false, hit);
             double gx = _goalX >= 0 ? _goalX : r.X;
-            int li = pl.LineIndexOf(c.Offset);
+            int li = pl.LineIndexOf(c.Offset, hit);
             double top = ParagraphTop(c.Paragraph);
             double y;
             if (down)
@@ -278,23 +310,36 @@ namespace SIL.TextEditing.Avalonia
                 else if (c.Paragraph > 0) y = top - 1;
                 else { Move(new TextPosition(c.Paragraph, 0), extend, true); return; }
             }
-            var np = PointToPosition(new Point(gx, y));
+            var target = Locate(new Point(gx, y));
             _goalX = gx;
-            Move(np, extend, true);
+            Move(target.Position, extend, true, target.Hit);
         }
 
-        /// <summary>The document position at a point in the coordinates of this control.</summary>
-        public TextPosition PointToPosition(Point point)
+        struct Located
+        {
+            public TextPosition Position;
+            public CharacterHit Hit;
+            public TextPosition Character;
+        }
+
+        Located Locate(Point point)
         {
             double y = 0;
             for (int i = 0; i < _layouts.Count; i++)
             {
                 var pl = ParagraphLayoutFor(i);
-                if (point.Y < y + pl.Height || i == _layouts.Count - 1) return new TextPosition(i, pl.HitTest(new Point(point.X, point.Y - y)));
+                if (point.Y < y + pl.Height || i == _layouts.Count - 1)
+                {
+                    var h = pl.HitTestDetailed(new Point(point.X, point.Y - y));
+                    return new Located { Position = new TextPosition(i, h.Offset), Hit = h.CaretHit, Character = new TextPosition(i, h.Character) };
+                }
                 y += pl.Height;
             }
-            return new TextPosition(0, 0);
+            return default;
         }
+
+        /// <summary>The document position at a point in the coordinates of this control.</summary>
+        public TextPosition PointToPosition(Point point) => Locate(point).Position;
 
         // ------------------------------------------------ input
 
@@ -305,27 +350,28 @@ namespace SIL.TextEditing.Avalonia
             var lastPara = _layouts.Count - 1;
             switch (key)
             {
-                case Key.Left: MoveVisualLeftRight(true, shift); return true;
-                case Key.Right: MoveVisualLeftRight(false, shift); return true;
+                case Key.Left: if (ctrl) MoveByWord(true, shift); else MoveVisualLeftRight(true, shift); return true;
+                case Key.Right: if (ctrl) MoveByWord(false, shift); else MoveVisualLeftRight(false, shift); return true;
                 case Key.Up: MoveVertical(false, shift); return true;
                 case Key.Down: MoveVertical(true, shift); return true;
                 case Key.Home:
                 {
                     var c = Editor.Caret;
+                    if (ctrl) { Move(new TextPosition(0, 0), shift); return true; }
                     var pl = ParagraphLayoutFor(c.Paragraph);
-                    int o = 0;
-                    if (!ctrl && pl.Lines.Count > 0) o = pl.ToModel(pl.Lines[pl.LineIndexOf(c.Offset)].Start);
-                    Move(ctrl ? new TextPosition(0, 0) : new TextPosition(c.Paragraph, o), shift);
+                    int o = pl.Lines.Count > 0 ? pl.ToModel(pl.Lines[pl.LineIndexOf(c.Offset, CurrentHit())].Start) : 0;
+                    Move(new TextPosition(c.Paragraph, o), shift);
                     return true;
                 }
                 case Key.End:
                 {
                     var c = Editor.Caret;
+                    if (ctrl) { Move(new TextPosition(lastPara, Editor.Document.Paragraphs[lastPara].Length), shift); return true; }
                     var pl = ParagraphLayoutFor(c.Paragraph);
-                    int o = pl.Paragraph.Length;
-                    if (!ctrl && pl.Lines.Count > 0) o = pl.ToModel(pl.TextEnd(pl.Lines[pl.LineIndexOf(c.Offset)]));
-                    if (ctrl) Move(new TextPosition(lastPara, Editor.Document.Paragraphs[lastPara].Length), shift);
-                    else Move(new TextPosition(c.Paragraph, o), shift);
+                    if (pl.Lines.Count == 0) { Move(new TextPosition(c.Paragraph, pl.Paragraph.Length), shift); return true; }
+                    // At a soft wrap the end of the line and the start of the next are one offset: keep the caret on this line.
+                    int o = pl.LineEnd(pl.LineIndexOf(c.Offset, CurrentHit()), out var hit);
+                    Move(new TextPosition(c.Paragraph, o), shift, false, hit);
                     return true;
                 }
                 case Key.Back: Editor.Backspace(); return true;
@@ -365,23 +411,70 @@ namespace SIL.TextEditing.Avalonia
 
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
+            var props = e.GetCurrentPoint(this).Properties;
+            if (!props.IsLeftButtonPressed && !props.IsRightButtonPressed) return;
             Focus();
-            var pos = PointToPosition(e.GetPosition(this));
-            Move(pos, (e.KeyModifiers & KeyModifiers.Shift) != 0);
+            var loc = Locate(e.GetPosition(this));
+            if (!props.IsLeftButtonPressed)
+            {
+                // Right click (context menu): keep a selection that was clicked inside, otherwise move the caret there.
+                Editor.Ordered(out var sa, out var sb);
+                bool inside = Editor.HasSelection && loc.Position.CompareTo(sa) >= 0 && loc.Position.CompareTo(sb) <= 0;
+                if (!inside) Move(loc.Position, false, false, loc.Hit);
+                e.Handled = true;
+                return;
+            }
+            bool shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+            _dragUnit = DragUnit.Character;
+            if (shift) Move(loc.Position, true, false, loc.Hit);
+            else if (e.ClickCount == 2) { _dragUnit = DragUnit.Word; SelectUnit(loc, true); }
+            else if (e.ClickCount >= 3) { _dragUnit = DragUnit.Paragraph; SelectUnit(loc, true); }
+            else Move(loc.Position, false, false, loc.Hit);
             _dragging = true;
             e.Pointer.Capture(this);
             e.Handled = true;
         }
 
+        /// <summary>The word or paragraph under the pointer as a pair of positions.</summary>
+        void UnitAt(Located loc, out TextPosition start, out TextPosition end)
+        {
+            var para = Editor.Document.Paragraphs[loc.Character.Paragraph];
+            if (_dragUnit == DragUnit.Paragraph) { start = new TextPosition(loc.Character.Paragraph, 0); end = new TextPosition(loc.Character.Paragraph, para.Length); return; }
+            WordBreaks.WordAt(para.Text, loc.Character.Offset, out int s, out int en);
+            start = new TextPosition(loc.Character.Paragraph, s);
+            end = new TextPosition(loc.Character.Paragraph, en);
+        }
+
+        /// <summary>Selects the word or paragraph under the pointer; while dragging, keeps the first unit selected and
+        /// extends to the unit under the pointer.</summary>
+        void SelectUnit(Located loc, bool first)
+        {
+            UnitAt(loc, out var start, out var end);
+            if (first) { _unitStart = start; _unitEnd = end; }
+            bool before = start.CompareTo(_unitStart) < 0;
+            var caret = before ? start : end;
+            Editor.Anchor = before ? _unitEnd : _unitStart;
+            var hit = caret.Offset > 0 ? ParagraphLayoutFor(caret.Paragraph).EndHit(caret.Offset) : (CharacterHit?)null;
+            Move(caret, true, false, before ? null : hit);
+        }
+
         protected override void OnPointerMoved(PointerEventArgs e)
         {
-            if (_dragging) Move(PointToPosition(e.GetPosition(this)), true);
+            if (!_dragging) return;
+            var loc = Locate(e.GetPosition(this));
+            if (_dragUnit == DragUnit.Character) Move(loc.Position, true, false, loc.Hit);
+            else SelectUnit(loc, false);
         }
 
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             _dragging = false;
             e.Pointer.Capture(null);
+        }
+
+        protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+        {
+            _dragging = false;
         }
 
         // ------------------------------------------------ clipboard

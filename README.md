@@ -64,8 +64,12 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
   `WinFormsAvaloniaControlHost` Avalonia's UIA subtree was empty in the spike (unexplained).
 - **Input**: real IME and Keyman interaction are untested (the headless tests drive the IME client directly). Missing:
-  double-click word and triple-click paragraph selection, drag across paragraphs, caret affinity at wrapped line ends,
-  scrolling inside long fields, drag and drop, spelling squiggles, find highlights, touch.
+  scrolling inside long fields, drag and drop, spelling squiggles, find highlights, touch. Selection by mouse (click
+  with bidi and soft-wrap affinity, Shift+click, drag across paragraphs, double-click word, triple-click paragraph) and
+  keyboard (Shift+arrows, Ctrl+arrows by word, Home/End by visual line, Ctrl+Home/End, Ctrl+A, Up/Down with the
+  preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with
+  an apostrophe between letters inside the word; no dictionary, so Thai and Chinese are not split, and it is not UAX #29
+  word breaking. Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
 - **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2);
   an inline object in right-to-left text is mis-ordered on both. `RichTextField.ObjectAsGlyph` is the workaround for the
   second.
