@@ -55,7 +55,7 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>The editing session: caret, selection, active writing system and edit events.</summary>
         public DocumentEditor Editor { get; }
-        public WritingSystemRegistry WritingSystems { get; set; } = WritingSystemRegistry.CreateDefault();
+        public WritingSystemRegistry WritingSystems { get; set; } = new WritingSystemRegistry();
         /// <summary>Resolves the object data of an object run to a picture, or null.</summary>
         public Func<string, IImage?> ObjectImage { get; set; } = d => null;
         /// <summary>Lay objects out as an EM SPACE and paint the picture over it: the workaround for Avalonia issue 21792

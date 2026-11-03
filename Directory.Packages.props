@@ -24,6 +24,11 @@
     <PackageVersion Include="Avalonia.Win32.Interoperability" Version="$(AvaloniaV11)" />
   </ItemGroup>
 
+  <!-- FieldWorks pins this libpalaso version (ADR 0002); hosts may float up. -->
+  <ItemGroup>
+    <PackageVersion Include="SIL.WritingSystems" Version="18.0.0-beta0042" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
   </ItemGroup>

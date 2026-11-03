@@ -1,18 +1,29 @@
 using System.Collections.Generic;
+using SIL.WritingSystems;
 
 namespace SIL.TextEditing.Avalonia
 {
-    /// <summary>How one writing system is drawn: font, size, direction and OpenType features. The host fills a
-    /// registry from its own writing-system store.</summary>
+    /// <summary>How one writing system is drawn: font, size, direction and OpenType features, read from a libpalaso
+    /// <see cref="WritingSystemDefinition"/> (ADR 0002).</summary>
     public sealed class WritingSystemInfo
     {
-        public WritingSystemInfo(string tag, string font, double size, bool rtl = false, string? features = null)
+        WritingSystemInfo(string id)
         {
-            Tag = tag;
-            Font = font;
-            Size = size;
-            Rtl = rtl;
-            Features = features;
+            Tag = id;
+            Font = "Segoe UI";
+            Size = 16;
+        }
+
+        /// <summary>Plain 16 point fallback. It touches no libpalaso type, so a field needs no SLDR to show text.</summary>
+        internal static WritingSystemInfo Fallback(string id) => new WritingSystemInfo(id);
+
+        internal WritingSystemInfo(WritingSystemDefinition ws)
+        {
+            Tag = ws.Id;
+            Font = ws.DefaultFont?.Name ?? "Segoe UI";
+            Size = ws.GetDefaultFontSizeOrMinimum();
+            Rtl = ws.RightToLeftScript;
+            Features = ws.DefaultFont?.Features;
         }
 
         public string Tag { get; }
@@ -23,35 +34,50 @@ namespace SIL.TextEditing.Avalonia
         public string? Features { get; }
     }
 
+    /// <summary>The host's writing systems, keyed by the id a run carries in <see cref="Run.Ws"/>.</summary>
     public sealed class WritingSystemRegistry
     {
-        readonly Dictionary<string, WritingSystemInfo> _byTag = new Dictionary<string, WritingSystemInfo>();
+        readonly Dictionary<string, WritingSystemInfo> _byId = new Dictionary<string, WritingSystemInfo>();
 
-        public WritingSystemRegistry Add(WritingSystemInfo info)
+        /// <summary>Registers a definition under its <see cref="WritingSystemDefinition.Id"/>, which the host
+        /// sets (a store sets it; a new definition has none). The registry reads the
+        /// definition now; add it again after changing it.</summary>
+        public WritingSystemRegistry Add(WritingSystemDefinition ws)
         {
-            _byTag[info.Tag] = info;
+            _byId[ws.Id] = new WritingSystemInfo(ws);
             return this;
         }
 
-        /// <summary>The registered writing system, or a plain 16 point fallback for an unknown tag.</summary>
-        public WritingSystemInfo Get(string? tag)
+        /// <summary>The registered writing system, or a plain 16 point fallback for an unknown id.</summary>
+        public WritingSystemInfo Get(string? id)
         {
-            if (tag != null && _byTag.TryGetValue(tag, out var info)) return info;
-            return new WritingSystemInfo(tag ?? "en", "Segoe UI", 16);
+            if (id != null && _byId.TryGetValue(id, out var info)) return info;
+            return WritingSystemInfo.Fallback(id ?? "en");
         }
 
-        /// <summary>A small registry of common writing systems with Windows fonts.</summary>
+        /// <summary>A definition with a default font, for samples and tests that have no writing-system store. Every
+        /// <see cref="WritingSystemDefinition"/> constructor reads the SLDR language tables, so this starts the SLDR in
+        /// offline mode if the host has not; a real host initialises it itself.</summary>
+        public static WritingSystemDefinition Define(string tag, string font, float size, bool rtl = false, string? features = null)
+        {
+            if (!Sldr.IsInitialized) Sldr.Initialize(offlineTestMode: true);
+            var ws = new WritingSystemDefinition(tag) { Id = tag, DefaultFontSize = size, RightToLeftScript = rtl };
+            ws.DefaultFont = new FontDefinition(font) { Features = features };
+            return ws;
+        }
+
+        /// <summary>A small registry of common writing systems with Windows fonts, for samples and tests (see <see cref="Define"/>).</summary>
         public static WritingSystemRegistry CreateDefault()
         {
             return new WritingSystemRegistry()
-                .Add(new WritingSystemInfo("en", "Segoe UI", 16))
-                .Add(new WritingSystemInfo("fr", "Segoe UI", 16))
-                .Add(new WritingSystemInfo("ar", "Segoe UI", 18, true))
-                .Add(new WritingSystemInfo("he", "Segoe UI", 18, true))
-                .Add(new WritingSystemInfo("ta", "Nirmala UI", 18))
-                .Add(new WritingSystemInfo("hi", "Nirmala UI", 18))
-                .Add(new WritingSystemInfo("th", "Leelawadee UI", 18))
-                .Add(new WritingSystemInfo("x-pua", "Segoe UI", 16));
+                .Add(Define("en", "Segoe UI", 16))
+                .Add(Define("fr", "Segoe UI", 16))
+                .Add(Define("ar", "Segoe UI", 18, true))
+                .Add(Define("he", "Segoe UI", 18, true))
+                .Add(Define("ta", "Nirmala UI", 18))
+                .Add(Define("hi", "Nirmala UI", 18))
+                .Add(Define("th", "Leelawadee UI", 18))
+                .Add(Define("x-pua", "Segoe UI", 16));
         }
     }
 }
