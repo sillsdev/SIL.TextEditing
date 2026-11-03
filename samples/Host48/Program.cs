@@ -1,7 +1,9 @@
 using System;
+using System.Linq;
 using System.Windows.Forms;
 using Avalonia;
 using Avalonia.Win32.Interoperability;
+using SIL.TextEditing.Playground;
 using SIL.TextEditing.Samples;
 
 namespace SIL.TextEditing.Samples.Host48
@@ -31,18 +33,26 @@ namespace SIL.TextEditing.Samples.Host48
 
     static class Program
     {
+        /// <summary>FieldWorks' shape: a WinForms form, the playground embedded between two WinForms TextBoxes, to try Tab
+        /// and key handoff and focus. Options: <c>--scenario "name"</c>, <c>--minimized</c>.</summary>
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
-            AppBuilder.Configure<SampleApp>().UsePlatformDetect().LogToTrace().SetupWithoutStarting();
-            var ui = new SampleUi();
-            var form = new Form { Text = "SIL.TextEditing sample (net48, Avalonia 11.3.17)", ClientSize = new System.Drawing.Size(520, 420) };
-            var before = new TextBox { Dock = DockStyle.Top, Text = "WinForms TextBox (before)" };
-            var after = new TextBox { Dock = DockStyle.Bottom, Text = "WinForms TextBox (after)" };
-            var host = new KeyClaimingHost { Dock = DockStyle.Fill, TabStop = true, Content = ui.Root };
+            AppBuilder.Configure<PlaygroundApp>().UsePlatformDetect().LogToTrace().SetupWithoutStarting();
+            int s = Array.IndexOf(args, "--scenario");
+            var view = s >= 0 && s + 1 < args.Length ? new PlaygroundView(args[s + 1]) : new PlaygroundView();
+            var form = new Form
+            {
+                Text = "SIL.TextEditing playground in WinForms (net48, Avalonia " + PlaygroundApp.AvaloniaVersion + ")",
+                ClientSize = new System.Drawing.Size(1100, 720),
+            };
+            var before = new TextBox { Dock = DockStyle.Top, Text = "WinForms TextBox (before)", TabIndex = 0 };
+            var after = new TextBox { Dock = DockStyle.Bottom, Text = "WinForms TextBox (after)", TabIndex = 2 };
+            var host = new KeyClaimingHost { Dock = DockStyle.Fill, TabStop = true, TabIndex = 1, Content = view };
             form.Controls.Add(host);
             form.Controls.Add(after);
             form.Controls.Add(before);
+            if (args.Contains("--minimized")) form.WindowState = FormWindowState.Minimized;
             System.Windows.Forms.Application.Run(form);
         }
     }
