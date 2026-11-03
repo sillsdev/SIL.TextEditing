@@ -183,6 +183,34 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
+        public void Pasting_a_copied_read_only_run_gives_editable_text_that_can_be_deleted_again()
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(new Run { Ws = "en", Text = "ed" });
+            p.Runs.Add(Marked("LOCKED", TextPropertyNumbers.EditableNo));
+            p.Runs.Add(new Run { Ws = "en", Text = "it" });
+            var e = new DocumentEditor(Doc(p));
+            e.Anchor = new TextPosition(0, 2);
+            e.SetCaret(new TextPosition(0, 8), true);
+            var fragment = e.GetFragment();
+            Assert.Equal(RunEditable.NotEditable, fragment[0].Runs[0].Editable);   // copying keeps the property on the clipboard copy
+
+            e.SetCaret(new TextPosition(0, 1));
+            e.Paste(fragment);
+            Assert.Equal("eLOCKEDdLOCKEDit", Text(e));
+            var pasted = e.Document.Paragraphs[0].Runs;
+            Assert.Equal(new[] { RunEditable.Editable, RunEditable.NotEditable, RunEditable.Editable }, new[] { pasted[0].Editable, pasted[1].Editable, pasted[2].Editable });
+            Assert.Equal("eLOCKEDd", pasted[0].Text);
+            Assert.Equal(RunEditable.NotEditable, fragment[0].Runs[0].Editable);   // the caller's fragment is untouched
+
+            e.Anchor = new TextPosition(0, 1);
+            e.SetCaret(new TextPosition(0, 7), true);
+            Assert.True(e.CanEdit);
+            e.DeleteSelection();
+            Assert.Equal("edLOCKEDit", Text(e));
+        }
+
+        [Fact]
         public void The_host_can_still_apply_changes_to_a_read_only_field()
         {
             var e = new DocumentEditor(OneParagraph("abc")) { IsReadOnly = true };

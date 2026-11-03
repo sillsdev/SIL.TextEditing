@@ -240,9 +240,17 @@ namespace SIL.TextEditing
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
             if (IsReadOnly || !CanEditRange(a, b)) return;
+            if (fragment != null)
+            {
+                // Pasted text takes the editability of where it lands: a copied read-only run must not become text the user
+                // cannot remove from an editable field.
+                fragment = fragment.Select(p => p.Clone()).ToList();
+                foreach (var p in fragment)
+                    foreach (var r in p.Runs)
+                        r.Props.IntProps.Remove(TextPropertyNumbers.Editable);
+            }
             if (SingleParagraph && fragment != null)
             {
-                fragment = fragment.Select(p => p.Clone()).ToList();
                 SeparatorsToSpaces(fragment);
                 if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
             }
