@@ -192,6 +192,7 @@ namespace SIL.TextEditing.Avalonia
             context.DrawRectangle(Background, null, new Rect(Bounds.Size));
             if (_layouts.Count == 0) return;
             Editor.Ordered(out var a, out var b);
+            var selectionBrush = Editor.HasSelection ? ResolveSelectionBrush() : null;
             double y = 0;
             var clip = new Rect(Bounds.Size);
             for (int i = 0; i < _layouts.Count; i++)
@@ -204,7 +205,7 @@ namespace SIL.TextEditing.Avalonia
                         int s = i == a.Paragraph ? a.Offset : 0;
                         int e = i == b.Paragraph ? b.Offset : pl.Paragraph.Length;
                         foreach (var r in pl.SelectionRects(s, e))
-                            context.DrawRectangle(ResolveSelectionBrush(), null, new Rect(r.X, r.Y + y, r.Width, r.Height));
+                            context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
                     foreach (var li in pl.Lines) li.Line.Draw(context, new Point(0, y + li.Y));
                     if (ObjectAsGlyph)
