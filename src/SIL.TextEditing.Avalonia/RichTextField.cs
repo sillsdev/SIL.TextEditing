@@ -630,7 +630,7 @@ namespace SIL.TextEditing.Avalonia
                 return;
             }
             var text = await ClipboardCompat.GetTextAsync(topLevel);
-            if (!string.IsNullOrEmpty(text)) Editor.TypeText(text ?? string.Empty);
+            if (!string.IsNullOrEmpty(text)) Editor.PasteText(text ?? string.Empty);
         }
 
         // ------------------------------------------------ IME

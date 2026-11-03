@@ -8,7 +8,7 @@ namespace SIL.TextEditing
     public sealed partial class DocumentEditor
     {
         long _lastGroup;
-        bool _groupOpen, _groupTyping, _typing;
+        bool _groupOpen, _groupTyping, _typing, _batch;
         string? _groupWs;
         string _typingWs = string.Empty;
         DateTime _lastTyped;
@@ -44,7 +44,7 @@ namespace SIL.TextEditing
         void AssignUndoGroup(EditDelta d)
         {
             var now = Clock();
-            bool join = _groupOpen && _typing && _groupTyping && _groupWs == _typingWs && now - _lastTyped <= TypingPause;
+            bool join = _batch ? _groupOpen : _groupOpen && _typing && _groupTyping && _groupWs == _typingWs && now - _lastTyped <= TypingPause;
             if (!join)
             {
                 CloseUndoGroup();
@@ -60,7 +60,21 @@ namespace SIL.TextEditing
 
         void EndSingleEditGroup()
         {
-            if (!_typing) CloseUndoGroup();
+            if (!_typing && !_batch) CloseUndoGroup();
+        }
+
+        /// <summary>Runs an insertion that is one undo step however many edits it makes: it ends any open step first, every
+        /// edit inside joins the one new step, and the step is closed again at the end.</summary>
+        void InOneUndoStep(Action insert)
+        {
+            CloseUndoGroup();
+            _batch = true;
+            try { insert(); }
+            finally
+            {
+                _batch = false;
+                CloseUndoGroup();
+            }
         }
     }
 }

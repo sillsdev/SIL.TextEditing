@@ -162,11 +162,20 @@ namespace SIL.TextEditing
             }
         }
 
+        /// <summary>Inserts text a user pasted (the clipboard had plain text only): the same result as <see cref="TypeText"/>, but
+        /// the whole insertion, line breaks and the replaced selection included, is one undo step of its own that neither
+        /// joins the typing before it nor the typing after it.</summary>
+        public void PasteText(string text)
+        {
+            if (string.IsNullOrEmpty(text) || !CanEditSelectionOrCaret()) return;
+            InOneUndoStep(() => TypeText(text));
+        }
+
         void InsertOne(string text)
         {
             if (!CanEditSelectionOrCaret()) return;
             // Typing over a selection is one step with the deletion; it never joins an earlier step.
-            if (HasSelection) CloseUndoGroup();
+            if (HasSelection && !_batch) CloseUndoGroup();
             _typingWs = ActiveWs;
             _typing = true;
             try

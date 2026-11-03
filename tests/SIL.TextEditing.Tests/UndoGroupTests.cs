@@ -169,5 +169,46 @@ namespace SIL.TextEditing.Tests
             Assert.Empty(r.Deltas);
             Assert.False(r.Editor.HasOpenUndoGroup);
         }
+
+        [Fact]
+        public void Pasted_text_is_its_own_undo_step_and_neither_joins_the_typing_before_nor_after_it()
+        {
+            var r = new Rig("");
+            r.Type("ab");
+            r.Editor.PasteText("PASTED");
+            r.Type("cd");
+            Assert.Equal("abPASTEDcd", r.Text);
+            Assert.Equal(3, r.Undo.DoneSteps);
+            r.Undo.Undo();
+            Assert.Equal("abPASTED", r.Text);
+            r.Undo.Undo();
+            Assert.Equal("ab", r.Text);
+        }
+
+        [Fact]
+        public void A_pasted_multi_line_text_is_one_undo_step_and_restores_everything_in_one_undo()
+        {
+            var r = new Rig("");
+            r.Type("ab");
+            r.Editor.PasteText("l1\nl2\r\nl3\nl4");
+            Assert.Equal(4, r.Editor.Document.Paragraphs.Count);
+            Assert.Equal(2, r.Undo.DoneSteps);
+            Assert.False(r.Editor.HasOpenUndoGroup);
+            r.Undo.Undo();
+            Assert.Single(r.Editor.Document.Paragraphs);
+            Assert.Equal("ab", r.Text);
+        }
+
+        [Fact]
+        public void Pasting_text_over_a_selection_is_one_step_with_the_deletion()
+        {
+            var r = new Rig("hello world");
+            r.Editor.SetCaret(new TextPosition(0, 0));
+            r.Editor.SetCaret(new TextPosition(0, 5), true);
+            r.Editor.PasteText("a\nb");
+            Assert.Equal(1, r.Undo.DoneSteps);
+            r.Undo.Undo();
+            Assert.Equal("hello world", r.Text);
+        }
     }
 }
