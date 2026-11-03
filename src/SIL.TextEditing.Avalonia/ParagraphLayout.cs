@@ -184,6 +184,9 @@ namespace SIL.TextEditing.Avalonia
         public double ContentWidth { get; private set; }
         /// <summary>The bullet or number text this layout was built for (empty for none); the field rebuilds the layout when the number changes.</summary>
         public string LabelText { get; private set; } = string.Empty;
+        /// <summary>The space after the paragraph above (0 for the first), which this layout was built against: the gap between two
+        /// paragraphs is the larger of the margin top and space after plus space before, not their sum.</summary>
+        public double PreviousSpaceAfter { get; private set; }
         /// <summary>True when lines past the style's maximum were left out.</summary>
         public bool Truncated { get; private set; }
 
@@ -278,9 +281,10 @@ namespace SIL.TextEditing.Avalonia
         /// DrawableTextRun in a right-to-left paragraph gets the wrong visual order in 11.3 and 12.1): the object is
         /// laid out as an EM SPACE sized to the picture and the picture is painted over its text bounds.
         /// </summary>
-        public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null)
+        public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null, double previousSpaceAfter = 0)
         {
             var layout = new ParagraphLayout(paragraph, width);
+            layout.PreviousSpaceAfter = previousSpaceAfter;
             layout.LabelText = label ?? string.Empty;
             var source = new ParagraphSource { ObjectImage = objectImage, ObjectAsGlyph = objectAsGlyph };
             var sb = new StringBuilder();
@@ -481,9 +485,12 @@ namespace SIL.TextEditing.Avalonia
             double padLeft = (rtl ? pf.PadTrailing : pf.PadLeading + hang), padRight = (rtl ? pf.PadLeading + hang : pf.PadTrailing);
             ContentLeft = marginLeft + _borderLeft + padLeft;
             ContentWidth = Math.Max(total - ContentLeft - marginRight - _borderRight - padRight, 10);
-            TopInset = pf.SpaceBefore + pf.MarginTop + pf.BorderTop + pf.PadTop;
+            // The paragraph above already left its space after; this paragraph adds what is needed to make the gap the larger of
+            // the margin top and (space after + space before).
+            double gap = Math.Max(pf.MarginTop - PreviousSpaceAfter, pf.SpaceBefore);
+            TopInset = gap + pf.BorderTop + pf.PadTop;
             BottomInset = pf.PadBottom + pf.BorderBottom + pf.SpaceAfter;
-            Box = new Rect(marginLeft, pf.SpaceBefore + pf.MarginTop, Math.Max(total - marginLeft - marginRight, 0), 0);
+            Box = new Rect(marginLeft, gap, Math.Max(total - marginLeft - marginRight, 0), 0);
             _fill = ColorBrush(pf.ParaColor);
             _borderBrush = _borderLeft + _borderTop + _borderRight + _borderBottom > 0 ? (ColorBrush(pf.BorderColor) ?? Brushes.Black) : null;
         }

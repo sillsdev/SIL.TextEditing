@@ -173,10 +173,11 @@ namespace SIL.TextEditing.Avalonia
         {
             var existing = _layouts[index];
             string label = LabelOf(index);
+            double above = index > 0 ? FormatOf(index - 1).SpaceAfter : 0;
             if (existing != null)
             {
-                if (existing.LabelText == label) return existing;
-                existing.Dispose();   // a paragraph above was added or removed and the number changed
+                if (existing.LabelText == label && existing.PreviousSpaceAfter == above) return existing;
+                existing.Dispose();   // the paragraph above changed its number or its space after
             }
             int preeditAt = -1;
             string? preedit = null;
@@ -187,7 +188,7 @@ namespace SIL.TextEditing.Avalonia
                 preedit = _preedit;
                 template = new Run { Ws = Editor.ActiveWs };
             }
-            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label);
+            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
             _layouts[index] = layout;
             LayoutCount++;
             return layout;

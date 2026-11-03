@@ -111,6 +111,39 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        /// <summary>The distance between the text of paragraph 1 and the text of paragraph 2 after giving them these spacings (points).</summary>
+        static double GapBetween(Session s, double after, double before, double marginTop)
+        {
+            var paragraphs = s.Editor.Document.Paragraphs;
+            paragraphs[Plain].Props.SetInt(TextPropertyNumbers.SpaceAfter, (int)(after * 1000), 1);
+            paragraphs[Centred].Props.SetInt(TextPropertyNumbers.SpaceBefore, (int)(before * 1000), 1);
+            paragraphs[Centred].Props.SetInt(TextPropertyNumbers.MarginTop, (int)(marginTop * 1000), 1);
+            s.Field.RefreshFromDocument();
+            Headless.Pump();
+            var first = s.Field.ParagraphLayoutFor(Plain);
+            var second = s.Field.ParagraphLayoutFor(Centred);
+            double textBottom = s.Field.ParagraphTop(Plain) + first.Height - first.BottomInset;
+            return s.Field.ParagraphTop(Centred) + second.Lines[0].Y - textBottom;
+        }
+
+        [Fact]
+        public void The_gap_between_two_paragraphs_is_the_larger_of_the_margin_top_and_space_after_plus_space_before() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs))
+            {
+                double text = GapBetween(s, 6, 4, 0);
+                Assert.Equal(10, text, 3);
+                Assert.Equal(20, GapBetween(s, 6, 4, 20), 3);   // the margin top is the larger
+                Assert.Equal(10, GapBetween(s, 6, 4, 8), 3);    // the sum is the larger
+                Assert.Equal(8, GapBetween(s, 0, 0, 8), 3);
+                Assert.Equal(6, GapBetween(s, 6, 0, 0), 3);
+                // The first paragraph has nothing above it: the larger of its margin top and its space before.
+                s.Editor.Document.Paragraphs[0].Props.SetInt(TextPropertyNumbers.MarginTop, 20000, 1);
+                s.Field.RefreshFromDocument();
+                Assert.Equal(20, s.Field.ParagraphLayoutFor(0).TopInset, 3);
+            }
+        });
+
         [Fact]
         public void Line_height_is_at_least_the_text_for_relative_and_exact_for_a_negative_value() => Headless.Run(() =>
         {
