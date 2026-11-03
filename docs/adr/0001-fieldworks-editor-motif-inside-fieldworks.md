@@ -4,8 +4,10 @@ SIL.TextEditing is built for FieldWorks only, not as a general SIL text editor. 
 live inside FieldWorks once FieldWorks moves to Avalonia 12 and .NET 10. Any program that needs several writing
 systems in one text is already working with LCModel data, so there is no second audience to design for.
 
-The field inherits everything FieldWorks text editing does today (ADR 0005). It may make small usability improvements
-that WinForms made hard, but it never drops a FieldWorks behaviour.
+The field inherits everything FieldWorks text editing does today (ADR 0005), and behaves the way FieldWorks does.
+The only improvements allowed are things WinForms made hard to do. A different design choice, such as following
+browsers or Word where FieldWorks differs, is not an improvement under this rule. It is a separate decision, made
+later, outside parity.
 
 **Consequences:** FieldWorks words and shapes are fine in the API: runs, numbered text properties, writing systems,
 styles and paragraph keys. Whether the library may reference LCModel types directly is a separate, open question,
