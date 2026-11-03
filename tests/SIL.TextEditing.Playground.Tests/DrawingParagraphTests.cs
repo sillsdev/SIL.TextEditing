@@ -181,7 +181,16 @@ namespace SIL.TextEditing.Playground.Tests
             }
 
             /// <summary>True when the pixel is dark: text ink on a white or pale page.</summary>
-            public bool IsInk(double x, double y) { var c = At(x, y); return c.R < 140 && c.G < 140 && c.B < 140; }
+            public bool IsInk(double x, double y, int threshold = 140) { var c = At(x, y); return c.R < threshold && c.G < threshold && c.B < threshold; }
+
+            /// <summary>The lowest row with ink inside a box (its inner columns), or -1.</summary>
+            public int InkBottom(Rect box)
+            {
+                for (int y = Math.Min(Height - 1, (int)Math.Ceiling(box.Bottom) + 4); y >= (int)box.Y; y--)
+                    for (int x = (int)Math.Floor(box.X) + 1; x < (int)Math.Ceiling(box.Right) - 1; x++)
+                        if (IsInk(x, y)) return y;
+                return -1;
+            }
 
             /// <summary>The columns in [from, to) that have dark ink anywhere in the rows [top, bottom).</summary>
             public List<int> InkColumns(double from, double to, double top, double bottom)

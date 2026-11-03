@@ -275,6 +275,7 @@ namespace SIL.TextEditing.Avalonia
                 if (y + pl.Height >= 0 && y <= clip.Bottom + 1)
                 {
                     pl.DrawBox(context, y);
+                    pl.DrawBackgrounds(context, y);
                     if (Editor.HasSelection && i >= a.Paragraph && i <= b.Paragraph)
                     {
                         int s = i == a.Paragraph ? a.Offset : 0;

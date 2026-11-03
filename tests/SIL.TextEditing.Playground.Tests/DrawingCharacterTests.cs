@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Avalonia;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -93,12 +94,58 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(RunWith(s, 3, "red text").ForegroundBrush));
                 var green = RunWith(s, 3, "green on pale yellow");
                 Assert.Equal(Color.FromRgb(0, 128, 0), ColorOf(green.ForegroundBrush));
-                Assert.Equal(Color.FromRgb(255, 255, 153), ColorOf(green.BackgroundBrush));
                 Assert.Same(s.Field.Foreground, RunWith(s, 3, "transparent colour").ForegroundBrush);
-                Assert.Null(RunWith(s, 3, "transparent colour").BackgroundBrush);
                 var warning = RunWith(s, 3, "Warning (a style)");
                 Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(warning.ForegroundBrush));
-                Assert.NotNull(warning.BackgroundBrush);
+            }
+        });
+
+        /// <summary>The rectangle of the first occurrence of <paramref name="token"/> in a paragraph, in the field's coordinates (one line of it).</summary>
+        internal static Rect BoxOf(Session s, int paragraph, string token, int skip = 0, int length = -1)
+        {
+            var pl = s.Field.ParagraphLayoutFor(paragraph);
+            int at = s.ParagraphText(paragraph).IndexOf(token, System.StringComparison.Ordinal) + skip;
+            Assert.True(at >= skip, "no " + token);
+            var li = pl.Lines[pl.LineIndexOf(at)];
+            int n = length >= 0 ? length : token.Length - skip;
+            var bounds = li.Line.GetTextBounds(at, System.Math.Min(n, li.End - at));
+            double x0 = bounds.Min(b => b.Rectangle.X), x1 = bounds.Max(b => b.Rectangle.Right);
+            double top = s.Field.ParagraphTop(paragraph) + li.TextY;
+            return new Rect(li.X + x0, top, x1 - x0, li.Line.Height);
+        }
+
+        static readonly Color PaleYellowRgb = Color.FromRgb(255, 255, 153);
+
+        [Fact]
+        public void A_run_background_is_painted_and_a_selected_run_stays_visibly_selected_over_it() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var box = BoxOf(s, 3, "green on pale yellow");
+                var other = BoxOf(s, 3, "transparent colour");
+                var shot = new DrawingParagraphTests.Shot(s);
+                Assert.Equal(PaleYellowRgb, shot.At(box.X + 1, box.Y + 1));
+                Assert.Equal(PaleYellowRgb, shot.At(box.Right - 2, box.Y + 1));
+                Assert.Equal(Color.FromRgb(255, 255, 255), shot.At(other.X + 1, other.Y + 1));
+                int at = s.ParagraphText(3).IndexOf("green on pale yellow", System.StringComparison.Ordinal);
+                s.Select(3, at, at + "green on pale yellow".Length);
+                var selected = new DrawingParagraphTests.Shot(s);
+                var pixel = selected.At(box.X + 1, box.Y + 1);
+                Assert.NotEqual(PaleYellowRgb, pixel);
+                Assert.NotEqual(Color.FromRgb(255, 255, 255), pixel);
+                Assert.NotEqual(PaleYellowRgb, selected.At(box.Right - 2, box.Y + 1));
+                // The unselected neighbour keeps its look.
+                Assert.Equal(Color.FromRgb(255, 255, 255), selected.At(other.X + 1, other.Y + 1));
+            }
+        });
+
+        [Fact]
+        public void A_run_background_from_a_style_is_painted_too() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var box = BoxOf(s, 3, "Warning (a style)");
+                Assert.Equal(PaleYellowRgb, new DrawingParagraphTests.Shot(s).At(box.X + 1, box.Y + 1));
             }
         });
 

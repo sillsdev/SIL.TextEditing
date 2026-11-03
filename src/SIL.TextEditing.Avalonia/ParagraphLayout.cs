@@ -36,7 +36,9 @@ namespace SIL.TextEditing.Avalonia
         public override double FontRenderingEmSize => _size;
         public override TextDecorationCollection? TextDecorations => _decorations;
         public override IBrush? ForegroundBrush => _foreground;
-        public override IBrush? BackgroundBrush => _background;
+        /// <summary>The run's background colour. Avalonia is not given it (it would paint over the selection): the layout paints it itself, below the selection.</summary>
+        public IBrush? Back => _background;
+        public override IBrush? BackgroundBrush => null;
         public override BaselineAlignment BaselineAlignment => _baseline;
         public override CultureInfo? CultureInfo => _culture;
         public override FontFeatureCollection? FontFeatures => _features;
@@ -324,6 +326,8 @@ namespace SIL.TextEditing.Avalonia
             layout.PreeditLength = hasPreedit ? preedit!.Length : 0;
             source.Text = sb.ToString();
             layout.EffectiveText = source.Text;
+            foreach (var seg in source.Segments)
+                if (!seg.IsObject && seg.Properties is RunTextProperties rp && rp.Back != null) layout._backgrounds.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(seg.Start, new KeyValuePair<int, IBrush>(seg.End, rp.Back)));
 
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
             var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles);
@@ -390,6 +394,23 @@ namespace SIL.TextEditing.Avalonia
         // ---- paragraph formatting ----
 
         double _firstX, _firstWidth, _labelWidth;
+        // Runs with a background colour: start, then end and brush (effective offsets).
+        readonly List<KeyValuePair<int, KeyValuePair<int, IBrush>>> _backgrounds = new List<KeyValuePair<int, KeyValuePair<int, IBrush>>>();
+
+        /// <summary>Paints the runs' background colours behind the text; <paramref name="top"/> is the paragraph's top in the control.
+        /// The field paints the selection after this, so a selected run stays visibly selected.</summary>
+        public void DrawBackgrounds(DrawingContext context, double top)
+        {
+            if (_backgrounds.Count == 0) return;
+            foreach (var li in Lines)
+                foreach (var bg in _backgrounds)
+                {
+                    int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, TextEnd(li));
+                    if (b <= a) continue;
+                    foreach (var tb in li.Line.GetTextBounds(a, b - a))
+                        context.DrawRectangle(bg.Value.Value, null, new Rect(li.X + tb.Rectangle.X, top + li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height));
+                }
+        }
 
         /// <summary>The extra space a bullet or number needs after it: three points unless it ends with a space.</summary>
         const double LabelGap = 3;
