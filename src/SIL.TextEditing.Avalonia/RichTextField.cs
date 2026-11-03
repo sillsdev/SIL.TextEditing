@@ -485,8 +485,8 @@ namespace SIL.TextEditing.Avalonia
                     Editor.Anchor = new TextPosition(0, 0);
                     Move(new TextPosition(lastPara, Editor.Document.Paragraphs[lastPara].Length), true);
                     return true;
-                case Key.Z when ctrl: UndoRequested?.Invoke(); return true;
-                case Key.Y when ctrl: RedoRequested?.Invoke(); return true;
+                case Key.Z when ctrl: Editor.CloseUndoGroup(); UndoRequested?.Invoke(); return true;   // the host's task must end before it undoes
+                case Key.Y when ctrl: Editor.CloseUndoGroup(); RedoRequested?.Invoke(); return true;
                 case Key.C when ctrl: _ = CopyAsync(false); return true;
                 case Key.X when ctrl: _ = CopyAsync(true); return true;
                 case Key.V when ctrl: _ = PasteAsync(); return true;

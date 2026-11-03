@@ -26,7 +26,9 @@ namespace SIL.TextEditing
         /// <summary>Raised when an undo step is complete, with its <see cref="EditDelta.UndoGroup"/>. Every step starts with a
         /// delta whose <see cref="EditDelta.StartsUndoGroup"/> is true and ends with this event; the host opens an undo task
         /// at the first and closes it here. A typing step ends here when the caret moves, the writing system changes, a
-        /// delete or any other command follows, the pause passes, or the host applies a change.</summary>
+        /// delete or any other command follows, the pause passes, or the host applies a change. A host must not rely on that last case to close a step: it ends its
+        /// undo task here, so call <see cref="CloseUndoGroup"/> before undoing or redoing (the field does so before it raises
+        /// its undo and redo requests), or the event fires in the middle of the undo.</summary>
         public event Action<long>? UndoGroupEnded;
 
         /// <summary>Ends the open undo step, if any: the next edit starts a new one. A host calls this before a command it
