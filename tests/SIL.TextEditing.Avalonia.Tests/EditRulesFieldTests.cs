@@ -34,6 +34,35 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(new[] { "redo", "applied", "applied" }, log);   // nothing was open, so nothing ends
         });
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Shift_Enter_inserts_a_hard_line_break_that_the_layout_breaks_the_line_at(bool single) => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(OneParagraph("abcd"), 520, f => f.SingleParagraph = single);
+            var passed = new List<KeyModifiers>();
+            field.EnterRequested += passed.Add;
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            Assert.Single(field.ParagraphLayoutFor(0).Lines);
+
+            Assert.True(field.HandleKey(Key.Enter, KeyModifiers.Shift));
+            Assert.Empty(passed);
+            Assert.Single(field.Editor.Document.Paragraphs);
+            Assert.Equal("ab" + DocumentEditor.LineSeparator + "cd", field.Editor.Document.Paragraphs[0].Text);
+            Fixtures.Layout(field, 520);
+            Assert.Equal(2, field.ParagraphLayoutFor(0).Lines.Count);   // the layout treats U+2028 as a line break
+            Assert.Equal(new TextPosition(0, 3), field.Editor.Caret);
+        });
+
+        [Fact]
+        public void Plain_Enter_still_splits_a_paragraph_or_goes_to_the_host() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(OneParagraph("abcd"));
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.HandleKey(Key.Enter, KeyModifiers.None);
+            Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
+        });
+
         [Fact]
         public void Pasting_plain_text_is_one_undo_step_apart_from_the_typing_around_it() => Headless.Run(async () =>
         {

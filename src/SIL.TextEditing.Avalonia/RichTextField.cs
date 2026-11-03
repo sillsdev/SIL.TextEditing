@@ -104,7 +104,7 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Raised synchronously when the active writing system changes: old, new.</summary>
         public event Action<string, string>? ActiveWsChanged;
-        /// <summary>Raised in single-paragraph mode when Enter is pressed (any modifiers): the host decides what it means, as a
+        /// <summary>Raised in single-paragraph mode when Enter is pressed (Shift+Enter is not passed on: it inserts a hard line break): the host decides what it means, as a
         /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it
         /// also keeps bubbling.</summary>
         public event Action<KeyModifiers>? EnterRequested;
@@ -477,6 +477,9 @@ namespace SIL.TextEditing.Avalonia
                 }
                 case Key.Back: Editor.Backspace(); return true;
                 case Key.Delete: Editor.DeleteForward(); return true;
+                case Key.Enter when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0:
+                    Editor.InsertLineBreak();   // FieldWorks: a hard line break inside the paragraph, whatever the mode
+                    return true;
                 case Key.Enter:
                     if (SingleParagraph) { EnterRequested?.Invoke(modifiers); return false; }
                     Editor.Enter();

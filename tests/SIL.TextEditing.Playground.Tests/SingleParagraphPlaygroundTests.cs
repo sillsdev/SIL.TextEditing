@@ -24,8 +24,12 @@ namespace SIL.TextEditing.Playground.Tests
                 s.Press(Key.Enter);
                 Assert.Equal(count + 1, s.Editor.Document.Paragraphs.Count);
                 Assert.Contains("Enter passed to the host", s.Log);
-                s.Press(Key.Enter, KeyModifiers.Shift);
-                Assert.Contains("Enter passed to the host (Shift)", s.Log);
+                string beforeBreak = s.ParagraphText(0);
+                s.Press(Key.Enter, KeyModifiers.Shift);   // FieldWorks: a hard line break in the paragraph, not a request to the host
+                Assert.DoesNotContain("Enter passed to the host (Shift)", s.Log);
+                Assert.Equal(count + 1, s.Editor.Document.Paragraphs.Count);
+                Assert.Contains(DocumentEditor.LineSeparator, s.ParagraphText(0));
+                Assert.NotEqual(beforeBreak, s.ParagraphText(0));
 
                 string before = s.ParagraphText(0);
                 s.Type("x\ny");
