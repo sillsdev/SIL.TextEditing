@@ -180,6 +180,8 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The left edge of the text area, and its width.</summary>
         public double ContentLeft { get; private set; }
         public double ContentWidth { get; private set; }
+        /// <summary>The bullet or number text this layout was built for (empty for none); the field rebuilds the layout when the number changes.</summary>
+        public string LabelText { get; private set; } = string.Empty;
         /// <summary>True when lines past the style's maximum were left out.</summary>
         public bool Truncated { get; private set; }
         double _borderLeft, _borderTop, _borderRight, _borderBottom;
@@ -225,6 +227,13 @@ namespace SIL.TextEditing.Avalonia
             return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline);
         }
 
+        /// <summary>The paragraph's resolved formatting, sized from the writing system of its first run.</summary>
+        internal static ParaFormat ResolveFormat(Paragraph paragraph, WritingSystemRegistry writingSystems, IStyleResolver? styles)
+        {
+            string ws = paragraph.Runs.Count > 0 ? paragraph.Runs[0].Ws : paragraph.DefaultWs;
+            return FormatResolver.ResolveParagraph(paragraph, styles, writingSystems.Get(ws).Size);
+        }
+
         /// <summary>A FieldWorks BGR colour as a brush, or null for none or a special value.</summary>
         internal static IBrush? ColorBrush(int? bgr)
         {
@@ -263,9 +272,10 @@ namespace SIL.TextEditing.Avalonia
         /// DrawableTextRun in a right-to-left paragraph gets the wrong visual order in 11.3 and 12.1): the object is
         /// laid out as an EM SPACE sized to the picture and the picture is painted over its text bounds.
         /// </summary>
-        public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null)
+        public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null)
         {
             var layout = new ParagraphLayout(paragraph, width);
+            layout.LabelText = label ?? string.Empty;
             var source = new ParagraphSource { ObjectImage = objectImage, ObjectAsGlyph = objectAsGlyph };
             var sb = new StringBuilder();
             int pos = 0;
@@ -318,7 +328,7 @@ namespace SIL.TextEditing.Avalonia
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
             var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles);
             var baseWs = writingSystems.Get(defaultRun.Ws);
-            var pf = FormatResolver.ResolveParagraph(paragraph, styles, baseWs.Size);
+            var pf = ResolveFormat(paragraph, writingSystems, styles);
             layout.Format = pf;
             layout.ApplyBox(pf, width, paragraph.Rtl, foreground);
             if (pf.BulNumScheme != 0)
@@ -456,9 +466,9 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>Draws the paragraph's bullet or number at the start of its first line, on the same baseline.</summary>
-        public void DrawLabel(DrawingContext context, double top, string text)
+        public void DrawLabel(DrawingContext context, double top)
         {
-            var label = LabelLine(text);
+            var label = LabelLine(LabelText);
             if (label == null) return;
             double lineTop, baseline, x;
             if (Lines.Count > 0) { lineTop = Lines[0].TextY; baseline = Lines[0].Line.Baseline; }

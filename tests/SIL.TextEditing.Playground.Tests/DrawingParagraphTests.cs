@@ -224,6 +224,29 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void The_label_of_every_paragraph_is_its_place_in_the_run_and_Enter_in_a_list_renumbers_the_paragraphs_below() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 3000))
+            {
+                var count = s.Editor.Document.Paragraphs.Count;
+                string[] before = new string[count];
+                for (int i = 0; i < count; i++)
+                {
+                    var pl = s.Field.ParagraphLayoutFor(i);
+                    int number = BulletNumbers.IsNumber(pl.Format.BulNumScheme) ? BulletNumbers.Sequence(k => s.Field.ParagraphLayoutFor(k).Format, i) : 0;
+                    Assert.Equal(BulletNumbers.Label(pl.Format, number), pl.LabelText);
+                    before[i] = pl.LabelText;
+                }
+                Assert.Equal(new[] { "1.", "2.", "3." }, new[] { before[Number1], before[Number1 + 1], before[Number3] });
+                s.Caret(Number1, s.Editor.Document.Paragraphs[Number1].Length);
+                s.Press(global::Avalonia.Input.Key.Enter);
+                Assert.Equal(count + 1, s.Editor.Document.Paragraphs.Count);
+                Assert.Equal(new[] { "1.", "2.", "3.", "4." }, new[] { s.Field.ParagraphLayoutFor(Number1).LabelText, s.Field.ParagraphLayoutFor(Number1 + 1).LabelText, s.Field.ParagraphLayoutFor(Number1 + 2).LabelText, s.Field.ParagraphLayoutFor(Number1 + 3).LabelText });
+                Assert.Equal("(i)", s.Field.ParagraphLayoutFor(Roman1 + 1).LabelText);
+            }
+        });
+
+        [Fact]
         public void The_paragraph_style_box_restyles_the_caret_paragraph_and_the_layout_follows() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Paragraphs))

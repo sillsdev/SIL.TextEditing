@@ -20,6 +20,20 @@ namespace SIL.TextEditing.Avalonia
     public class RichTextField : Control
     {
         readonly List<ParagraphLayout?> _layouts = new List<ParagraphLayout?>();
+        // One entry per paragraph, kept in step with _layouts: what a paragraph's layout needs from the paragraphs before it.
+        readonly List<ParaInfo> _info = new List<ParaInfo>();
+
+        const int NoNumber = int.MinValue;
+
+        sealed class ParaInfo
+        {
+            /// <summary>The resolved paragraph format; it depends only on the paragraph itself.</summary>
+            public ParaFormat? Format;
+            /// <summary>The paragraph's place in its numbered run, or <see cref="NoNumber"/> until worked out.</summary>
+            public int Number = NoNumber;
+            /// <summary>The bullet or number text, or null until worked out.</summary>
+            public string? Label;
+        }
         readonly InputMethodClient _ime;
         IStyleResolver? _styles;
         double _layoutWidth = -1;
@@ -45,7 +59,7 @@ namespace SIL.TextEditing.Avalonia
         public RichTextField(Document document)
         {
             Editor = new DocumentEditor(document);
-            for (int i = 0; i < document.Paragraphs.Count; i++) _layouts.Add(null);
+            for (int i = 0; i < document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             Editor.DocumentChanged += OnDocumentChanged;
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => ActiveWsChanged?.Invoke(o, n);
@@ -107,18 +121,63 @@ namespace SIL.TextEditing.Avalonia
             {
                 _layouts[start]?.Dispose();
                 _layouts.RemoveAt(start);
+                _info.RemoveAt(start);
             }
-            for (int i = 0; i < added; i++) _layouts.Insert(start, null);
+            for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
+            ForgetNumbersFrom(start);
             InvalidateMeasure();
             InvalidateVisual();
         }
 
         // ------------------------------------------------ layout
 
+        /// <summary>The format of a paragraph, resolved once until the paragraph or the styles change.</summary>
+        ParaFormat FormatOf(int index) => _info[index].Format ??= ParagraphLayout.ResolveFormat(Editor.Document.Paragraphs[index], WritingSystems, _styles);
+
+        void ForgetNumbersFrom(int start)
+        {
+            for (int i = Math.Max(start, 0); i < _info.Count; i++) { _info[i].Number = NoNumber; _info[i].Label = null; }
+        }
+
+        /// <summary>True when paragraph <paramref name="k"/> begins a new run of numbers: its scheme differs from the paragraph
+        /// above, or it gives a start-at value the one above did not (see <see cref="BulletNumbers.Sequence"/>).</summary>
+        bool StartsNumbering(int k)
+        {
+            var cur = FormatOf(k);
+            var prev = FormatOf(k - 1);
+            return cur.BulNumScheme != prev.BulNumScheme || (cur.BulNumStartAt != null && cur.BulNumStartAt != prev.BulNumStartAt);
+        }
+
+        /// <summary>The number of a paragraph in its run, worked out by walking back only to the last known number or the start of
+        /// the run and remembered, so a list costs one step per paragraph however often it is drawn.</summary>
+        int NumberOf(int index)
+        {
+            int k = index;
+            while (k > 0 && _info[k].Number == NoNumber && !StartsNumbering(k)) k--;
+            int n = _info[k].Number != NoNumber ? _info[k].Number : (FormatOf(k).BulNumStartAt ?? 1);
+            _info[k].Number = n;
+            for (int j = k + 1; j <= index; j++) _info[j].Number = ++n;
+            return _info[index].Number;
+        }
+
+        /// <summary>The bullet or number text of a paragraph, or empty for none.</summary>
+        string LabelOf(int index)
+        {
+            var info = _info[index];
+            if (info.Label != null) return info.Label;
+            var format = FormatOf(index);
+            return info.Label = format.BulNumScheme == 0 ? string.Empty : BulletNumbers.Label(format, BulletNumbers.IsNumber(format.BulNumScheme) ? NumberOf(index) : 0);
+        }
+
         public ParagraphLayout ParagraphLayoutFor(int index)
         {
             var existing = _layouts[index];
-            if (existing != null) return existing;
+            string label = LabelOf(index);
+            if (existing != null)
+            {
+                if (existing.LabelText == label) return existing;
+                existing.Dispose();   // a paragraph above was added or removed and the number changed
+            }
             int preeditAt = -1;
             string? preedit = null;
             Run? template = null;
@@ -128,7 +187,7 @@ namespace SIL.TextEditing.Avalonia
                 preedit = _preedit;
                 template = new Run { Ws = Editor.ActiveWs };
             }
-            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles);
+            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label);
             _layouts[index] = layout;
             LayoutCount++;
             return layout;
@@ -147,6 +206,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 _layouts[i]?.Dispose();
                 _layouts[i] = null;
+                _info[i] = new ParaInfo();
             }
             InvalidateMeasure();
             InvalidateVisual();
@@ -158,7 +218,8 @@ namespace SIL.TextEditing.Avalonia
         {
             foreach (var l in _layouts) l?.Dispose();
             _layouts.Clear();
-            for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) _layouts.Add(null);
+            _info.Clear();
+            for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -222,11 +283,7 @@ namespace SIL.TextEditing.Avalonia
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
                     foreach (var li in pl.Lines) li.Line.Draw(context, new Point(li.X, y + li.TextY));
-                    if (pl.Format.BulNumScheme != 0)
-                    {
-                        int number = BulletNumbers.IsNumber(pl.Format.BulNumScheme) ? BulletNumbers.Sequence(k => ParagraphLayoutFor(k).Format, i) : 0;
-                        pl.DrawLabel(context, y, BulletNumbers.Label(pl.Format, number));
-                    }
+                    pl.DrawLabel(context, y);
                     if (ObjectAsGlyph)
                     {
                         foreach (var o in pl.ObjectRects())
