@@ -186,6 +186,10 @@ namespace SIL.TextEditing.Avalonia
         public string LabelText { get; private set; } = string.Empty;
         /// <summary>True when lines past the style's maximum were left out.</summary>
         public bool Truncated { get; private set; }
+
+        /// <summary>The last model offset a caret can reach: the end of the text, or the end of the last line shown when the line
+        /// limit hid the rest. As in FieldWorks, a caret never sits in hidden text.</summary>
+        public int VisibleEnd => !Truncated || Lines.Count == 0 ? Paragraph.Length : Math.Min(Paragraph.Length, ToModel(TextEnd(Lines[Lines.Count - 1])));
         double _borderLeft, _borderTop, _borderRight, _borderBottom;
         IBrush? _fill, _borderBrush;
         CharFormat? _labelFormat;

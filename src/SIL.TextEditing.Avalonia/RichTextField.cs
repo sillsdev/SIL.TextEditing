@@ -302,8 +302,31 @@ namespace SIL.TextEditing.Avalonia
 
         // ------------------------------------------------ caret movement
 
+        /// <summary>The text a caret can reach in a paragraph: all of it, or the part a line limit leaves showing.</summary>
+        int VisibleLength(int paragraph) => ParagraphLayoutFor(paragraph).VisibleEnd;
+
+        /// <summary>A position moved back to the end of the visible text when it is in text a line limit hides (FieldWorks puts an
+        /// insertion point that would land in truncated text at the last visible position).</summary>
+        TextPosition Visible(TextPosition p)
+        {
+            if (p.Paragraph < 0 || p.Paragraph >= _layouts.Count) return p;
+            var pl = ParagraphLayoutFor(p.Paragraph);
+            return pl.Truncated && p.Offset > pl.VisibleEnd ? new TextPosition(p.Paragraph, pl.VisibleEnd) : p;
+        }
+
         void OnCaretMoved()
         {
+            // A caret set from outside (the host, or typing at the end of the visible text) can land in hidden text: bring it back.
+            if (!_moving && Editor.Document.Paragraphs.Count == _layouts.Count)
+            {
+                var caret = Editor.Caret;
+                var visible = Visible(caret);
+                if (!visible.Equals(caret))
+                {
+                    Editor.SetCaret(visible, Editor.HasSelection);
+                    return;
+                }
+            }
             if (!_moving) { _goalX = -1; _hit = null; }
             InvalidateVisual();
             _ime.NotifyCaret();
@@ -320,6 +343,7 @@ namespace SIL.TextEditing.Avalonia
 
         void Move(TextPosition p, bool extend, bool keepGoal = false, CharacterHit? hit = null)
         {
+            p = Visible(p);
             if (!keepGoal) _goalX = -1;
             _hit = hit;
             _hitPosition = p;
@@ -346,7 +370,7 @@ namespace SIL.TextEditing.Avalonia
             }
             if (forward)
             {
-                if (c.Offset < para.Length)
+                if (c.Offset < VisibleLength(c.Paragraph))
                 {
                     int n = GraphemeClusters.Next(para.Text, c.Offset);
                     Move(new TextPosition(c.Paragraph, n), extend, false, ParagraphLayoutFor(c.Paragraph).EndHit(n));
@@ -360,7 +384,7 @@ namespace SIL.TextEditing.Avalonia
             }
             else if (c.Paragraph > 0)
             {
-                int pi = c.Paragraph - 1, len = Editor.Document.Paragraphs[pi].Length;
+                int pi = c.Paragraph - 1, len = VisibleLength(pi);
                 Move(new TextPosition(pi, len), extend, false, ParagraphLayoutFor(pi).EndHit(len));
             }
             return true;
@@ -377,11 +401,11 @@ namespace SIL.TextEditing.Avalonia
             if (backward)
             {
                 if (c.Offset > 0) Move(new TextPosition(c.Paragraph, WordBreaks.PreviousWordStart(para.Text, c.Offset)), extend);
-                else if (c.Paragraph > 0) Move(new TextPosition(c.Paragraph - 1, Editor.Document.Paragraphs[c.Paragraph - 1].Length), extend);
+                else if (c.Paragraph > 0) Move(new TextPosition(c.Paragraph - 1, VisibleLength(c.Paragraph - 1)), extend);
             }
             else
             {
-                if (c.Offset < para.Length) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para.Text, c.Offset)), extend);
+                if (c.Offset < VisibleLength(c.Paragraph)) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para.Text, c.Offset)), extend);
                 else if (c.Paragraph + 1 < Editor.Document.Paragraphs.Count) Move(new TextPosition(c.Paragraph + 1, 0), extend);
             }
         }
@@ -400,7 +424,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (pl.Lines.Count > 0 && li + 1 < pl.Lines.Count) y = top + pl.Lines[li + 1].Y + 1;
                 else if (c.Paragraph + 1 < _layouts.Count) y = top + pl.Height + 1;
-                else { Move(new TextPosition(c.Paragraph, pl.Paragraph.Length), extend, true); return; }
+                else { Move(new TextPosition(c.Paragraph, pl.VisibleEnd), extend, true); return; }
             }
             else
             {

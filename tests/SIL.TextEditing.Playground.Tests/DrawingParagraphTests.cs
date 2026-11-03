@@ -142,6 +142,101 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        // Text a line limit hides cannot be reached: the caret stops at the end of the last line shown, as FieldWorks puts an
+        // insertion point that would land in truncated text at the last visible position. The text stays in the model.
+
+        [Fact]
+        public void A_caret_set_into_text_a_line_limit_hides_is_drawn_at_the_end_of_the_last_visible_line() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 3000))
+            {
+                var pl = s.Field.ParagraphLayoutFor(TwoLines);
+                Assert.True(pl.Truncated);
+                int visible = pl.VisibleEnd, length = pl.Paragraph.Length;
+                Assert.InRange(visible, pl.Lines[1].Start + 1, length - 20);
+                Assert.Equal(pl.Lines[1].End, visible);
+                foreach (int hidden in new[] { visible + 1, length - 1, length })
+                {
+                    s.Caret(TwoLines, hidden);
+                    Assert.Equal(new TextPosition(TwoLines, visible), s.Editor.Caret);
+                    var r = s.Field.CaretRect();
+                    var end = pl.CaretRect(visible);
+                    Assert.Equal(end.X, r.X, 3);
+                    Assert.Equal(s.Field.ParagraphTop(TwoLines) + pl.Lines[1].TextY, r.Y, 3);
+                }
+                Assert.Equal(length, s.Editor.Document.Paragraphs[TwoLines].Length);
+            }
+        });
+
+        [Fact]
+        public void Right_and_End_stop_at_the_end_of_the_visible_text_and_Right_there_goes_to_the_next_paragraph() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 3000))
+            {
+                var pl = s.Field.ParagraphLayoutFor(TwoLines);
+                int visible = pl.VisibleEnd;
+                s.Caret(TwoLines, visible - 3);
+                s.Press(global::Avalonia.Input.Key.Right, times: 3);
+                Assert.Equal(new TextPosition(TwoLines, visible), s.Editor.Caret);
+                s.Press(global::Avalonia.Input.Key.Right);
+                Assert.Equal(new TextPosition(TwoLines + 1, 0), s.Editor.Caret);
+                s.Press(global::Avalonia.Input.Key.Left);
+                Assert.Equal(new TextPosition(TwoLines, visible), s.Editor.Caret);
+                s.Caret(TwoLines, 5);
+                s.Press(global::Avalonia.Input.Key.Down);
+                s.Press(global::Avalonia.Input.Key.End);
+                Assert.Equal(new TextPosition(TwoLines, visible), s.Editor.Caret);
+                s.Press(global::Avalonia.Input.Key.Right, global::Avalonia.Input.KeyModifiers.Control);
+                Assert.Equal(new TextPosition(TwoLines + 1, 0), s.Editor.Caret);
+            }
+        });
+
+        [Fact]
+        public void A_selection_into_hidden_text_ends_at_the_visible_end_and_draws_only_the_visible_lines() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 3000))
+            {
+                var pl = s.Field.ParagraphLayoutFor(TwoLines);
+                s.Select(TwoLines, 0, pl.Paragraph.Length);
+                Assert.Equal(new TextPosition(TwoLines, 0), s.Editor.Anchor);
+                Assert.Equal(new TextPosition(TwoLines, pl.VisibleEnd), s.Editor.Caret);
+                var rects = pl.SelectionRects(0, pl.VisibleEnd);
+                Assert.Equal(2, rects.Count);
+                Assert.True(rects.All(r => r.Bottom <= pl.Height - pl.BottomInset + 0.01));
+                Assert.Empty(pl.SelectionRects(pl.VisibleEnd, pl.Paragraph.Length));
+                // Shift+Down from the last visible line extends into the next paragraph, not into the hidden text.
+                s.Caret(TwoLines, 5);
+                s.Press(global::Avalonia.Input.Key.Down);
+                s.Press(global::Avalonia.Input.Key.Down, global::Avalonia.Input.KeyModifiers.Shift);
+                Assert.Equal(TwoLines + 1, s.Editor.Caret.Paragraph);
+            }
+        });
+
+        [Fact]
+        public void Up_and_Down_move_between_the_visible_lines_and_the_paragraphs_around_a_line_limited_one() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 3000))
+            {
+                var pl = s.Field.ParagraphLayoutFor(TwoLines);
+                s.Caret(TwoLines + 1, 3);
+                s.Press(global::Avalonia.Input.Key.Up);
+                Assert.Equal(TwoLines, s.Editor.Caret.Paragraph);
+                Assert.Equal(1, pl.LineIndexOf(s.Editor.Caret.Offset));
+                Assert.True(s.Editor.Caret.Offset <= pl.VisibleEnd);
+                s.Press(global::Avalonia.Input.Key.Up);
+                Assert.Equal(0, pl.LineIndexOf(s.Editor.Caret.Offset));
+                s.Press(global::Avalonia.Input.Key.Down);
+                s.Press(global::Avalonia.Input.Key.Down);
+                Assert.Equal(TwoLines + 1, s.Editor.Caret.Paragraph);
+                // Typing at the end of the visible text never leaves the caret in the hidden part.
+                s.Caret(TwoLines, pl.VisibleEnd);
+                s.Type("xyz");
+                var after = s.Field.ParagraphLayoutFor(TwoLines);
+                Assert.True(s.Editor.Caret.Offset <= after.VisibleEnd);
+                Assert.Equal(TwoLines, s.Editor.Caret.Paragraph);
+            }
+        });
+
         /// <summary>The caret edge of an offset (not the middle of a character), in window coordinates.</summary>
         static Point Edge(Session s, int paragraph, int offset)
         {

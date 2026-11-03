@@ -97,6 +97,9 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
   offset (Avalonia cannot shift one run's baseline), justification (Avalonia's justifier is internal, so a justified
   paragraph is laid out against the leading edge) and the squiggle. Pagination properties and the rest are carried untouched.
   Lengths in points are drawn as device-independent pixels, as font sizes are.
+  Text a line limit hides stays in the model but cannot be reached: the caret, Right, End, Up/Down and mouse stop at the end of
+  the last line shown, as FieldWorks puts an insertion point in truncated text at the last visible position. (FieldWorks also
+  draws an ellipsis on the last line; this field does not yet.)
 - **Graphemes**: `GraphemeClusters` is `StringInfo` plus Indic conjuncts (GB9c, six scripts; .NET 10 lacks it). The
   netstandard2.0 build also fuses Extend, SpacingMark, emoji ZWJ sequences and flags per UAX #29, with approximated
   property tables; caret stops in the field come from the shaper, not from this class.
