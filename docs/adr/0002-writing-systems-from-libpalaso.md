@@ -8,7 +8,11 @@ direction, font features and keyboard. FieldWorks and Motif already use the same
 the wheel."
 
 **Consequences:** the package depends on libpalaso, and through it on ICU. Its versions must match what FieldWorks and
-Motif pin, and the net10.0 build must stay trimmable and AOT-compatible. If libpalaso blocks that, the fix belongs
-upstream, not in a local copy.
+Motif pin, and the net10.0 build must stay trimmable and AOT-compatible.
+
+- The minimum version is FieldWorks' pin, 18.0.0-beta0042; hosts may float up.
+- A libpalaso trim or AOT warning is fixed upstream. libpalaso takes pull requests from us, through its normal review.
+- Until that fix is released, the warning is suppressed by its ID, with a comment that links the libpalaso pull request.
+- The suppression is removed when the minimum version is raised to the fixed release.
 
 Owner decision, 2026-11-03.
