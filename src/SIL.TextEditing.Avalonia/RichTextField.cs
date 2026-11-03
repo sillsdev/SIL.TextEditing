@@ -46,12 +46,14 @@ namespace SIL.TextEditing.Avalonia
             Editor = new DocumentEditor(document);
             for (int i = 0; i < document.Paragraphs.Count; i++) _layouts.Add(null);
             Editor.DocumentChanged += OnDocumentChanged;
+            Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => ActiveWsChanged?.Invoke(o, n);
             Editor.CaretMoved += OnCaretMoved;
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
             GotFocus += (o, e) => InvalidateVisual();
             LostFocus += (o, e) => InvalidateVisual();
+            ActualThemeVariantChanged += (o, e) => InvalidateVisual();
         }
 
         /// <summary>The editing session: caret, selection, active writing system and edit events.</summary>
@@ -191,6 +193,7 @@ namespace SIL.TextEditing.Avalonia
             context.DrawRectangle(Background, null, new Rect(Bounds.Size));
             if (_layouts.Count == 0) return;
             Editor.Ordered(out var a, out var b);
+            var selectionBrush = Editor.HasSelection ? ResolveSelectionBrush() : null;
             double y = 0;
             var clip = new Rect(Bounds.Size);
             for (int i = 0; i < _layouts.Count; i++)
@@ -203,7 +206,7 @@ namespace SIL.TextEditing.Avalonia
                         int s = i == a.Paragraph ? a.Offset : 0;
                         int e = i == b.Paragraph ? b.Offset : pl.Paragraph.Length;
                         foreach (var r in pl.SelectionRects(s, e))
-                            context.DrawRectangle(Brushes.LightSkyBlue, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
+                            context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
                     foreach (var li in pl.Lines) li.Line.Draw(context, new Point(0, y + li.Y));
                     if (ObjectAsGlyph)
@@ -218,7 +221,7 @@ namespace SIL.TextEditing.Avalonia
                 }
                 y += pl.Height;
             }
-            if (IsFocused || ShowCaretAlways) context.DrawRectangle(Brushes.Black, null, CaretRect());
+            if (IsFocused || ShowCaretAlways) context.DrawRectangle(ResolveCaretBrush(), null, CaretRect());
         }
 
         // ------------------------------------------------ caret movement
@@ -603,21 +606,64 @@ namespace SIL.TextEditing.Avalonia
 
         // ------------------------------------------------ automation
 
-        protected override AutomationPeer OnCreateAutomationPeer() => new FieldPeer(this);
+        protected override AutomationPeer OnCreateAutomationPeer() => _peer = new FieldPeer(this);
+
+        /// <summary>The text a screen reader reads: paragraphs joined by CR LF, each embedded object as U+FFFC.</summary>
+        internal string AutomationValue => string.Join("\r\n", Editor.Document.Paragraphs.Select(p => p.Text));
+
+        FieldPeer? _peer;
 
         sealed class FieldPeer : ControlAutomationPeer, global::Avalonia.Automation.Provider.IValueProvider
         {
             readonly RichTextField _field;
+            string _lastValue;
 
-            public FieldPeer(RichTextField field) : base(field) { _field = field; }
+            public FieldPeer(RichTextField field) : base(field) { _field = field; _lastValue = field.AutomationValue; }
 
-            public bool IsReadOnly => true;
-            public string? Value => string.Join("\n", _field.Editor.Document.Paragraphs.Select(p => p.Text));
+            // The field has no read-only state yet, so it reports editable.
+            public bool IsReadOnly => false;
+            public string? Value => _field.AutomationValue;
             public void SetValue(string? value) { }
+
+            public void RaiseValueChanged()
+            {
+                var now = _field.AutomationValue;
+                if (now == _lastValue) return;
+                var old = _lastValue;
+                _lastValue = now;
+                RaisePropertyChangedEvent(global::Avalonia.Automation.ValuePatternIdentifiers.ValueProperty, old, now);
+            }
+
             protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Edit;
-            protected override string? GetNameCore() => "Rich text field";
             protected override bool IsContentElementCore() => true;
             protected override bool IsControlElementCore() => true;
+            protected override bool IsKeyboardFocusableCore() => true;
+            // Avalonia raises the focus-changed event itself for a focusable control; there is no public API to raise it.
+            protected override bool HasKeyboardFocusCore() => _field.IsFocused;
+        }
+
+        void RaiseAutomationValueChanged() => _peer?.RaiseValueChanged();
+
+        // ------------------------------------------------ system colours
+
+        /// <summary>The selection fill: the theme or system highlight resource, else light sky blue.</summary>
+        public IBrush ResolveSelectionBrush() =>
+            ThemeBrush(Brushes.LightSkyBlue, "TextControlSelectionHighlightColor", "SystemControlHighlightAccentBrush", "SystemColorHighlightColor");
+
+        /// <summary>The caret fill: the theme or system text-colour resource, else black.</summary>
+        public IBrush ResolveCaretBrush() =>
+            ThemeBrush(Brushes.Black, "TextControlForeground", "SystemControlForegroundBaseHighBrush", "SystemColorWindowTextColor");
+
+        /// <summary>The first of the named theme or system resources that is a colour or brush; else the fallback look.</summary>
+        IBrush ThemeBrush(IBrush fallback, params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                if (!this.TryFindResource(key, ActualThemeVariant, out var value)) continue;
+                if (value is IBrush brush) return brush;
+                if (value is Color color) return new SolidColorBrush(color);
+            }
+            return fallback;
         }
     }
 }
