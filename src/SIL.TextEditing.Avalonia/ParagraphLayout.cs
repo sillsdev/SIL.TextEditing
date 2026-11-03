@@ -731,9 +731,7 @@ namespace SIL.TextEditing.Avalonia
                     // The break is never drawn, so a selection that covers only the break gets a small block where the break is.
                     if (ef <= te && et > te && te < li.End && !li.IsEmpty && EffectiveText[te] == HardLineBreak)
                     {
-                        var caret = CaretRect(te, true);
-                        double w = Math.Max(3, caret.Height * 0.25);
-                        result.Add(new Rect(Rtl ? caret.X - w : caret.X, caret.Y, w, caret.Height));   // the break follows the text, which is to the left in a right-to-left paragraph
+                        result.Add(BreakBlock(li, te));
                     }
                     continue;
                 }
@@ -741,6 +739,31 @@ namespace SIL.TextEditing.Avalonia
                     result.Add(new Rect(li.X + tb.Rectangle.X, li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height));
             }
             return result;
+        }
+
+        /// <summary>The small block that stands for a selected hard line break on a line: at the end of the line's text in the paragraph's
+        /// direction (right of it in a left-to-right paragraph, left of it in a right-to-left one), whatever direction the last glyph runs
+        /// in, so it never covers a glyph. It stays inside the field.</summary>
+        Rect BreakBlock(LineInfo li, int textEnd)
+        {
+            var caret = CaretRect(textEnd, true);
+            double w = Math.Max(3, caret.Height * 0.25);
+            double edge = caret.X;
+            if (textEnd > li.Start)
+            {
+                bool any = false;
+                double left = double.MaxValue, right = double.MinValue;
+                foreach (var tb in li.Line.GetTextBounds(li.Start, textEnd - li.Start))
+                {
+                    any = true;
+                    left = Math.Min(left, li.X + tb.Rectangle.X);
+                    right = Math.Max(right, li.X + tb.Rectangle.Right);
+                }
+                if (any) edge = Rtl ? left : right;
+            }
+            double x = Rtl ? edge - w : edge;
+            if (!double.IsInfinity(LayoutWidth)) x = Math.Min(x, LayoutWidth - w);
+            return new Rect(Math.Max(x, 0), caret.Y, w, caret.Height);
         }
 
         public struct Stop
