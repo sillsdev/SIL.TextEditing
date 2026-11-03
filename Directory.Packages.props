@@ -33,6 +33,11 @@
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
   </ItemGroup>
 
+  <!-- FieldWorks pins this LCModel version (ADR 0016); hosts may float up. -->
+  <ItemGroup>
+    <PackageVersion Include="SIL.LCModel.Core" Version="11.0.0-beta0180" />
+  </ItemGroup>
+
   <!-- Same test stack as Motif. -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

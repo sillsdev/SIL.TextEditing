@@ -288,7 +288,7 @@ namespace SIL.TextEditing
             Paragraph left, right;
             if (off == 0)
             {
-                left = new Paragraph { Style = orig.Style, Rtl = orig.Rtl, DefaultWs = orig.DefaultWs };
+                left = new Paragraph { Style = orig.Style, Rtl = orig.Rtl, DefaultWs = orig.DefaultWs, Props = orig.Props.Clone() };
                 right = orig.Clone();
             }
             else
@@ -317,7 +317,7 @@ namespace SIL.TextEditing
                 var p = Document.Paragraphs[pi];
                 int s = pi == a.Paragraph ? a.Offset : 0;
                 int e = pi == b.Paragraph ? b.Offset : p.Length;
-                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Runs = p.Slice(s, e) });
+                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = p.Slice(s, e) });
             }
             return result;
         }

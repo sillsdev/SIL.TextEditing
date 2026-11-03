@@ -16,6 +16,9 @@ namespace SIL.TextEditing
         public bool Rtl { get; set; }
         /// <summary>The writing system used for typing in an empty paragraph.</summary>
         public string DefaultWs { get; set; } = "en";
+        /// <summary>The paragraph's own text properties (an ITsString paragraph's StyleRules), opaque like a run's bag: copied through
+        /// every split, join and slice, never interpreted. <see cref="Style"/> and <see cref="Rtl"/> are the two the field reads.</summary>
+        public PropertyBag Props { get; set; } = new PropertyBag();
         public List<Run> Runs { get; set; } = new List<Run>();
 
         public int Length
@@ -41,7 +44,7 @@ namespace SIL.TextEditing
 
         public Paragraph Clone(bool keepKey = true)
         {
-            var p = new Paragraph { Style = Style, Rtl = Rtl, DefaultWs = DefaultWs };
+            var p = new Paragraph { Style = Style, Rtl = Rtl, DefaultWs = DefaultWs, Props = Props.Clone() };
             if (keepKey) p.Key = Key;
             foreach (var r in Runs) p.Runs.Add(r.Clone());
             return p;
