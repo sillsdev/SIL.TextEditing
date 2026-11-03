@@ -360,6 +360,57 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Single(mid.SelectionRects(2, 3));
         });
 
+        static RichTextField LockedThenEditable(string locked, string editable, int maxLines)
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            var first = new Run { Ws = "en", Text = locked };
+            first.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            p.Runs.Add(first);
+            p.Runs.Add(new Run { Ws = "en", Text = editable });
+            p.Props.SetInt(TextPropertyNumbers.MaxLines, maxLines);
+            return Fixtures.Field(Doc(p), 520);
+        }
+
+        [Theory]
+        [InlineData("|", "y", 1)]
+        [InlineData("ab|", "cd", 1)]
+        [InlineData("a|b|", "cd", 2)]
+        public void A_caret_set_where_the_only_editable_place_is_hidden_settles_at_the_visible_end(string locked, string editable, int maxLines) => Headless.Run(() =>
+        {
+            var field = LockedThenEditable(locked.Replace("|", Break), editable, maxLines);
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.True(pl.Truncated);
+            int visibleEnd = pl.VisibleEnd;
+            Assert.True(visibleEnd < Text(field).Length);
+            for (int o = 0; o <= Text(field).Length; o++)
+            {
+                field.Editor.SetCaret(new TextPosition(0, o));   // used to recurse until the stack overflowed
+                Assert.Equal(new TextPosition(0, System.Math.Min(o, visibleEnd)), field.Editor.Caret);
+            }
+            field.Editor.SetCaret(new TextPosition(0, 0));
+            field.Press(Key.End);
+            field.Press(Key.Right);
+            field.Press(Key.Down);
+            Assert.True(field.Editor.Caret.Offset <= visibleEnd);
+        });
+
+        [Fact]
+        public void A_field_whose_only_editable_place_is_hidden_has_no_place_to_edit_and_Tab_leaves() => Headless.Run(() =>
+        {
+            var field = LockedThenEditable(Break, "y", 1);
+            string original = Text(field);
+            field.Editor.SetCaret(new TextPosition(0, 0));
+            field.Type("x");
+            field.Press(Key.Delete);   // the break is not editable, so Delete cannot remove it
+            Assert.Equal(original, Text(field));
+            Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Next, out _));
+            Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Last, out _));
+            int left = 0;
+            field.LeaveRequested += (s, e) => { left++; e.Handled = true; };
+            field.Press(Key.Tab);
+            Assert.Equal(1, left);   // Tab is not trapped by a place nobody can reach
+        });
+
         static Paragraph Limit(string text, int maxLines)
         {
             var p = Para("en", "en", text);

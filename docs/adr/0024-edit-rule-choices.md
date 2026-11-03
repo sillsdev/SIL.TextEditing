@@ -42,6 +42,13 @@ one, and can change without superseding anything.
   editable and a read-only run can make a paragraph that is entirely read-only. Backspace into it is refused (ADR 0019),
   so only the host's undo removes it. Delete in an empty editable paragraph beside read-only text is refused for the
   same reason.
+- **The caret never rests in hidden text, and a hidden editable run is not an editable place.** A line limit hides the
+  text after its last visible line (ADR 0019 says where editing is allowed; the limit says what can be reached). The caret
+  stops at the visible end and the search for the nearest editable place stops there too. When the only editable text is
+  hidden behind a non-editable run (a non-editable U+2028 at the start of a MaxLines 1 paragraph, say), the field acts as
+  having no editable place: the caret stays at the visible end, typing, paste and Delete are refused (Delete cannot remove a
+  non-editable break), and Tab leaves the field. That is host data the field cannot repair; it settles and does not loop.
+  Our choice: FieldWorks was not checked for this combination.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

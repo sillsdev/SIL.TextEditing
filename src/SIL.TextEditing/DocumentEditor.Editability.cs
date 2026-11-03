@@ -15,6 +15,19 @@ namespace SIL.TextEditing
         /// in type-ahead edit boxes) as editable for typing and deletion and refuse only formatting in it.</summary>
         internal static bool AllowsEditing(Run r) => r.Editable != RunEditable.NotEditable;
 
+        /// <summary>Set by a field that hides text (a line limit): for a paragraph, the last offset the caret can rest at. The
+        /// caret never rests beyond it, and the search for an editable place stops there, so text hidden behind a
+        /// non-editable run is not an editable place: when the only one is hidden, the caret stays at the visible end and
+        /// there is nowhere to edit. Null means no limit.</summary>
+        public Func<int, int>? CaretLimit { get; set; }
+
+        int LimitOf(int paragraph)
+        {
+            int len = Document.Paragraphs[paragraph].Length;
+            var limit = CaretLimit;
+            return limit == null ? len : Math.Max(0, Math.Min(len, limit(paragraph)));
+        }
+
         /// <summary>True when an insertion point at <paramref name="p"/> can take typing: the paragraph is empty, or the
         /// run on either side is editable (FieldWorks asks for both sides of the point).</summary>
         public bool IsEditableAt(TextPosition p)
@@ -98,7 +111,7 @@ namespace SIL.TextEditing
             if (IsReadOnly) return places;
             for (int pi = 0; pi < Document.Paragraphs.Count; pi++)
             {
-                int len = Document.Paragraphs[pi].Length;
+                int len = LimitOf(pi);
                 int start = -1;
                 for (int o = 0; o <= len + 1; o++)
                 {
@@ -156,7 +169,7 @@ namespace SIL.TextEditing
         public TextPosition NearestEditable(TextPosition p, int direction = 0)
         {
             if (IsEditableAt(p)) return p;
-            int len = Document.Paragraphs[p.Paragraph].Length;
+            int len = LimitOf(p.Paragraph);
             int Find(int from, int step)
             {
                 for (int o = from; o >= 0 && o <= len; o += step)

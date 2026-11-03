@@ -85,7 +85,7 @@ namespace SIL.TextEditing
         public void SetCaret(TextPosition p, bool extend = false, int direction = 0)
         {
             p.Paragraph = Math.Max(0, Math.Min(Document.Paragraphs.Count - 1, p.Paragraph));
-            p.Offset = Math.Max(0, Math.Min(Document.Paragraphs[p.Paragraph].Length, p.Offset));
+            p.Offset = Math.Max(0, Math.Min(LimitOf(p.Paragraph), p.Offset));
             if (!extend && !IsReadOnly) p = NearestEditable(p, direction);
             if (!p.Equals(Caret) || (!extend && !p.Equals(Anchor))) CloseUndoGroup();   // a caret move ends a typing step (ADR 0023)
             Caret = p;

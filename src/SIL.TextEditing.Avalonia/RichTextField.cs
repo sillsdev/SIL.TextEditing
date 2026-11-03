@@ -65,6 +65,7 @@ namespace SIL.TextEditing.Avalonia
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => ActiveWsChanged?.Invoke(o, n);
             Editor.CaretMoved += OnCaretMoved;
+            Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count ? VisibleLength(p) : int.MaxValue;
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
             GotFocus += (o, e) => InvalidateVisual();
