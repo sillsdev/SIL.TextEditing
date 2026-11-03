@@ -183,6 +183,41 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
+        public void The_editable_places_are_the_stretches_between_read_only_text_and_Tab_steps_through_them()
+        {
+            var e = Labelled();   // places: [7, 10] and [18, 21]
+            e.SetCaret(new TextPosition(0, 8));
+            Assert.True(e.TryGetEditablePlace(EditablePlace.Next, out var p));
+            Assert.Equal(new TextPosition(0, 18), p);
+            e.SetCaret(p);
+            Assert.False(e.TryGetEditablePlace(EditablePlace.Next, out _));    // none after the last place: leave
+            Assert.True(e.TryGetEditablePlace(EditablePlace.Previous, out p));
+            Assert.Equal(new TextPosition(0, 10), p);                          // the end of the previous place
+            e.SetCaret(p);
+            Assert.False(e.TryGetEditablePlace(EditablePlace.Previous, out _));
+            Assert.True(e.TryGetEditablePlace(EditablePlace.Last, out p));
+            Assert.Equal(new TextPosition(0, 21), p);
+            Assert.True(e.TryGetEditablePlace(EditablePlace.First, out p));
+            Assert.Equal(new TextPosition(0, 7), p);
+            e.SetCaret(new TextPosition(0, 21));
+            Assert.False(e.TryGetEditablePlace(EditablePlace.Last, out _));    // already at the last place
+        }
+
+        [Fact]
+        public void Each_paragraph_is_an_editable_place_and_a_read_only_field_has_none()
+        {
+            var locked = Para("en", "en", "locked");
+            locked.Runs[0].Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            var e = new DocumentEditor(Doc(Para("en", "en", "one"), locked, Para("en", "en", "three")));
+            e.SetCaret(new TextPosition(0, 1));
+            Assert.True(e.TryGetEditablePlace(EditablePlace.Next, out var p));
+            Assert.Equal(new TextPosition(2, 0), p);                           // over the read-only paragraph
+            e.IsReadOnly = true;
+            Assert.False(e.TryGetEditablePlace(EditablePlace.Next, out _));
+            Assert.False(e.TryGetEditablePlace(EditablePlace.Last, out _));
+        }
+
+        [Fact]
         public void Pasting_a_copied_read_only_run_gives_editable_text_that_can_be_deleted_again()
         {
             var p = new Paragraph { DefaultWs = "en" };

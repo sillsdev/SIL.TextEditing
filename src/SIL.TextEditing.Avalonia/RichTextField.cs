@@ -108,7 +108,7 @@ namespace SIL.TextEditing.Avalonia
         /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it
         /// also keeps bubbling.</summary>
         public event Action<KeyModifiers>? EnterRequested;
-        /// <summary>Tab, Shift+Tab, Ctrl+Tab or an arrow key that cannot move further asks to leave the field (ADR 0021); the
+        /// <summary>Tab, Shift+Tab, Ctrl+Tab or an arrow key that cannot move further (Tab and its variants first move to the next, previous, last or first editable place) asks to leave the field (ADR 0021); the
         /// host moves focus.</summary>
         public event EventHandler<LeaveRequestedEventArgs>? LeaveRequested;
         /// <summary>The editor asks the host to undo (Ctrl+Z); the host owns the undo stack.</summary>
@@ -452,7 +452,13 @@ namespace SIL.TextEditing.Avalonia
                 case Key.Left: MoveOrLeave(true, ctrl, shift); return true;
                 case Key.Right: MoveOrLeave(false, ctrl, shift); return true;
                 case Key.Tab when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0:
+                {
+                    // FieldWorks moves to the next (previous) editable place first and leaves only when there is none;
+                    // Ctrl+Tab goes to the last place and Ctrl+Shift+Tab to the first, and leaves only from there.
+                    var which = ctrl ? (shift ? EditablePlace.First : EditablePlace.Last) : (shift ? EditablePlace.Previous : EditablePlace.Next);
+                    if (Editor.TryGetEditablePlace(which, out var place)) { Move(place, false); return true; }
                     return RaiseLeave(shift ? LeaveDirection.Previous : LeaveDirection.Next, LeaveKey.Tab, ctrl, double.NaN);
+                }
                 case Key.Up: MoveVertical(false, shift); return true;
                 case Key.Down: MoveVertical(true, shift); return true;
                 case Key.Home:

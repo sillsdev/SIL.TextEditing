@@ -31,13 +31,55 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
-        public void Ctrl_Tab_and_Ctrl_Shift_Tab_ask_for_the_last_and_the_first_field() => Headless.Run(() =>
+        public void Ctrl_Tab_goes_to_the_last_place_and_Ctrl_Shift_Tab_to_the_first_and_each_leaves_only_from_there() => Headless.Run(() =>
         {
             var (field, seen) = Watch(OneParagraph("abc"));
+            field.Editor.SetCaret(new TextPosition(0, 1));
+            Assert.True(field.HandleKey(Key.Tab, KeyModifiers.Control));
+            Assert.Equal(new TextPosition(0, 3), field.Editor.Caret);
+            Assert.Empty(seen);
             field.HandleKey(Key.Tab, KeyModifiers.Control);
-            field.HandleKey(Key.Tab, KeyModifiers.Control | KeyModifiers.Shift);
             Assert.True(seen[0].ToEnd && seen[0].Direction == LeaveDirection.Next);
+
+            Assert.True(field.HandleKey(Key.Tab, KeyModifiers.Control | KeyModifiers.Shift));
+            Assert.Equal(new TextPosition(0, 0), field.Editor.Caret);
+            Assert.Single(seen);
+            field.HandleKey(Key.Tab, KeyModifiers.Control | KeyModifiers.Shift);
             Assert.True(seen[1].ToEnd && seen[1].Direction == LeaveDirection.Previous);
+        });
+
+        [Fact]
+        public void Tab_and_Shift_Tab_move_to_the_next_and_previous_editable_place_and_leave_only_when_there_is_none() => Headless.Run(() =>
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            var label = new Run { Ws = "en", Text = "Gloss: " };
+            label.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            p.Runs.Add(label);
+            p.Runs.Add(new Run { Ws = "en", Text = "abc" });
+            var fixedText = new Run { Ws = "en", Text = " [fixed]" };
+            fixedText.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            p.Runs.Add(fixedText);
+            p.Runs.Add(new Run { Ws = "en", Text = "xyz" });
+            var (field, seen) = Watch(Doc(p));
+            field.Editor.SetCaret(new TextPosition(0, 8));
+
+            Assert.True(field.HandleKey(Key.Tab, KeyModifiers.None));          // the field keeps the key
+            Assert.Equal(new TextPosition(0, 18), field.Editor.Caret);
+            Assert.Empty(seen);
+            Assert.False(field.HandleKey(Key.Tab, KeyModifiers.None));         // no place after the last: leave
+            Assert.Equal(LeaveDirection.Next, seen[0].Direction);
+
+            Assert.True(field.HandleKey(Key.Tab, KeyModifiers.Shift));
+            Assert.Equal(new TextPosition(0, 10), field.Editor.Caret);
+            Assert.Single(seen);
+            Assert.False(field.HandleKey(Key.Tab, KeyModifiers.Shift));
+            Assert.Equal(LeaveDirection.Previous, seen[1].Direction);
+
+            Assert.True(field.HandleKey(Key.Tab, KeyModifiers.Control));
+            Assert.Equal(new TextPosition(0, 21), field.Editor.Caret);
+            Assert.True(field.HandleKey(Key.Tab, KeyModifiers.Control | KeyModifiers.Shift));
+            Assert.Equal(new TextPosition(0, 7), field.Editor.Caret);
+            Assert.Equal(2, seen.Count);
         });
 
         [Fact]

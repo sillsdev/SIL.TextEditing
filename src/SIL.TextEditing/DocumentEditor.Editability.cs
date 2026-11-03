@@ -64,6 +64,66 @@ namespace SIL.TextEditing
             return CanEditRange(a, b);
         }
 
+        /// <summary>The editable places of the document, in order: each is a stretch of insertion points [Start, End] in one
+        /// paragraph that can take typing, with no read-only text between them. A paragraph with no read-only text has one
+        /// place; a field-level read-only document has none.</summary>
+        List<(TextPosition Start, TextPosition End)> EditablePlaces()
+        {
+            var places = new List<(TextPosition, TextPosition)>();
+            if (IsReadOnly) return places;
+            for (int pi = 0; pi < Document.Paragraphs.Count; pi++)
+            {
+                int len = Document.Paragraphs[pi].Length;
+                int start = -1;
+                for (int o = 0; o <= len + 1; o++)
+                {
+                    bool ok = o <= len && IsEditableAt(new TextPosition(pi, o));
+                    if (ok && start < 0) start = o;
+                    else if (!ok && start >= 0)
+                    {
+                        places.Add((new TextPosition(pi, start), new TextPosition(pi, o - 1)));
+                        start = -1;
+                    }
+                }
+            }
+            return places;
+        }
+
+        /// <summary>Finds where Tab (<see cref="EditablePlace.Next"/>), Shift+Tab (<see cref="EditablePlace.Previous"/>),
+        /// Ctrl+Tab (<see cref="EditablePlace.Last"/>) or Ctrl+Shift+Tab (<see cref="EditablePlace.First"/>) goes, as FieldWorks
+        /// moves among the editable places of a view: the start of the next place, the end of the previous one, the end of
+        /// the last or the start of the first. False when there is no such place or the caret is already there; the host then
+        /// moves focus out of the field.</summary>
+        public bool TryGetEditablePlace(EditablePlace which, out TextPosition position)
+        {
+            position = Caret;
+            var places = EditablePlaces();
+            if (places.Count == 0) return false;
+            TextPosition target;
+            switch (which)
+            {
+                case EditablePlace.First: target = places[0].Start; break;
+                case EditablePlace.Last: target = places[places.Count - 1].End; break;
+                case EditablePlace.Next:
+                {
+                    int i = places.FindIndex(pl => pl.Start.CompareTo(Caret) > 0);
+                    if (i < 0) return false;
+                    target = places[i].Start;
+                    break;
+                }
+                default:
+                {
+                    int i = places.FindLastIndex(pl => pl.End.CompareTo(Caret) < 0);
+                    if (i < 0) return false;
+                    target = places[i].End;
+                    break;
+                }
+            }
+            if (target.Equals(Caret) && !HasSelection) return false;
+            position = target;
+            return true;
+        }
+
         /// <summary>The closest insertion point to <paramref name="p"/>, in its paragraph, where editing is allowed: p itself
         /// when it already is. A direction (+1 forward, -1 backward) searches that way first, so an arrow key steps over
         /// read-only text instead of bouncing back; with none, the nearer side wins and backward wins a tie. When the
@@ -88,4 +148,7 @@ namespace SIL.TextEditing
             return pick < 0 ? p : new TextPosition(p.Paragraph, pick);
         }
     }
+
+    /// <summary>Where Tab and its variants go among the editable places of a field.</summary>
+    public enum EditablePlace { Next, Previous, First, Last }
 }
