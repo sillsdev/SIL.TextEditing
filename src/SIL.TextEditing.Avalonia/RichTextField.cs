@@ -735,6 +735,12 @@ namespace SIL.TextEditing.Avalonia
         {
             var para = Editor.Document.Paragraphs[loc.Character.Paragraph];
             if (_dragUnit == DragUnit.Paragraph) { start = new TextPosition(loc.Character.Paragraph, 0); end = new TextPosition(loc.Character.Paragraph, para.Length); return; }
+            if (loc.Character.Offset >= para.Length && para.Length > 0)
+            {
+                // The pointer is on the empty line after a trailing break: no character is under it, so a double click selects nothing.
+                start = end = new TextPosition(loc.Character.Paragraph, para.Length);
+                return;
+            }
             WordBreaks.WordAt(para.Text, loc.Character.Offset, out int s, out int en);
             start = new TextPosition(loc.Character.Paragraph, s);
             end = new TextPosition(loc.Character.Paragraph, en);

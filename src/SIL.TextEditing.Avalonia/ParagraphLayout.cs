@@ -699,7 +699,7 @@ namespace SIL.TextEditing.Avalonia
                 if (point.Y < l.Y + l.Height) { li = l; break; }
             }
             if (li.IsEmpty)
-                return new HitResult { Offset = Paragraph.Length, CaretHit = new CharacterHit(li.Start), Character = Math.Max(0, Paragraph.Length - 1) };
+                return new HitResult { Offset = Paragraph.Length, CaretHit = new CharacterHit(li.Start), Character = Paragraph.Length };   // past the last character: the empty line after a trailing break holds none
             var h = li.Line.GetCharacterHitFromDistance(point.X - li.X);
             int e = h.FirstCharacterIndex + h.TrailingLength;
             int max = TextEnd(li);
@@ -724,8 +724,18 @@ namespace SIL.TextEditing.Avalonia
             int ef = ToEffective(from), et = ToEffective(to);
             foreach (var li in Lines)
             {
-                int a = Math.Max(ef, li.Start), b = Math.Min(et, TextEnd(li));
-                if (b <= a) continue;
+                int te = TextEnd(li);
+                int a = Math.Max(ef, li.Start), b = Math.Min(et, te);
+                if (b <= a)
+                {
+                    // The break is never drawn, so a selection that covers only the break gets a small block where the break is.
+                    if (ef <= te && et > te && te < li.End && !li.IsEmpty && EffectiveText[te] == HardLineBreak)
+                    {
+                        var caret = CaretRect(te, true);
+                        result.Add(new Rect(caret.X, caret.Y, Math.Max(3, caret.Height * 0.25), caret.Height));
+                    }
+                    continue;
+                }
                 foreach (var tb in li.Line.GetTextBounds(a, b - a))
                     result.Add(new Rect(li.X + tb.Rectangle.X, li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height));
             }

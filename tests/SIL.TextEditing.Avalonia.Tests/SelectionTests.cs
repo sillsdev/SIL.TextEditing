@@ -247,6 +247,20 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void Double_click_on_the_empty_last_line_after_a_hard_break_selects_nothing_and_keeps_the_break() => Headless.Run(() =>
+        {
+            var (w, f) = Open(Doc(Ltr("ab\u2028")), 400);
+            ResetClicks(w);
+            var pl = f.ParagraphLayoutFor(0);
+            Assert.Equal(2, pl.Lines.Count);
+            Click(w, new Point(10, pl.Lines[1].Y + pl.Lines[1].Height / 2), 2);
+            Assert.False(f.Editor.HasSelection, Pos(f));
+            Assert.Equal(new TextPosition(0, 3), f.Editor.Caret);
+            Assert.Equal("ab\u2028", f.Editor.Document.Paragraphs[0].Text);
+            w.Close();
+        });
+
+        [Fact]
         public void Double_click_on_the_right_half_of_a_words_last_letter_still_selects_that_word() => Headless.Run(() =>
         {
             var (w, f) = Open(Doc(Ltr("one two three")), 400);

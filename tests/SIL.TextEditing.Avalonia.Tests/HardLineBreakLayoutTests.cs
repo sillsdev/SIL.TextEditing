@@ -340,5 +340,22 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(pl.Lines[0].TextY, caret.Y, 3);
             Assert.Equal(pl.CaretRect(4, true).X, caret.X, 3);   // after "abxy"
         });
+
+        [Fact]
+        public void Selecting_only_a_hard_break_draws_a_small_block_at_the_end_of_its_line() => Headless.Run(() =>
+        {
+            var field = Field("ab" + Break, 0);
+            var pl = field.ParagraphLayoutFor(0);
+            var rects = pl.SelectionRects(2, 3);
+            var block = Assert.Single(rects);
+            Assert.Equal(pl.CaretRect(2).X, block.X, 3);
+            Assert.True(block.Width >= 2 && block.Height > 5);
+            Assert.Equal(pl.Lines[0].TextY, block.Y, 3);
+            // text plus the break draws the text's rectangle only, as before
+            Assert.Single(pl.SelectionRects(1, 3));
+            // a break-only middle line
+            var mid = Field("a" + Break + Break + "b", 0).ParagraphLayoutFor(0);
+            Assert.Single(mid.SelectionRects(2, 3));
+        });
     }
 }
