@@ -435,6 +435,31 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(new[] { "", "ab" }, Texts(forward));
         });
 
+        static RichTextField BoundarySelected(Paragraph first, Paragraph second)
+        {
+            var field = Fixtures.Field(Doc(first, second), 520);
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Left, KeyModifiers.Shift);   // the selection is the paragraph boundary
+            Assert.True(field.Editor.HasSelection);
+            return field;
+        }
+
+        [Fact]
+        public void Shift_Enter_across_an_empty_unlimited_paragraph_and_a_one_line_one_is_refused_because_the_one_line_paragraph_survives() => Headless.Run(() =>
+        {
+            var field = BoundarySelected(Para("en", "en", ""), Limit("ab", 1));
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "", "ab" }, Texts(field));   // the result, a break then ab, would hide "ab" in the surviving one-line paragraph
+        });
+
+        [Fact]
+        public void Shift_Enter_across_an_empty_one_line_paragraph_and_an_unlimited_one_is_allowed_because_the_unlimited_paragraph_survives() => Headless.Run(() =>
+        {
+            var field = BoundarySelected(Limit("", 1), Para("en", "en", "ab"));
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { Break + "ab" }, Texts(field));
+        });
+
         [Fact]
         public void Shift_Enter_over_a_selection_spanning_paragraphs_is_refused_when_the_first_has_two_full_lines() => Headless.Run(() =>
         {

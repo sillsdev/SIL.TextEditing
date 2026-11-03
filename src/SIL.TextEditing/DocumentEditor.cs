@@ -247,6 +247,12 @@ namespace SIL.TextEditing
             ReplaceRange(Caret, new TextPosition(Caret.Paragraph, GraphemeClusters.DeleteTarget(p.Text, Caret.Offset)), null, "delete");
         }
 
+        /// <summary>The index of the paragraph that keeps its identity, style and properties when [a, b) is replaced: the last one
+        /// when the range spans paragraphs, starts at the very start of the first and leaves text in the last (the non-empty side
+        /// wins), otherwise the first.</summary>
+        public int KeptParagraph(TextPosition a, TextPosition b) =>
+            a.Paragraph != b.Paragraph && a.Offset == 0 && b.Offset < Document.Paragraphs[b.Paragraph].Length ? b.Paragraph : a.Paragraph;
+
         /// <summary>
         /// Replaces [a, b) with a fragment (null for nothing). When the range spans paragraphs, the surviving
         /// paragraph keeps its identity, style and direction: the non-empty side wins, and the first (left)
@@ -284,8 +290,7 @@ namespace SIL.TextEditing
             head.Delete(a.Offset, head.Length - a.Offset);
             var tail = last.Clone();
             tail.Delete(0, b.Offset);
-            bool headEmpty = head.Length == 0, tailEmpty = tail.Length == 0;
-            var survivor = (a.Paragraph != b.Paragraph && headEmpty && !tailEmpty) ? last : first;
+            var survivor = Document.Paragraphs[KeptParagraph(a, b)];
             var merged = survivor.Clone();
             merged.Runs = new List<Run>();
             foreach (var r in head.Runs) merged.Runs.Add(r.Clone());

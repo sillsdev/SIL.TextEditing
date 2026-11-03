@@ -640,14 +640,15 @@ namespace SIL.TextEditing.Avalonia
             return pl.Truncated && c.Offset >= pl.VisibleEnd;
         }
 
-        /// <summary>True when a hard line break would add a line nobody can see. The paragraph that keeps its format is the first one
-        /// of the selection (a selection that spans paragraphs is replaced by one paragraph of the first one's head, the break and the
-        /// last one's tail), so that paragraph's limit decides: refused when the selection spans paragraphs, or when the paragraph
-        /// already shows as many lines as its limit allows (an empty paragraph is one line).</summary>
+        /// <summary>True when a hard line break would add a line nobody can see. A selection that spans paragraphs is replaced by one
+        /// paragraph (the first one's head, the break and the last one's tail) that keeps the format of the paragraph the replace
+        /// keeps (<see cref="DocumentEditor.KeptParagraph"/>: the non-empty side), so that paragraph's limit decides: refused when the
+        /// selection spans paragraphs, or when the paragraph already shows as many lines as its limit allows (an empty paragraph is
+        /// one line).</summary>
         bool BreakWouldBeHidden()
         {
             Editor.Ordered(out var first, out var last);
-            var pl = ParagraphLayoutFor(first.Paragraph);
+            var pl = ParagraphLayoutFor(Editor.KeptParagraph(first, last));
             int max = pl.Format.MaxLines;
             return max > 0 && (first.Paragraph != last.Paragraph || Math.Max(1, pl.Lines.Count) >= max);
         }
