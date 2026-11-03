@@ -439,41 +439,6 @@ namespace SIL.TextEditing.Avalonia
             return li == null ? 0 : Lines.IndexOf(li);
         }
 
-        /// <summary>Visual movement: gives the new model offset and caret hit (affinity), or false when the edge of the
-        /// paragraph is reached.</summary>
-        public bool MoveVisual(int modelOffset, CharacterHit? currentHit, bool toLeft, out int newOffset, out CharacterHit newHit)
-        {
-            newOffset = -1;
-            newHit = default;
-            int e = ToEffective(modelOffset);
-            var li = LineOf(e, currentHit);
-            if (li == null) return false;
-            var h = currentHit.HasValue && currentHit.Value.FirstCharacterIndex + currentHit.Value.TrailingLength == e ? currentHit.Value : new CharacterHit(e);
-            double cx = li.Line.GetDistanceFromCharacterHit(h);
-            Stop? best = null;
-            foreach (var s in VisualStops(li))
-            {
-                if (toLeft) { if (s.X < cx - 0.5 && (best == null || s.X > best.Value.X)) best = s; }
-                else { if (s.X > cx + 0.5 && (best == null || s.X < best.Value.X)) best = s; }
-            }
-            if (best != null)
-            {
-                newOffset = ToModel(best.Value.Offset);
-                newHit = best.Value.Hit;
-                return true;
-            }
-            int index = Lines.IndexOf(li);
-            bool forward = Rtl ? toLeft : !toLeft;
-            int ni = index + (forward ? 1 : -1);
-            if (ni < 0 || ni >= Lines.Count) return false;
-            var stops = VisualStops(Lines[ni]);
-            if (stops.Count == 0) return false;
-            var pick = toLeft ? stops[stops.Count - 1] : stops[0];
-            newOffset = ToModel(pick.Offset);
-            newHit = pick.Hit;
-            return true;
-        }
-
         /// <summary>Where object runs sit in glyph mode: the bounds of the EM SPACE stand-in, with the object data.</summary>
         public List<KeyValuePair<Rect, string>> ObjectRects()
         {

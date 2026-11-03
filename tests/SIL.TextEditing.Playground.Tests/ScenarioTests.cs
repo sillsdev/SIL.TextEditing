@@ -29,7 +29,7 @@ namespace SIL.TextEditing.Playground.Tests
 
                 int paragraphs = s.Editor.Document.Paragraphs.Count;
                 Assert.Contains("paragraphs " + paragraphs, s.Inspector);
-                Assert.Contains("[0] id=" + s.ParagraphId(0).ToString("D"), s.Inspector);
+                Assert.Contains("[0] key=" + s.ParagraphKey(0), s.Inspector);
                 Assert.StartsWith("ws: ", s.WsLabel);
             }
         });

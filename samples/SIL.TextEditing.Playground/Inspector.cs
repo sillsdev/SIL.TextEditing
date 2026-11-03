@@ -44,7 +44,7 @@ namespace SIL.TextEditing.Playground
 
         static void AppendParagraph(StringBuilder sb, int index, Paragraph p)
         {
-            sb.Append('[').Append(index).Append("] id=").Append(p.Id.ToString("D"))
+            sb.Append('[').Append(index).Append("] key=").Append(p.Key == null ? "(none)" : System.Convert.ToString(p.Key, CultureInfo.InvariantCulture))
               .Append(" rtl=").Append(p.Rtl ? "yes" : "no")
               .Append(" style=").Append(Quote(p.Style))
               .Append(" defaultWs=").Append(p.DefaultWs)

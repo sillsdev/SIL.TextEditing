@@ -325,7 +325,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             var p = dir == "ltr" ? Ltr("abcdef ghi") : Rtl("مرحبا بالعالم");
             var f = Fixtures.Field(Doc(p), 400);
             f.Editor.SetCaret(new TextPosition(0, 3));
-            // Shift+Right moves the caret visually right: forward in LTR, backward in RTL.
+            // Arrows are logical (ADR 0018): Right is forward in LTR, backward in RTL.
             f.Press(Key.Right, KeyModifiers.Shift);
             f.Press(Key.Right, KeyModifiers.Shift);
             int expected = dir == "ltr" ? 5 : 1;
@@ -515,7 +515,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         {
             // Both sides keep text: the first paragraph's identity survives.
             var doc = Doc(Ltr("first paragraph"), Ltr("second paragraph"), Ltr("third paragraph"));
-            var ids = doc.Paragraphs.Select(p => p.Id).ToList();
+            var ids = doc.Paragraphs.Select(p => p.Key).ToList();
             var (w, f) = Open(doc, 600);
             ResetClicks(w);
             Drag(w, Quarter(f, 0, 5, true), Quarter(f, 2, 6, true));
@@ -523,13 +523,13 @@ namespace SIL.TextEditing.Avalonia.Tests
             Headless.Pump();
             Assert.Single(doc.Paragraphs);
             Assert.Equal("firstparagraph", doc.Paragraphs[0].Text);
-            Assert.Equal(ids[0], doc.Paragraphs[0].Id);
+            Assert.Equal(ids[0], doc.Paragraphs[0].Key);
             Assert.Equal(new TextPosition(0, 5), f.Editor.Caret);
             w.Close();
 
             // The head is empty and the tail is not: the last paragraph's identity survives.
             var doc2 = Doc(Ltr("first paragraph"), Ltr("second paragraph"));
-            var ids2 = doc2.Paragraphs.Select(p => p.Id).ToList();
+            var ids2 = doc2.Paragraphs.Select(p => p.Key).ToList();
             var (w2, f2) = Open(doc2, 600);
             ResetClicks(w2);
             Drag(w2, new Point(0, 2), Quarter(f2, 1, 7, true));
@@ -538,7 +538,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             Headless.Pump();
             Assert.Single(doc2.Paragraphs);
             Assert.Equal("paragraph", doc2.Paragraphs[0].Text);
-            Assert.Equal(ids2[1], doc2.Paragraphs[0].Id);
+            Assert.Equal(ids2[1], doc2.Paragraphs[0].Key);
             w2.Close();
         });
 

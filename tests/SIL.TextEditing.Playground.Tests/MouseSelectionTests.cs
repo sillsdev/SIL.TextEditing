@@ -37,7 +37,7 @@ namespace SIL.TextEditing.Playground.Tests
         {
             using (var s = new Session(Scenarios.MixedBidi))
             {
-                var firstId = s.ParagraphId(0);
+                var firstId = s.ParagraphKey(0);
                 int before = s.Editor.Document.Paragraphs.Count;
                 s.MouseDrag(s.PointAt(0, 4), s.PointAt(3, 6));
                 s.Editor.Ordered(out var a, out var b);
@@ -45,7 +45,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(3, b.Paragraph);
                 s.Press(Key.Delete);
                 Assert.Equal(before - 3, s.Editor.Document.Paragraphs.Count);
-                Assert.Equal(firstId, s.ParagraphId(0));
+                Assert.Equal(firstId, s.ParagraphKey(0));
                 Assert.StartsWith("The ", s.ParagraphText(0));
             }
         });

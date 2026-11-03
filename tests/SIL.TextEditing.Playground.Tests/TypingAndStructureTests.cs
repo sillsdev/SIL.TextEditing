@@ -65,33 +65,33 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
-        public void Split_and_join_keep_paragraph_identity_in_the_inspector() => Headless.Run(() =>
+        public void Split_and_join_keep_paragraph_key_in_the_inspector() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.MixedBidi))
             {
-                var first = s.ParagraphId(0);
-                var second = s.ParagraphId(1);
+                var first = s.ParagraphKey(0);
+                var second = s.ParagraphKey(1);
                 int count = s.Editor.Document.Paragraphs.Count;
 
                 s.Caret(0, 5);
                 s.Press(Key.Enter);
                 Assert.Equal(count + 1, s.Editor.Document.Paragraphs.Count);
-                var right = s.ParagraphId(1);
-                Assert.Equal(first, s.ParagraphId(0));
-                Assert.NotEqual(first, right);
-                Assert.Equal(second, s.ParagraphId(2));
-                Assert.Contains("[0] id=" + first.ToString("D"), s.Inspector);
-                Assert.Contains("[1] id=" + right.ToString("D"), s.Inspector);
-                Assert.Contains("[2] id=" + second.ToString("D"), s.Inspector);
+                var right = s.ParagraphKey(1);
+                Assert.Equal(first, s.ParagraphKey(0));
+                Assert.Null(right);
+                Assert.Equal(second, s.ParagraphKey(2));
+                Assert.Contains("[0] key=" + first, s.Inspector);
+                Assert.Contains("[1] key=(none)", s.Inspector);
+                Assert.Contains("[2] key=" + second, s.Inspector);
                 Assert.Contains("paragraphs " + (count + 1), s.Inspector);
                 Assert.Contains("caret 1:0", s.Inspector);
 
                 s.Press(Key.Back);
                 Assert.Equal(count, s.Editor.Document.Paragraphs.Count);
-                Assert.Equal(first, s.ParagraphId(0));
-                Assert.DoesNotContain(right.ToString("D"), s.Inspector);
-                Assert.Contains("[0] id=" + first.ToString("D"), s.Inspector);
-                Assert.Contains("[1] id=" + second.ToString("D"), s.Inspector);
+                Assert.Equal(first, s.ParagraphKey(0));
+                Assert.DoesNotContain("key=(none)", s.Inspector);
+                Assert.Contains("[0] key=" + first, s.Inspector);
+                Assert.Contains("[1] key=" + second, s.Inspector);
                 Assert.Contains("caret 0:5", s.Inspector);
             }
         });
@@ -101,13 +101,13 @@ namespace SIL.TextEditing.Playground.Tests
         {
             using (var s = new Session(Scenarios.MixedBidi))
             {
-                var original = s.ParagraphId(0);
+                var original = s.ParagraphKey(0);
                 s.Caret(0, 0);
                 s.Press(Key.Enter);
-                Assert.NotEqual(original, s.ParagraphId(0));
+                Assert.Null(s.ParagraphKey(0));
                 Assert.Equal(string.Empty, s.ParagraphText(0));
-                Assert.Equal(original, s.ParagraphId(1));
-                Assert.Contains("[1] id=" + original.ToString("D"), s.Inspector);
+                Assert.Equal(original, s.ParagraphKey(1));
+                Assert.Contains("[1] key=" + original, s.Inspector);
             }
         });
 

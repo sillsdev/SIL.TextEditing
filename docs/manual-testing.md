@@ -32,7 +32,7 @@ Where a step says **all hosts**, do it on each of the three and write one result
   selection a button changes the selected text; with a caret it sets what you type next, as a keyboard switch would.
   Sample data only; nothing is read from a project.
 * **Field** (left): the editor. Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+Z, Ctrl+Y, Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V work in it.
-* **Inspector** (top right): caret, anchor and selection as paragraph:offset; undo counts; every paragraph with its id,
+* **Inspector** (top right): caret, anchor and selection as paragraph:offset; undo counts; every paragraph with its key (`(none)` until the host assigns one),
   direction, style and runs. A run reads `r1 [9,13) ws=ar "text" props{3=1, 9001=42@1}`: offsets, writing system,
   text with escapes (`́` a combining mark, `\U0001F600` a surrogate pair, `￼` an object), then the property
   bag as `number=value`, `@n` for a variation. Documents over 30 paragraphs show a window around the caret.
@@ -49,10 +49,10 @@ Where a step says **all hosts**, do it on each of the three and write one result
 | 1.4 | Put a caret in English text, click the `fr` button, type `bonjour`. | `ws: fr`; the typed text is a new run `ws=fr` in the inspector. | | | | |
 | 1.5 | Click Default vernacular, type `habari`; then Default analysis. | `ws: swh`, then `ws: en`; run `ws=swh "habari"` in the inspector. | | | | |
 | 1.6 | Select a word with Shift+Right, click the `hi` button. | Only the selected text becomes `ws=hi` and is drawn in the Hindi font; the selection stays. Undo restores it. | | | | |
-| 1.7 | Select a word, press B, then B again; then Ctrl+I and Ctrl+U. | Bold, italic, underline are drawn; the inspector shows `props{3=1}` (bold), `2=1` (italic), `5=1` (underline); pressing B again removes it and the runs merge back. Paragraph ids do not change. | | | | |
+| 1.7 | Select a word, press B, then B again; then Ctrl+I and Ctrl+U. | Bold, italic, underline are drawn; the inspector shows `props{3=1}` (bold), `2=1` (italic), `5=1` (underline); pressing B again removes it and the runs merge back. Paragraph keys do not change. | | | | |
 | 1.8 | Type, press Undo, Undo, Redo, Redo. Then Ctrl+Z and Ctrl+Y in the field. | Text, caret and the inspector's `undo n done, n undone` follow; the log says `undo requested (button)` or `(Ctrl+Z in the field)`. | | | | |
-| 1.9 | Press Enter in the middle of a paragraph, then Backspace at the start of the new one. | Two paragraphs, then one. The first keeps its id on a split and on the join; the new right-hand paragraph has a new id (compare in the inspector). | | | | |
-| 1.10 | Press Enter at the very start of a paragraph. | A new empty paragraph appears above; the original id stays on the paragraph that holds the text. | | | | |
+| 1.9 | Press Enter in the middle of a paragraph, then Backspace at the start of the new one. | Two paragraphs, then one. The first keeps its key on a split and on the join; the new right-hand paragraph has `key=(none)` until the host assigns one (compare in the inspector). | | | | |
+| 1.10 | Press Enter at the very start of a paragraph. | A new empty paragraph appears above; the new paragraph shows `key=(none)` and the original key stays on the paragraph that holds the text. | | | | |
 | 1.11 | Scenario *Inline picture*: put the caret after a picture, Backspace; press Picture to insert one; Delete before a picture. | A picture is deleted or inserted as one unit (one character, `￼`), never half. Works in the Arabic paragraph too. | | | | |
 | 1.12 | Scenario *Unknown properties*: select the whole second paragraph, press B twice, then split and join it with Enter and Backspace. | Properties 9001, 9002, 9003 and the paragraph style are still in the inspector, unchanged. | | | | |
 
@@ -95,13 +95,27 @@ caret about two characters from where you clicked (fixed in Avalonia 12). Record
 
 | # | Steps | Expected | D10 | D48 | W48 | Notes |
 |---|---|---|---|---|---|---|
-| 5.1 | In the all-Arabic paragraph press Home, then Right repeatedly. | The caret moves to the right on screen with each Right press, one cluster at a time, never inside a joined letter. | | | | |
-| 5.2 | Press Left and Right across an English word inside the RTL paragraph. | The caret moves one letter on screen per key, across the language boundary without a jump, and never skips or repeats a position. | | | | |
+| 5.1 | In the all-Arabic paragraph press Home, then Left repeatedly. | Arrows are logical (as in FieldWorks): in a right-to-left paragraph Left goes forward through the text, so the caret moves to the left on screen, one cluster at a time, never inside a joined letter. Right goes back. | | | | |
+| 5.2 | Press Left repeatedly across an English word inside the RTL paragraph, then Right back. | Left walks the text in logical order and Right reverses it, one cluster per key, never skipping or repeating an offset (check the inspector). Inside the English word the caret moves right on screen for Left, and at the language boundary it may jump across the line: that is expected, FieldWorks does the same. | | | | |
 | 5.3 | Click in the middle of an Arabic word. | The caret is where you clicked (D10). On D48 and W48 it may be two characters off: note it (known). | | | | |
 | 5.4 | Click and drag across the boundary between Arabic and English text. | The selection is one visual block or the correct set of blocks for the logical range; the inspector's `selection a -> b` matches the highlight. | | | | |
-| 5.5 | Shift+Right and Shift+Left from the middle of the RTL paragraph. | The selection grows and shrinks on screen in the key's direction; the inspector offsets move accordingly. | | | | |
+| 5.5 | Shift+Left and Shift+Right from the middle of the RTL paragraph, then the same in an LTR paragraph. | Shift+Left grows the selection forward in the RTL paragraph (backward in LTR), Shift+Right the reverse; the inspector's caret offset moves by one cluster per key and the anchor stays. | | | | |
 | 5.6 | Scenario *Inline picture*: arrow across the picture in the Arabic paragraph. | The caret passes the picture in one step. (Known: the picture may sit in the wrong place in RTL text on both Avalonia versions.) | | | | |
 | 5.7 | Scenario *Devanagari, Tamil, Thai*: arrow and Backspace through conjuncts and stacked marks. | The caret stops between clusters, never inside; Backspace removes what the language expects (compare with Notepad). | | | | |
+| 5.8 | Scenario *Latin and Arabic*, LTR paragraph with Arabic inside: put the caret just before the Arabic word, press Right once; then click after it, press Left until you are back at the same offset. | The offset is the same but the caret is drawn on different sides of the boundary, depending on the direction you arrived from. | | | | |
+| 5.9 | Arrow with a selection in an RTL paragraph (Shift+Right three times, then Left without Shift). | The selection collapses to its logical end that the key points to (Left: its later end in RTL), not to the screen-left edge. | | | | |
+
+## 5a. FieldWorks editing: Backspace, Delete and normalisation (all hosts)
+
+Scenario *NFD, marks, surrogates, PUA* (it sets the field's normalisation form to NFD, as FieldWorks does).
+
+| # | Steps | Expected | D10 | D48 | W48 | Notes |
+|---|---|---|---|---|---|---|
+| 5a.1 | Type `e`, then a combining acute (or a keyboard that sends it), then Backspace. | Only the accent goes; `e` stays. | | | | |
+| 5a.2 | Put the caret before a letter with two marks after it (`e` plus acute plus circumflex) and press Delete. | The letter and both marks go in one press. | | | | |
+| 5a.3 | Backspace after an emoji (a surrogate pair), and Delete before one. | The whole emoji goes each time, never half. | | | | |
+| 5a.4 | With NFD set, type or paste a precomposed `é` (U+00E9). | The inspector shows two code points (`e` plus U+0301); the caret is after both. | | | | |
+| 5a.5 | With NFD set, copy `é` and paste it into Notepad, then check its form (for instance by Backspace: one press removes the whole `é`). | Notepad receives the precomposed form (NFC). Pasting back into the field inside the same window keeps the stored NFD. | | | | |
 
 ## 6. Tab and focus in and out of the WinForms host (W48)
 
@@ -140,7 +154,7 @@ plain text.
 | 8.4 | Select bold and fr text in the field, Copy, move the caret, Paste. | The pasted runs keep their writing systems and bold (compare the inspector before and after). | | | | |
 | 8.5 | *Unknown properties*: copy a run with 9001/9002/9003, paste it into another paragraph. | The properties come with the text, unchanged. | | | | |
 | 8.6 | Copy in one host window, paste in another (run `run desktop10` and `run desktop48`). | The runs and properties arrive. | | | | |
-| 8.7 | Cut with a selection across paragraphs, then Undo. | The text and paragraph ids return. | | | | |
+| 8.7 | Cut with a selection across paragraphs, then Undo. | The text and paragraph keys return. | | | | |
 | 8.8 | From a FieldWorks build, if you have one: copy styled text out of a FieldWorks field, paste here, and the reverse. | Record what arrives; FieldWorks does not read our format yet. | | | | |
 
 ## 9. Look and feel (all hosts)
@@ -176,7 +190,7 @@ Ctrl+Left goes to the next word.
 | 10.10 | Click in a wrapped line just right of its last word. | The caret is drawn at the end of that line, not at the start of the next line. | | | | |
 | 10.11 | Ctrl+Right and Ctrl+Left through an English sentence, then through the Arabic paragraph; add Shift. | The caret jumps a word at a time (English: to the start of the next word); at the end of a paragraph the next press enters the neighbouring paragraph; with Shift the selection follows. | | | | |
 | 10.12 | Ctrl+Home, Ctrl+End, Ctrl+A, and with Shift for the first two. | The caret goes to the very start and end of the document; Ctrl+A selects everything, and the inspector shows `selection 0:0 -> last:end`. | | | | |
-| 10.13 | Select across three paragraphs with the mouse and press Delete (or Backspace, or type a letter). | One paragraph is left holding the text before and after the selection; its id in the inspector is the first paragraph's id (unless the first part was empty, then the last paragraph's id). Undo restores all three. | | | | |
+| 10.13 | Select across three paragraphs with the mouse and press Delete (or Backspace, or type a letter). | One paragraph is left holding the text before and after the selection; its key in the inspector is the first paragraph's key (unless the first part was empty, then the last paragraph's key). Undo restores all three. | | | | |
 
 ## Record
 
