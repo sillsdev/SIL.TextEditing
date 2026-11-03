@@ -12,3 +12,6 @@ has already been enforced once: the first grapheme helper was too close to Field
 UAX #29. AGENTS.md carries the rule for agents.
 
 Owner decision, 2026-11-03.
+
+Amended 2026-11-03: persisted compatibility mappings (the bullet scheme number to glyph table, the numbering limits) are facts
+like property numbers; the code that uses them is still written from scratch.
