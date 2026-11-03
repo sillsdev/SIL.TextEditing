@@ -309,7 +309,7 @@ namespace SIL.TextEditing
                 var p = Document.Paragraphs[pi];
                 int s = pi == a.Paragraph ? a.Offset : 0;
                 int e = pi == b.Paragraph ? b.Offset : p.Length;
-                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Id = p.Id, Runs = p.Slice(s, e) });
+                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Key = p.Key, Runs = p.Slice(s, e) });
             }
             return result;
         }

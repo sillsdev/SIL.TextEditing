@@ -32,7 +32,7 @@ Where a step says **all hosts**, do it on each of the three and write one result
   selection a button changes the selected text; with a caret it sets what you type next, as a keyboard switch would.
   Sample data only; nothing is read from a project.
 * **Field** (left): the editor. Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+Z, Ctrl+Y, Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V work in it.
-* **Inspector** (top right): caret, anchor and selection as paragraph:offset; undo counts; every paragraph with its id,
+* **Inspector** (top right): caret, anchor and selection as paragraph:offset; undo counts; every paragraph with its key (`(none)` until the host assigns one),
   direction, style and runs. A run reads `r1 [9,13) ws=ar "text" props{3=1, 9001=42@1}`: offsets, writing system,
   text with escapes (`́` a combining mark, `\U0001F600` a surrogate pair, `￼` an object), then the property
   bag as `number=value`, `@n` for a variation. Documents over 30 paragraphs show a window around the caret.
@@ -49,10 +49,10 @@ Where a step says **all hosts**, do it on each of the three and write one result
 | 1.4 | Put a caret in English text, click the `fr` button, type `bonjour`. | `ws: fr`; the typed text is a new run `ws=fr` in the inspector. | | | | |
 | 1.5 | Click Default vernacular, type `habari`; then Default analysis. | `ws: swh`, then `ws: en`; run `ws=swh "habari"` in the inspector. | | | | |
 | 1.6 | Select a word with Shift+Right, click the `hi` button. | Only the selected text becomes `ws=hi` and is drawn in the Hindi font; the selection stays. Undo restores it. | | | | |
-| 1.7 | Select a word, press B, then B again; then Ctrl+I and Ctrl+U. | Bold, italic, underline are drawn; the inspector shows `props{3=1}` (bold), `2=1` (italic), `5=1` (underline); pressing B again removes it and the runs merge back. Paragraph ids do not change. | | | | |
+| 1.7 | Select a word, press B, then B again; then Ctrl+I and Ctrl+U. | Bold, italic, underline are drawn; the inspector shows `props{3=1}` (bold), `2=1` (italic), `5=1` (underline); pressing B again removes it and the runs merge back. Paragraph keys do not change. | | | | |
 | 1.8 | Type, press Undo, Undo, Redo, Redo. Then Ctrl+Z and Ctrl+Y in the field. | Text, caret and the inspector's `undo n done, n undone` follow; the log says `undo requested (button)` or `(Ctrl+Z in the field)`. | | | | |
-| 1.9 | Press Enter in the middle of a paragraph, then Backspace at the start of the new one. | Two paragraphs, then one. The first keeps its id on a split and on the join; the new right-hand paragraph has a new id (compare in the inspector). | | | | |
-| 1.10 | Press Enter at the very start of a paragraph. | A new empty paragraph appears above; the original id stays on the paragraph that holds the text. | | | | |
+| 1.9 | Press Enter in the middle of a paragraph, then Backspace at the start of the new one. | Two paragraphs, then one. The first keeps its key on a split and on the join; the new right-hand paragraph has `key=(none)` until the host assigns one (compare in the inspector). | | | | |
+| 1.10 | Press Enter at the very start of a paragraph. | A new empty paragraph appears above; the new paragraph shows `key=(none)` and the original key stays on the paragraph that holds the text. | | | | |
 | 1.11 | Scenario *Inline picture*: put the caret after a picture, Backspace; press Picture to insert one; Delete before a picture. | A picture is deleted or inserted as one unit (one character, `￼`), never half. Works in the Arabic paragraph too. | | | | |
 | 1.12 | Scenario *Unknown properties*: select the whole second paragraph, press B twice, then split and join it with Enter and Backspace. | Properties 9001, 9002, 9003 and the paragraph style are still in the inspector, unchanged. | | | | |
 
@@ -154,7 +154,7 @@ plain text.
 | 8.4 | Select bold and fr text in the field, Copy, move the caret, Paste. | The pasted runs keep their writing systems and bold (compare the inspector before and after). | | | | |
 | 8.5 | *Unknown properties*: copy a run with 9001/9002/9003, paste it into another paragraph. | The properties come with the text, unchanged. | | | | |
 | 8.6 | Copy in one host window, paste in another (run `run desktop10` and `run desktop48`). | The runs and properties arrive. | | | | |
-| 8.7 | Cut with a selection across paragraphs, then Undo. | The text and paragraph ids return. | | | | |
+| 8.7 | Cut with a selection across paragraphs, then Undo. | The text and paragraph keys return. | | | | |
 | 8.8 | From a FieldWorks build, if you have one: copy styled text out of a FieldWorks field, paste here, and the reverse. | Record what arrives; FieldWorks does not read our format yet. | | | | |
 
 ## 9. Look and feel (all hosts)
@@ -190,7 +190,7 @@ Ctrl+Left goes to the next word.
 | 10.10 | Click in a wrapped line just right of its last word. | The caret is drawn at the end of that line, not at the start of the next line. | | | | |
 | 10.11 | Ctrl+Right and Ctrl+Left through an English sentence, then through the Arabic paragraph; add Shift. | The caret jumps a word at a time (English: to the start of the next word); at the end of a paragraph the next press enters the neighbouring paragraph; with Shift the selection follows. | | | | |
 | 10.12 | Ctrl+Home, Ctrl+End, Ctrl+A, and with Shift for the first two. | The caret goes to the very start and end of the document; Ctrl+A selects everything, and the inspector shows `selection 0:0 -> last:end`. | | | | |
-| 10.13 | Select across three paragraphs with the mouse and press Delete (or Backspace, or type a letter). | One paragraph is left holding the text before and after the selection; its id in the inspector is the first paragraph's id (unless the first part was empty, then the last paragraph's id). Undo restores all three. | | | | |
+| 10.13 | Select across three paragraphs with the mouse and press Delete (or Backspace, or type a letter). | One paragraph is left holding the text before and after the selection; its key in the inspector is the first paragraph's key (unless the first part was empty, then the last paragraph's key). Undo restores all three. | | | | |
 
 ## Record
 

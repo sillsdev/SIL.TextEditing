@@ -14,7 +14,7 @@ change, and the list under "Known gaps" is the work still to do.
 
 | Project | Targets | What it is |
 |---|---|---|
-| `src/SIL.TextEditing` | netstandard2.0, net10.0 | UI-free run model (`Run`, `Paragraph`, `Document`, `PropertyBag`), editing (`DocumentEditor`), paragraph-identity rules, clipboard/debug interchange, grapheme helpers. No Avalonia, no liblcm. |
+| `src/SIL.TextEditing` | netstandard2.0, net10.0 | UI-free run model (`Run`, `Paragraph`, `Document`, `PropertyBag`), editing (`DocumentEditor`), paragraph-key rules (`Paragraph.Key`, opaque, null until the host assigns one), clipboard/debug interchange, grapheme helpers. No Avalonia, no liblcm. |
 | `src/SIL.TextEditing.Avalonia` | netstandard2.0, net10.0 | `RichTextField`: layout with Avalonia's `TextFormatter`, caret, selection, hit testing, bidi caret stops, IME client, clipboard. |
 | `tests/SIL.TextEditing.Tests` | net48, net10.0 | Unit tests for the model. |
 | `tests/SIL.TextEditing.Avalonia.Tests` | net48, net10.0 | Avalonia.Headless tests for the surface (Skia, real shaping). |

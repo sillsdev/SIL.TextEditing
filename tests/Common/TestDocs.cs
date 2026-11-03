@@ -18,6 +18,8 @@ namespace SIL.TextEditing.Tests
         {
             var d = new Document();
             d.Paragraphs.AddRange(paragraphs);
+            // The host assigns keys; give each test paragraph one so the split and join rules show.
+            for (int i = 0; i < paragraphs.Length; i++) paragraphs[i].Key = "key" + i;
             return d;
         }
 

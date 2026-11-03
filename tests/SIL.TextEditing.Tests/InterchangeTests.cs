@@ -8,15 +8,17 @@ namespace SIL.TextEditing.Tests
     public class InterchangeTests
     {
         [Fact]
-        public void Xml_keeps_paragraph_identity_direction_writing_systems_and_exact_text()
+        public void Xml_keeps_paragraph_key_direction_writing_systems_and_exact_text()
         {
             var p = Para("ar", "en", "a\u0001b\\c", "ar", "مرحبا");
             p.Rtl = true;
             p.Style = "Normal";
+            p.Key = "key0";
             p.Runs[0].Props.SetInt(TextPropertyNumbers.FontSize, 12000, TextPropertyNumbers.VariationMilliPoint);
             var back = Interchange.FromXml(Interchange.ToXml(new[] { p }));
             Assert.Single(back);
-            Assert.Equal(p.Id, back[0].Id);
+            Assert.Equal("key0", back[0].Key);
+            Assert.Null(Interchange.FromXml(Interchange.ToXml(new[] { Para("en", "en", "x") }))[0].Key);
             Assert.True(back[0].Rtl);
             Assert.Equal("Normal", back[0].Style);
             Assert.Equal("ar", back[0].DefaultWs);

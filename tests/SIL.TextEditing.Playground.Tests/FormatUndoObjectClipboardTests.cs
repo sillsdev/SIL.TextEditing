@@ -13,7 +13,7 @@ namespace SIL.TextEditing.Playground.Tests
         {
             using (var s = new Session(Scenarios.MixedBidi))
             {
-                var ids = s.Editor.Document.Paragraphs.Select(p => p.Id).ToList();
+                var ids = s.Editor.Document.Paragraphs.Select(p => p.Key).ToList();
                 int runsBefore = s.Editor.Document.Paragraphs[0].Runs.Count;
 
                 s.Select(0, 4, 8);
@@ -22,7 +22,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(runsBefore + 2, p0.Runs.Count);
                 Assert.Equal("word", p0.Runs.Single(IsBold).Text);
                 Assert.Contains("ws=en \"word\" props{3=1}", s.Inspector);
-                Assert.Equal(ids, s.Editor.Document.Paragraphs.Select(p => p.Id).ToList());
+                Assert.Equal(ids, s.Editor.Document.Paragraphs.Select(p => p.Key).ToList());
                 Assert.Contains("selection 0:4 -> 0:8", s.Inspector);
 
                 s.Click(PlaygroundView.Names.Bold);

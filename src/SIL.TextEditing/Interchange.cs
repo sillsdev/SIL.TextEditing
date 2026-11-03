@@ -26,7 +26,7 @@ namespace SIL.TextEditing
                 foreach (var p in paragraphs)
                 {
                     w.WriteStartElement("Para");
-                    w.WriteAttributeString("id", p.Id.ToString());
+                    if (p.Key != null) w.WriteAttributeString("key", Convert.ToString(p.Key, System.Globalization.CultureInfo.InvariantCulture));
                     w.WriteAttributeString("style", p.Style);
                     w.WriteAttributeString("rtl", p.Rtl ? "1" : "0");
                     w.WriteAttributeString("defws", p.DefaultWs);
@@ -60,7 +60,7 @@ namespace SIL.TextEditing
             {
                 var p = new Paragraph
                 {
-                    Id = Guid.Parse(pe.GetAttribute("id")),
+                    Key = pe.HasAttribute("key") ? pe.GetAttribute("key") : null,
                     Style = pe.GetAttribute("style"),
                     Rtl = pe.GetAttribute("rtl") == "1",
                     DefaultWs = pe.GetAttribute("defws"),
@@ -131,7 +131,7 @@ namespace SIL.TextEditing
             {
                 var p = document.Paragraphs[i];
                 if (i > 0) sb.Append(',');
-                sb.Append("{\"id\":\"").Append(p.Id).Append("\",\"style\":").Append(Quote(p.Style)).Append(",\"rtl\":").Append(p.Rtl ? "true" : "false").Append(",\"runs\":[");
+                sb.Append("{\"key\":").Append(p.Key == null ? "null" : Quote(Convert.ToString(p.Key, System.Globalization.CultureInfo.InvariantCulture) ?? "")).Append(",\"style\":").Append(Quote(p.Style)).Append(",\"rtl\":").Append(p.Rtl ? "true" : "false").Append(",\"runs\":[");
                 int pos = 0;
                 for (int k = 0; k < p.Runs.Count; k++)
                 {

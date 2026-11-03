@@ -161,6 +161,6 @@ namespace SIL.TextEditing.Playground.Tests
         }
 
         public string ParagraphText(int index) => Editor.Document.Paragraphs[index].Text;
-        public Guid ParagraphId(int index) => Editor.Document.Paragraphs[index].Id;
+        public object? ParagraphKey(int index) => Editor.Document.Paragraphs[index].Key;
     }
 }

@@ -75,6 +75,8 @@ namespace SIL.TextEditing.Playground
         {
             var d = new Document();
             d.Paragraphs.AddRange(paragraphs);
+            // The host assigns keys, as FieldWorks assigns StTxtPara GUIDs; the field only carries them.
+            foreach (var p in paragraphs) p.Key = Guid.NewGuid();
             return d;
         }
 
