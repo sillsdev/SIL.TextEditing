@@ -270,6 +270,83 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        /// <summary>A point of the field, in window coordinates.</summary>
+        static Point InWindow(Session s, double x, double y) => s.Field.TranslatePoint(new Point(x, y), TopLevel.GetTopLevel(s.Field)!)!.Value;
+
+        /// <summary>The middle of a line, vertically, in the field's coordinates.</summary>
+        static double MidY(Session s, int paragraph, int line)
+        {
+            var li = s.Field.ParagraphLayoutFor(paragraph).Lines[line];
+            return s.Field.ParagraphTop(paragraph) + li.TextY + li.Line.Height / 2;
+        }
+
+        // Right-to-left paragraphs with a hanging indent and a bullet or number, and a centred one: the expectations are facts about
+        // the text, not read back from the layout's own caret rectangles. The Arabic here has no Latin inside it, so it does not meet
+        // the Avalonia 11.3 hit-test fault of ADR 0015 (a Latin cluster inside Arabic), which BidiTests pins.
+        [Fact]
+        public void Mouse_clicks_in_right_to_left_paragraphs_with_alignment_hanging_indents_and_labels_hit_the_first_letter_at_the_right_end() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 4500))
+            {
+                foreach (int p in new[] { Arabic, ArabicNumber1, ArabicLong, ArabicBullet, ArabicCentred })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    Assert.True(pl.Rtl);
+                    var first = pl.Lines[0];
+                    double right = Left(first) + first.Line.WidthIncludingTrailingWhitespace, left = right - first.Line.Width;   // the trailing space of an Arabic line is on its left
+                    s.MouseClick(InWindow(s, right - 2, MidY(s, p, 0)));
+                    Assert.Equal(new TextPosition(p, 0), s.Editor.Caret);
+                    if (pl.Lines.Count > 1)
+                    {
+                        s.MouseClick(InWindow(s, left + 2, MidY(s, p, 0)));
+                        Assert.Equal(p, s.Editor.Caret.Paragraph);
+                        Assert.InRange(s.Editor.Caret.Offset, first.End - 3, first.End);
+                        var second = pl.Lines[1];
+                        s.MouseClick(InWindow(s, Left(second) + second.Line.WidthIncludingTrailingWhitespace - 2, MidY(s, p, 1)));
+                        Assert.Equal(new TextPosition(p, second.Start), s.Editor.Caret);
+                    }
+                    // A click in the hanging space or beside a centred line, outside the text, lands at the end of that line.
+                    s.MouseClick(InWindow(s, 1, MidY(s, p, 0)));
+                    Assert.Equal(p, s.Editor.Caret.Paragraph);
+                    Assert.InRange(s.Editor.Caret.Offset, pl.Lines.Count > 1 ? first.End - 3 : pl.Paragraph.Length - 1, pl.Paragraph.Length);
+                }
+            }
+        });
+
+        [Fact]
+        public void Arrow_keys_and_Up_Down_in_right_to_left_paragraphs_with_alignment_hanging_indents_and_labels_move_the_way_the_text_runs() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 4500))
+            {
+                foreach (int p in new[] { Arabic, ArabicNumber1, ArabicLong, ArabicBullet })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    // The text runs right to left: the caret after the first letter is left of the caret before it, and Left moves forward.
+                    s.Caret(p, 0);
+                    double x0 = s.Field.CaretRect().X;
+                    s.Press(global::Avalonia.Input.Key.Left);
+                    Assert.Equal(new TextPosition(p, 1), s.Editor.Caret);
+                    Assert.True(s.Field.CaretRect().X < x0 - 1, "paragraph " + p);
+                    s.Press(global::Avalonia.Input.Key.Right);
+                    Assert.Equal(new TextPosition(p, 0), s.Editor.Caret);
+                    // Down keeps the caret near the same x on the next line, Up comes back to the first line.
+                    s.Caret(p, 4);
+                    double x = s.Field.CaretRect().X;
+                    s.Press(global::Avalonia.Input.Key.Down);
+                    Assert.Equal(p, s.Editor.Caret.Paragraph);
+                    Assert.Equal(1, pl.LineIndexOf(s.Editor.Caret.Offset));
+                    Assert.True(Math.Abs(s.Field.CaretRect().X - x) < 30, "paragraph " + p + ": x " + x + " then " + s.Field.CaretRect().X);
+                    s.Press(global::Avalonia.Input.Key.Up);
+                    Assert.Equal(0, pl.LineIndexOf(s.Editor.Caret.Offset));
+                    // Home and End are the logical start and end of the line.
+                    s.Press(global::Avalonia.Input.Key.End);
+                    Assert.Equal(new TextPosition(p, pl.Lines[0].End - pl.Lines[0].Line.NewLineLength), s.Editor.Caret);
+                    s.Press(global::Avalonia.Input.Key.Home);
+                    Assert.Equal(new TextPosition(p, 0), s.Editor.Caret);
+                }
+            }
+        });
+
         /// <summary>The caret edge of an offset (not the middle of a character), in window coordinates.</summary>
         static Point Edge(Session s, int paragraph, int offset)
         {
@@ -384,7 +461,7 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         static double TextLeft(ParagraphLayout pl) => Left(pl.Lines[0]);
-        static double TextRight(ParagraphLayout pl) => Left(pl.Lines[0]) + pl.Lines[0].Line.Width;
+        static double TextRight(ParagraphLayout pl) => Left(pl.Lines[0]) + pl.Lines[0].Line.WidthIncludingTrailingWhitespace;
 
         [Fact]
         public void The_label_of_a_list_paragraph_ends_before_its_first_line_of_text_starts_in_left_to_right_and_right_to_left_lists() => Headless.Run(() =>

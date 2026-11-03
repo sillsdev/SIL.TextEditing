@@ -150,6 +150,61 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void Pixels_put_a_superscript_above_and_a_subscript_below_the_baseline_of_the_text_beside_it() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var shot = new DrawingParagraphTests.Shot(s);
+                int bottomH = shot.InkBottom(BoxOf(s, 5, "H2O", 0, 1));
+                int bottomSub = shot.InkBottom(BoxOf(s, 5, "H2O", 1, 1));
+                int bottomC = shot.InkBottom(BoxOf(s, 5, "mc2", 1, 1));
+                int bottomSup = shot.InkBottom(BoxOf(s, 5, "mc2", 2, 1));
+                Assert.True(bottomH >= 0 && bottomSub >= 0 && bottomC >= 0 && bottomSup >= 0);
+                Assert.True(bottomSup <= bottomC - 3, "superscript ink ends at " + bottomSup + ", the text beside it at " + bottomC);
+                Assert.True(bottomSub >= bottomH + 2, "subscript ink ends at " + bottomSub + ", the text beside it at " + bottomH);
+            }
+        });
+
+        /// <summary>The ink runs (start, length) along the row below the letters of a run, where its underline is.</summary>
+        static List<int> UnderlineSegments(DrawingParagraphTests.Shot shot, Rect box)
+        {
+            int bestRow = -1, best = 0;
+            for (int y = (int)(box.Y + box.Height * 0.75); y < box.Bottom + 3; y++)
+            {
+                int n = 0;
+                for (int x = (int)box.X + 1; x < box.Right - 1; x++) if (shot.IsInk(x, y, 220)) n++;
+                if (n > best) { best = n; bestRow = y; }
+            }
+            var runs = new List<int>();
+            if (bestRow < 0) return runs;
+            int current = 0;
+            for (int x = (int)box.X + 1; x < box.Right - 1; x++)
+            {
+                if (shot.IsInk(x, bestRow, 220)) current++;
+                else if (current > 0) { runs.Add(current); current = 0; }
+            }
+            if (current > 0) runs.Add(current);
+            return runs;
+        }
+
+        [Fact]
+        public void Pixels_draw_a_dashed_underline_in_dashes_a_dotted_one_in_dots_and_a_double_one_unbroken() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var shot = new DrawingParagraphTests.Shot(s);
+                var dashed = UnderlineSegments(shot, BoxOf(s, 4, "dashed"));
+                var dotted = UnderlineSegments(shot, BoxOf(s, 4, "dotted"));
+                var dbl = UnderlineSegments(shot, BoxOf(s, 4, "double"));
+                Assert.True(dashed.Count >= 3, "dashed: " + string.Join(",", dashed));
+                Assert.Contains(dashed, n => n >= 5);
+                Assert.True(dotted.Count >= dashed.Count, "dotted: " + string.Join(",", dotted));
+                Assert.All(dotted, n => Assert.True(n <= 3));
+                Assert.Single(dbl);
+            }
+        });
+
+        [Fact]
         public void Underline_types_draw_dotted_dashed_single_double_and_strikethrough_in_the_under_colour() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Drawing))
