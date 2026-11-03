@@ -257,6 +257,18 @@ namespace SIL.TextEditing.Avalonia
         // ADR 0023: a pause of TypingPause ends the typing step even when nothing else follows.
         void RestartPauseTimer()
         {
+            // The editor has no thread affinity, but a DispatcherTimer does: an edit from another thread hands the timer to the
+            // UI thread. A field that is not on screen has no timer (it closes the step when it leaves the screen).
+            if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            {
+                global::Avalonia.Threading.Dispatcher.UIThread.Post(RestartPauseTimer);
+                return;
+            }
+            if (!_onScreen)
+            {
+                _pauseTimer?.Stop();
+                return;
+            }
             if (_pauseTimer == null)
             {
                 _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
@@ -268,8 +280,17 @@ namespace SIL.TextEditing.Avalonia
             _pauseTimer.Start();
         }
 
+        bool _onScreen;
+
+        protected override void OnAttachedToVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
+        {
+            _onScreen = true;
+            base.OnAttachedToVisualTree(e);
+        }
+
         protected override void OnDetachedFromVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
         {
+            _onScreen = false;
             _pauseTimer?.Stop();
             Editor.CloseUndoGroup();
             base.OnDetachedFromVisualTree(e);
@@ -622,6 +643,7 @@ namespace SIL.TextEditing.Avalonia
         public async Task CopyAsync(bool cut)
         {
             if (!Editor.HasSelection) return;
+            if (cut && !Editor.CanEdit) return;   // Cut is disabled where Delete is: it must not leave the text on the clipboard either
             var fragment = Editor.GetFragment();
             var xml = Interchange.ToXml(fragment);
             var plain = TextNormalizer.Normalize(string.Join("\n", fragment.Select(p => p.Text)), System.Text.NormalizationForm.FormC);

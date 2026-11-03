@@ -63,6 +63,73 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
         });
 
+        static async System.Threading.Tasks.Task Wait(int milliseconds)
+        {
+            for (int waited = 0; waited < milliseconds; waited += 25)
+            {
+                await System.Threading.Tasks.Task.Delay(25);
+                Headless.Pump();
+            }
+        }
+
+        [Fact]
+        public void A_field_that_is_not_on_screen_runs_no_pause_timer_and_one_that_leaves_the_screen_closes_its_step() => Headless.Run(async () =>
+        {
+            var detached = Fixtures.Field(OneParagraph("ab"));
+            detached.Editor.TypingPause = System.TimeSpan.FromMilliseconds(40);
+            detached.Editor.SetCaret(new TextPosition(0, 2));
+            detached.Type("x");
+            await Wait(300);
+            Assert.True(detached.Editor.HasOpenUndoGroup);   // no timer fired: nothing ends a step after the field is gone
+
+            var (window, field) = Fixtures.InWindow(OneParagraph("ab"));
+            field.Editor.TypingPause = System.TimeSpan.FromMilliseconds(40);
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.Type("x");
+            await Wait(300);
+            Assert.False(field.Editor.HasOpenUndoGroup);   // on screen, the pause closes it
+
+            field.Editor.TypingPause = System.TimeSpan.FromSeconds(30);
+            field.Type("y");
+            Assert.True(field.Editor.HasOpenUndoGroup);
+            window.Content = null;                          // the field leaves the visual tree
+            Headless.Pump();
+            Assert.False(field.Editor.HasOpenUndoGroup);
+            window.Close();
+        });
+
+        [Fact]
+        public void Cut_on_text_that_may_not_be_edited_does_nothing_but_Copy_still_works() => Headless.Run(async () =>
+        {
+            var locked = new Run { Ws = "en", Text = "locked" };
+            locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(new Run { Ws = "en", Text = "ab" });
+            p.Runs.Add(locked);
+            var (window, field) = Fixtures.InWindow(Doc(p));
+            try
+            {
+                var top = global::Avalonia.Controls.TopLevel.GetTopLevel(field);
+                await ClipboardCompat.SetAsync(top, "sentinel", "");
+                field.Editor.Anchor = new TextPosition(0, 1);
+                field.Editor.SetCaret(new TextPosition(0, 5), true);     // crosses the locked run
+                await field.CopyAsync(true);
+                Assert.Equal("sentinel", await ClipboardCompat.GetTextAsync(top));
+                Assert.Equal("ablocked", field.Editor.Document.Paragraphs[0].Text);
+
+                await field.CopyAsync(false);
+                Assert.Equal("bloc", await ClipboardCompat.GetTextAsync(top));
+
+                await ClipboardCompat.SetAsync(top, "sentinel", "");
+                field.IsReadOnly = true;
+                field.Editor.Anchor = new TextPosition(0, 0);
+                field.Editor.SetCaret(new TextPosition(0, 2), true);
+                await field.CopyAsync(true);
+                Assert.Equal("sentinel", await ClipboardCompat.GetTextAsync(top));
+            }
+            finally { window.Close(); }
+        });
+
         [Fact]
         public void Pasting_plain_text_is_one_undo_step_apart_from_the_typing_around_it() => Headless.Run(async () =>
         {
