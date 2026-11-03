@@ -10,7 +10,7 @@
 - **One source tree, two Avalonia versions.** netstandard2.0 builds against Avalonia 11.3.17 (FieldWorks, net48);
   net10.0 builds against Avalonia 12 (Motif). Versions live in `Directory.Packages.props` only. A per-target
   difference goes behind `#if NET10_0_OR_GREATER`, is small, and is listed in the README.
-- **Packages.** Only SIL.WritingSystems (libpalaso, ADR 0002; referenced by the Avalonia and LCModel projects), Avalonia (and its Headless, Skia, Desktop, Themes.Fluent and Win32.Interoperability packages; Desktop, Themes.Fluent and Win32.Interoperability are samples-only), SIL.LCModel.Core (FieldWorks' pin; referenced by the `SIL.TextEditing.LCModel` project only, ADR 0016) and the
+- **Packages.** Only SIL.WritingSystems (libpalaso, ADR 0002; referenced by the Avalonia and LCModel projects), Avalonia (and its Headless, Skia, Desktop, Themes.Fluent and Win32.Interoperability packages; Desktop, Themes.Fluent and Win32.Interoperability are samples-only), SIL.LCModel.Core (FieldWorks' pin; referenced by the `SIL.TextEditing.LCModel` project only, ADR 0016), Markdig.Signed 0.37.0 (referenced by the `SIL.TextEditing.Markdown` project only, ADR 0011) and the
   xunit test stack. Ask before adding anything else.
 - **Warnings are errors, nullable is on.** `IsTrimmable` and `IsAotCompatible` stay on for net10.0 libraries, except `SIL.TextEditing.LCModel` (LCModel is not trim-safe; it is not for Motif's GUI).
 - **No "Fw" prefixes** in names. Namespaces are `SIL.TextEditing` and `SIL.TextEditing.Avalonia`.
