@@ -154,6 +154,30 @@ plain text.
 | 9.5 | Select all (Ctrl+A) in the *Long document* and press B. | It finishes in a reasonable time; Undo restores it in one step. | | | | |
 | 9.6 | Dark or high-contrast Windows theme. | The field stays readable (it draws its own colours); record anything unreadable. | | | | |
 
+## 10. Mouse and keyboard selection (all hosts)
+
+Scenarios *Latin and Arabic* and *Long document*. Double-click is the system double-click speed; click the same spot.
+The word rule: a word is a run of letters, digits and marks (an apostrophe between letters stays in the word, so
+`don't` is one word); a run of spaces or of punctuation counts as one unit; there is no dictionary, so Thai and Chinese
+are not split into words. Ctrl+Left and Ctrl+Right go by the same rule in logical order, so in a right-to-left paragraph
+Ctrl+Left goes to the next word.
+
+| # | Steps | Expected | D10 | D48 | W48 | Notes |
+|---|---|---|---|---|---|---|
+| 10.1 | Click in the middle of an English word, then on the left half and the right half of one letter. | The caret appears at the nearer side of the letter; no selection; the inspector shows `selection none`. | | | | |
+| 10.2 | Click at the edge between English and Arabic text, first on one side of the boundary and then on the other. | The caret is drawn on the side you clicked (two different places can be the same offset); typing there continues the text you clicked next to. | | | | |
+| 10.3 | Click a word, then Shift+click further on, then Shift+click before the anchor. | The selection grows from the first click, flips when you pass the anchor, and the inspector's `anchor` never moves. | | | | |
+| 10.4 | Drag from the middle of one paragraph to the middle of a later one, then drag back up past the start of the document and down past the end. | Everything between is highlighted, including the whole middle paragraphs; going past the edges selects to the start or the end. | | | | |
+| 10.5 | Double-click an English word, an Arabic word, a space and a comma. | The word, the Arabic word, the space run and the punctuation are selected, nothing more. Double-click on the last letter of a word, right half, still picks that word. | | | | |
+| 10.6 | Double-click a word and, holding the second press, drag over two more words. | The selection grows a whole word at a time, in both directions. | | | | |
+| 10.7 | Triple-click in an English paragraph, an Arabic paragraph, and a wrapped one. | The whole paragraph is selected, over all its lines; holding the third press and dragging adds whole paragraphs. | | | | |
+| 10.8 | Click in a long wrapped paragraph, press End, then Home, then End again; then Shift+End. | End puts the caret at the end of the visual line, drawn on that line, not at the start of the next; Home goes to the start of the same line; Shift+End selects to the line end only. | | | | |
+| 10.9 | From the End position in 10.8 press Up, Down, Down. | Each key moves one visual line. After a short line the caret returns to about the original horizontal position (the preferred position), not to the short line's end. | | | | |
+| 10.10 | Click in a wrapped line just right of its last word. | The caret is drawn at the end of that line, not at the start of the next line. | | | | |
+| 10.11 | Ctrl+Right and Ctrl+Left through an English sentence, then through the Arabic paragraph; add Shift. | The caret jumps a word at a time (English: to the start of the next word); at the end of a paragraph the next press enters the neighbouring paragraph; with Shift the selection follows. | | | | |
+| 10.12 | Ctrl+Home, Ctrl+End, Ctrl+A, and with Shift for the first two. | The caret goes to the very start and end of the document; Ctrl+A selects everything, and the inspector shows `selection 0:0 -> last:end`. | | | | |
+| 10.13 | Select across three paragraphs with the mouse and press Delete (or Backspace, or type a letter). | One paragraph is left holding the text before and after the selection; its id in the inspector is the first paragraph's id (unless the first part was empty, then the last paragraph's id). Undo restores all three. | | | | |
+
 ## Record
 
 | | |
