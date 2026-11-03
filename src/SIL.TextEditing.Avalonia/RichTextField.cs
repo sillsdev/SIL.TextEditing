@@ -79,7 +79,12 @@ namespace SIL.TextEditing.Avalonia
         public bool IsReadOnly
         {
             get => Editor.IsReadOnly;
-            set => Editor.IsReadOnly = value;
+            set
+            {
+                if (Editor.IsReadOnly == value) return;
+                Editor.IsReadOnly = value;
+                _peer?.RaiseReadOnlyChanged(!value, value);
+            }
         }
         /// <summary>The wrap width used when the available width is unbounded.</summary>
         public double PreferredWidth { get; set; } = 400;
@@ -628,10 +633,13 @@ namespace SIL.TextEditing.Avalonia
 
             public FieldPeer(RichTextField field) : base(field) { _field = field; _lastValue = field.AutomationValue; }
 
-            // The field has no read-only state yet, so it reports editable.
-            public bool IsReadOnly => false;
+            // True when the whole field is read-only (a field-level flag, ADR 0019); read-only runs inside an editable field do not count.
+            public bool IsReadOnly => _field.IsReadOnly;
             public string? Value => _field.AutomationValue;
             public void SetValue(string? value) { }
+
+            public void RaiseReadOnlyChanged(bool old, bool now) =>
+                RaisePropertyChangedEvent(global::Avalonia.Automation.ValuePatternIdentifiers.IsReadOnlyProperty, old, now);
 
             public void RaiseValueChanged()
             {
