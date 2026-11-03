@@ -38,6 +38,7 @@ namespace SIL.TextEditing.Playground
             public const string Cut = "CutButton";
             public const string Copy = "CopyButton";
             public const string Paste = "PasteButton";
+            public const string ReadOnly = "ReadOnlyCheck";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
             public const string DefaultVernacular = "DefaultVernacularButton";
             public const string WsLabel = "WsLabel";
@@ -71,6 +72,7 @@ namespace SIL.TextEditing.Playground
         readonly StackPanel _fieldStack = new StackPanel();
         readonly ComboBox _picker;
         readonly ComboBox _countPicker;
+        CheckBox _readOnlyCheck = null!;
         readonly TextBlock _description;
         readonly TextBlock _wsLabel;
         readonly TextBlock _selectionLabel;
@@ -151,6 +153,16 @@ namespace SIL.TextEditing.Playground
             toolbar.Children.Add(Tool(Names.Cut, "Cut", "Cut the selection (Ctrl+X)", () => ClipboardIdle = CopyAsync(true)));
             toolbar.Children.Add(Tool(Names.Copy, "Copy", "Copy the selection (Ctrl+C)", () => ClipboardIdle = CopyAsync(false)));
             toolbar.Children.Add(Tool(Names.Paste, "Paste", "Paste (Ctrl+V)", () => ClipboardIdle = PasteAsync()));
+            toolbar.Children.Add(Spacer());
+            _readOnlyCheck = new CheckBox { Name = Names.ReadOnly, Content = "Read-only field", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_readOnlyCheck, "Field-level read-only: selection and copy work, nothing changes the text");
+            _readOnlyCheck.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                _active.Field.IsReadOnly = _readOnlyCheck.IsChecked == true;
+                Log("field read-only: " + (_active.Field.IsReadOnly ? "on" : "off"));
+            };
+            toolbar.Children.Add(_readOnlyCheck);
 
             var wsBar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
             wsBar.Children.Add(_wsLabel);
@@ -240,6 +252,9 @@ namespace SIL.TextEditing.Playground
             var documents = scenario.Build(FieldCount);
             for (int i = 0; i < documents.Count; i++) AddSession(documents[i], i + 1, scenario.Many);
             _active = _sessions[0];
+            _syncing = true;
+            _readOnlyCheck.IsChecked = false;
+            _syncing = false;
             _selectionState = string.Empty;
             Log("scenario: " + scenario.Name + (scenario.Many ? " (" + documents.Count + " fields)" : string.Empty));
             UpdateWsLabel();
@@ -302,6 +317,9 @@ namespace SIL.TextEditing.Playground
             _active = session;
             _selectionState = string.Empty;
             _selectionLabel.Text = string.Empty;
+            _syncing = true;
+            _readOnlyCheck.IsChecked = session.Field.IsReadOnly;
+            _syncing = false;
             Log("focus: field " + session.Number);
             UpdateWsLabel();
             RefreshInspector();
@@ -405,6 +423,11 @@ namespace SIL.TextEditing.Playground
             if (!editor.HasSelection)
             {
                 Log("format: " + label + " needs a selection");
+                return false;
+            }
+            if (!editor.CanFormatSelection)
+            {
+                Log("format: " + label + " refused, the selection holds text that may not be edited");
                 return false;
             }
             editor.Ordered(out var a, out var b);

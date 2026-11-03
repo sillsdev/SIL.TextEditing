@@ -1,0 +1,196 @@
+using System.Collections.Generic;
+using Xunit;
+using static SIL.TextEditing.Tests.TestDocs;
+
+namespace SIL.TextEditing.Tests
+{
+    /// <summary>ADR 0019: editability is a run property (ktptEditable) and a field-level flag; selection always works.</summary>
+    public class EditableRunTests
+    {
+        static Run Marked(string text, int editable)
+        {
+            var r = new Run { Ws = "en", Text = text };
+            r.Props.SetInt(TextPropertyNumbers.Editable, editable);
+            return r;
+        }
+
+        /// <summary>"Gloss: " (not editable) + "abc" (editable) + " [fixed]" (not editable) + "xyz" (editable).</summary>
+        static DocumentEditor Labelled(int labelKind = TextPropertyNumbers.EditableNo)
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(Marked("Gloss: ", labelKind));
+            p.Runs.Add(new Run { Ws = "en", Text = "abc" });
+            p.Runs.Add(Marked(" [fixed]", labelKind));
+            p.Runs.Add(new Run { Ws = "en", Text = "xyz" });
+            return new DocumentEditor(Doc(p));
+        }
+
+        static string Text(DocumentEditor e) => e.Document.Paragraphs[0].Text;
+
+        [Fact]
+        public void A_run_without_the_property_is_editable_and_the_values_map_to_FieldWorks_numbers()
+        {
+            Assert.Equal(RunEditable.Editable, new Run { Text = "a" }.Editable);
+            Assert.Equal(RunEditable.NotEditable, Marked("a", 0).Editable);
+            Assert.Equal(RunEditable.Editable, Marked("a", 1).Editable);
+            Assert.Equal(RunEditable.SemiEditable, Marked("a", 2).Editable);
+            Assert.Equal(155, TextPropertyNumbers.Editable);
+        }
+
+        [Fact]
+        public void A_caret_placed_in_read_only_text_moves_to_the_nearest_place_where_editing_is_allowed()
+        {
+            var e = Labelled();
+            e.SetCaret(new TextPosition(0, 3));
+            Assert.Equal(7, e.Caret.Offset);
+            e.SetCaret(new TextPosition(0, 12));
+            Assert.Equal(10, e.Caret.Offset);
+            e.SetCaret(new TextPosition(0, 20));
+            Assert.Equal(20, e.Caret.Offset);
+        }
+
+        [Fact]
+        public void A_direction_makes_the_caret_step_over_read_only_text_instead_of_bouncing_back()
+        {
+            var e = Labelled();
+            e.SetCaret(new TextPosition(0, 10));
+            e.SetCaret(new TextPosition(0, 11), false, +1);
+            Assert.Equal(18, e.Caret.Offset);
+            e.SetCaret(new TextPosition(0, 12), false, -1);
+            Assert.Equal(10, e.Caret.Offset);
+        }
+
+        [Fact]
+        public void Selection_reaches_read_only_text()
+        {
+            var e = Labelled();
+            e.SetCaret(new TextPosition(0, 7));
+            e.SetCaret(new TextPosition(0, 2), true);
+            Assert.True(e.HasSelection);
+            Assert.Equal(2, e.Caret.Offset);
+            e.SetCaret(new TextPosition(0, 0));
+            e.Anchor = new TextPosition(0, 0);
+            e.SetCaret(new TextPosition(0, 13), true);
+            Assert.Equal(13, e.Caret.Offset);
+        }
+
+        [Fact]
+        public void Typing_at_the_edge_of_read_only_text_lands_in_the_editable_run_without_its_editable_property()
+        {
+            var e = Labelled();
+            e.SetCaret(new TextPosition(0, 7));
+            e.TypeText("Q");
+            Assert.Equal("Gloss: Qabc [fixed]xyz", Text(e));
+            var typed = e.Document.Paragraphs[0].Runs[1];
+            Assert.Equal("Qabc", typed.Text);
+            Assert.False(typed.Props.TryGetInt(TextPropertyNumbers.Editable, out _));
+            Assert.Equal(RunEditable.NotEditable, e.Document.Paragraphs[0].Runs[0].Editable);
+        }
+
+        [Fact]
+        public void Typing_over_a_selection_that_crosses_read_only_text_changes_nothing()
+        {
+            var e = Labelled();
+            e.Anchor = new TextPosition(0, 8);
+            e.SetCaret(new TextPosition(0, 12), true);
+            e.TypeText("Z");
+            Assert.Equal("Gloss: abc [fixed]xyz", Text(e));
+            Assert.True(e.HasSelection);
+        }
+
+        [Fact]
+        public void Delete_backspace_cut_and_paste_are_refused_across_read_only_text()
+        {
+            var e = Labelled();
+            var undo = new SimpleUndoStack();
+            undo.Attach(e);
+            e.Anchor = new TextPosition(0, 5);
+            e.SetCaret(new TextPosition(0, 9), true);
+            e.DeleteSelection("cut");
+            e.Backspace();
+            e.DeleteForward();
+            e.Paste(new List<Paragraph> { Para("en", "en", "P") });
+            e.ReplaceRange(new TextPosition(0, 5), new TextPosition(0, 9), null, "cut");
+            Assert.Equal("Gloss: abc [fixed]xyz", Text(e));
+            Assert.Empty(undo.Done);
+        }
+
+        [Fact]
+        public void Backspace_and_Delete_at_the_edge_of_read_only_text_do_not_eat_it()
+        {
+            var e = Labelled();
+            e.SetCaret(new TextPosition(0, 7));
+            e.Backspace();
+            Assert.Equal("Gloss: abc [fixed]xyz", Text(e));
+            e.SetCaret(new TextPosition(0, 10));
+            e.DeleteForward();
+            Assert.Equal("Gloss: abc [fixed]xyz", Text(e));
+            e.Backspace();
+            Assert.Equal("Gloss: ab [fixed]xyz", Text(e));
+        }
+
+        [Fact]
+        public void Editable_text_around_read_only_text_still_edits_and_selection_can_be_copied()
+        {
+            var e = Labelled();
+            e.Anchor = new TextPosition(0, 0);
+            e.SetCaret(new TextPosition(0, 21), true);
+            Assert.Equal("Gloss: abc [fixed]xyz", string.Concat(e.GetFragment()[0].Text));
+            e.Anchor = new TextPosition(0, 8);
+            e.SetCaret(new TextPosition(0, 9), true);
+            e.DeleteSelection();
+            Assert.Equal("Gloss: ac [fixed]xyz", Text(e));
+        }
+
+        [Fact]
+        public void Semi_editable_text_is_refused_like_not_editable_text_and_cannot_be_formatted()
+        {
+            var e = Labelled(TextPropertyNumbers.EditableSemi);
+            e.Anchor = new TextPosition(0, 0);
+            e.SetCaret(new TextPosition(0, 4), true);
+            e.DeleteSelection();
+            Assert.Equal("Gloss: abc [fixed]xyz", Text(e));
+            Assert.False(e.CanFormatSelection);
+            e.Anchor = new TextPosition(0, 7);
+            e.SetCaret(new TextPosition(0, 10), true);
+            Assert.True(e.CanFormatSelection);
+        }
+
+        [Fact]
+        public void A_read_only_field_refuses_every_edit_but_keeps_the_caret_and_selection_working()
+        {
+            var e = new DocumentEditor(Basic()) { IsReadOnly = true };
+            var undo = new SimpleUndoStack();
+            undo.Attach(e);
+            e.SetCaret(new TextPosition(0, 3));
+            Assert.Equal(3, e.Caret.Offset);
+            e.TypeText("x");
+            e.Enter();
+            e.Backspace();
+            e.DeleteForward();
+            e.Paste(new List<Paragraph> { Para("en", "en", "P") });
+            e.Anchor = new TextPosition(0, 1);
+            e.SetCaret(new TextPosition(0, 5), true);
+            Assert.True(e.HasSelection);
+            e.DeleteSelection();
+            Assert.Equal("Hello bonjour world", Text(e));
+            Assert.Empty(undo.Done);
+            Assert.False(e.CanEdit);
+
+            e.IsReadOnly = false;
+            e.TypeText("x");
+            Assert.Equal("Hx bonjour world", Text(e));
+        }
+
+        [Fact]
+        public void The_host_can_still_apply_changes_to_a_read_only_field()
+        {
+            var e = new DocumentEditor(OneParagraph("abc")) { IsReadOnly = true };
+            var d = new EditDelta { Start = 0, CaretAfter = new TextPosition(0, 1) };
+            d.Before.Add(e.Document.Paragraphs[0].Clone());
+            d.After.Add(Para("en", "en", "xyz"));
+            e.Apply(d);
+            Assert.Equal("xyz", Text(e));
+        }
+    }
+}

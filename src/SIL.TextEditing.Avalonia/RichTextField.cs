@@ -72,6 +72,13 @@ namespace SIL.TextEditing.Avalonia
         public IBrush Foreground { get; set; } = Brushes.Black;
         public IBrush Background { get; set; } = Brushes.White;
         public bool ShowCaretAlways { get; set; }
+        /// <summary>A field-level read-only flag (forwards to <see cref="DocumentEditor.IsReadOnly"/>): selection and copy
+        /// work, nothing changes the text. Runs can also be read-only one by one (ADR 0019).</summary>
+        public bool IsReadOnly
+        {
+            get => Editor.IsReadOnly;
+            set => Editor.IsReadOnly = value;
+        }
         /// <summary>The wrap width used when the available width is unbounded.</summary>
         public double PreferredWidth { get; set; } = 400;
         /// <summary>The number of paragraph layouts built so far, for measuring relayout cost.</summary>
@@ -245,7 +252,7 @@ namespace SIL.TextEditing.Avalonia
             _hit = hit;
             _hitPosition = p;
             _moving = true;
-            try { Editor.SetCaret(p, extend); }
+            try { Editor.SetCaret(p, extend, p.CompareTo(Editor.Caret)); }
             finally { _moving = false; }
         }
 
@@ -553,6 +560,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Shows an uncommitted composition string inline at the caret; it never enters the model.</summary>
         public void SetPreedit(string? text, int? cursor)
         {
+            if (text != null && !Editor.CanEdit) text = null;   // an input method cannot compose into text that may not be edited
             _preedit = string.IsNullOrEmpty(text) ? null : text;
             _preeditCursor = cursor ?? (_preedit?.Length ?? 0);
             int pi = Editor.Caret.Paragraph;

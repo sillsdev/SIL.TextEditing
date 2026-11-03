@@ -11,7 +11,7 @@ namespace SIL.TextEditing
     /// owns it (see <see cref="SimpleUndoStack"/> for a stand-in). Paragraph identity follows the rules in
     /// <see cref="ReplaceRange"/> and <see cref="Enter"/>.
     /// </summary>
-    public sealed class DocumentEditor
+    public sealed partial class DocumentEditor
     {
         bool _wsOverride;
 
@@ -82,10 +82,11 @@ namespace SIL.TextEditing
             return set;
         }
 
-        public void SetCaret(TextPosition p, bool extend = false)
+        public void SetCaret(TextPosition p, bool extend = false, int direction = 0)
         {
             p.Paragraph = Math.Max(0, Math.Min(Document.Paragraphs.Count - 1, p.Paragraph));
             p.Offset = Math.Max(0, Math.Min(Document.Paragraphs[p.Paragraph].Length, p.Offset));
+            if (!extend && !IsReadOnly) p = NearestEditable(p, direction);
             Caret = p;
             if (!extend) Anchor = p;
             _wsOverride = false;
@@ -116,9 +117,9 @@ namespace SIL.TextEditing
         {
             var para = Document.Paragraphs[p.Paragraph];
             var b = para.RunBefore(p.Offset, out _);
-            if (b != null && !b.IsObject && b.Ws == ws) return b.Props;
+            if (b != null && !b.IsObject && b.Ws == ws && b.Editable == RunEditable.Editable) return b.Props;
             var a = para.RunAfter(p.Offset, out _);
-            if (a != null && !a.IsObject && a.Ws == ws) return a.Props;
+            if (a != null && !a.IsObject && a.Ws == ws && a.Editable == RunEditable.Editable) return a.Props;
             return null;
         }
 
@@ -158,6 +159,7 @@ namespace SIL.TextEditing
 
         void InsertOne(string text)
         {
+            if (!CanEditSelectionOrCaret()) return;
             if (HasSelection) DeleteSelection("type");
             var ws = ActiveWs;
             var d = Begin(Caret.Paragraph, Caret.Paragraph, "type");
@@ -214,6 +216,7 @@ namespace SIL.TextEditing
         /// </summary>
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
+            if (IsReadOnly || !CanEditRange(a, b)) return;
             // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
             if (fragment != null && Document.Normalization is NormalizationForm form)
             {
@@ -283,6 +286,7 @@ namespace SIL.TextEditing
         /// stays on the right; anywhere else the left keeps the identity and the right is new.</summary>
         public void Enter()
         {
+            if (!CanEditSelectionOrCaret()) return;
             if (HasSelection) DeleteSelection("enter-del");
             var d = Begin(Caret.Paragraph, Caret.Paragraph, "enter");
             var orig = Document.Paragraphs[Caret.Paragraph];
