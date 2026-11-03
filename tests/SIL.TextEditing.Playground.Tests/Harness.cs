@@ -112,7 +112,7 @@ namespace SIL.TextEditing.Playground.Tests
             var pl = Field.ParagraphLayoutFor(paragraph);
             var li = pl.Lines[pl.LineIndexOf(index)];
             double x0 = li.Line.GetDistanceFromCharacterHit(new CharacterHit(index)), x1 = li.Line.GetDistanceFromCharacterHit(new CharacterHit(index, 1));
-            return Field.TranslatePoint(new Point((x0 + x1) / 2, Field.ParagraphTop(paragraph) + li.Y + li.Line.Height / 2), _window)!.Value;
+            return Field.TranslatePoint(new Point(li.X + (x0 + x1) / 2, Field.ParagraphTop(paragraph) + li.TextY + li.Line.Height / 2), _window)!.Value;
         }
 
         /// <summary>Presses the left button <paramref name="clicks"/> times at a window point (a double click is 2), as a

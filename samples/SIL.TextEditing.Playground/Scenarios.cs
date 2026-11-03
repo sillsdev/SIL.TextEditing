@@ -32,6 +32,7 @@ namespace SIL.TextEditing.Playground
         public const string Unicode = "NFD, marks, surrogates, PUA";
         public const string Picture = "Inline picture (ORC)";
         public const string Drawing = "Drawing properties";
+        public const string Paragraphs = "Paragraph formatting";
         public const string Opaque = "Unknown properties";
         public const string Long = "Long document (200 paragraphs)";
         public const string ManyFields = "Many fields";
@@ -48,6 +49,7 @@ namespace SIL.TextEditing.Playground
             new Scenario(Unicode, "Decomposed accents (NFD) next to composed ones, stacked combining marks, surrogate pairs, emoji sequences and private-use characters. The inspector shows the exact code units.", _ => One(Stored(UnicodeDoc(), System.Text.NormalizationForm.FormD))),
             new Scenario(Picture, "Inline picture objects (U+FFFC with object data), in LTR text, in RTL text and side by side. Backspace or Delete removes a picture whole. Use Picture to insert one.", _ => One(PictureDoc())),
             new Scenario(Drawing, "Every drawing property of a FieldWorks text string, from the run's own properties and from the host's named styles (the playground keeps a small stylesheet). Pick a style in the toolbar to apply it.", _ => One(DrawingDoc())),
+            new Scenario(Paragraphs, "Every paragraph drawing property from the host's paragraph styles and from a paragraph's own properties: alignment, first-line and hanging indents, margins, spacing, line height, colour, borders, a line limit, bullets and numbers. Pick a paragraph style in the toolbar to try one on the paragraph at the caret.", _ => One(ParagraphsDoc())),
             new Scenario(Opaque, "Runs with property numbers the editor does not understand, and a paragraph style. They must survive typing, formatting, split, join, undo and copy and paste untouched.", _ => One(OpaqueDoc())),
             new Scenario(Long, "200 paragraphs in mixed writing systems: scrolling, caret at the far end, and cost of edits in a long document.", _ => One(LongDoc(200))),
             new Scenario(ManyFields, "N small fields in one window: tab between them by clicking, undo is per field, the inspector follows the focused field.", ManyDocs, many: true),
@@ -225,6 +227,38 @@ namespace SIL.TextEditing.Playground
                 FontFeatures("1234567890 (tnum)", "tnum=1"),
                 new Run { Ws = "en", Text = "." });
             return Doc(heading, weights, sizes, colours, underlines, shifts, features);
+        }
+
+        const string Sentence = "The quick brown fox jumps over the lazy dog while the five boxing wizards jump quickly, and every wrapped line shows where its margins fall. ";
+
+        static Paragraph Styled(string style, string text = Sentence)
+        {
+            var p = Para("en", false, "en", text);
+            p.Style = style;
+            return p;
+        }
+
+        static Document ParagraphsDoc()
+        {
+            var heading = Styled("Heading 1", "Paragraph formatting");
+            var plain = Styled("", "Unstyled: starts at the leading edge. " + Sentence);
+            var own = Para("en", false, "en", "Own properties: this paragraph is centred by its own bag, with no style. " + Sentence);
+            own.Props.SetInt(TextPropertyNumbers.Align, 2);
+            var arabic = Para("ar", true, "ar", "هذه فقرة عربية بأسلوب معلّق: السطر الأول يبدأ من الحافة اليمنى والسطور التالية تبدأ بعد المسافة البادئة. هذه فقرة عربية بأسلوب معلّق: السطر الأول يبدأ من الحافة اليمنى والسطور التالية تبدأ بعد المسافة البادئة.");
+            arabic.Style = "Hanging";
+            var arabicCentred = Para("ar", true, "ar", "فقرة عربية موسطة");
+            arabicCentred.Style = "Centered";
+            return Doc(heading, plain,
+                Styled("Centered", "Centred. " + Sentence), Styled("Right", "Right. " + Sentence), Styled("Trailing", "Trailing (right in LTR). " + Sentence),
+                Styled("Justified", "Justified, but not its last line. " + Sentence + Sentence),
+                Styled("First Line Indent", "First line indent. " + Sentence), Styled("Hanging", "Hanging indent. " + Sentence),
+                Styled("Block Quote", "Block quote: indented on both sides. " + Sentence), own,
+                Styled("Double Spaced", "Double spaced. " + Sentence), Styled("Exact 30", "Exactly 30 point lines. " + Sentence),
+                Styled("Boxed", "Boxed: a border, padding and a background colour. " + Sentence), Styled("Two Lines Only", "Two lines only. " + Sentence + Sentence),
+                Styled("List Number", "First numbered paragraph. " + Sentence), Styled("List Number", "Second numbered paragraph."), Styled("List Number", "Third."),
+                Styled("List Roman", "In roman numerals."), Styled("List Roman", "Roman two."), Styled("List Letter", "A letter."), Styled("List Letter", "Another letter."),
+                Styled("List Bullet", "A bullet. " + Sentence), Styled("List Bullet", "Another bullet."),
+                arabic, arabicCentred);
         }
 
         static Run Fonts(string family)

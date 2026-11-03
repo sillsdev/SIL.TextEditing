@@ -45,6 +45,9 @@ namespace SIL.TextEditing
 
         internal CharFormat Copy() => (CharFormat)MemberwiseClone();
 
+        /// <summary>Applies a bag's character properties over this format (a number font over the paragraph's, say).</summary>
+        public void ApplyOver(PropertyBag bag) => Apply(bag);
+
         /// <summary>The font family a FieldWorks default-font markup stands for; any other name is returned as it is.</summary>
         public static string FontNameFromMarkup(string markup)
         {
@@ -272,6 +275,104 @@ namespace SIL.TextEditing
         {
             if (p.Style.Length > 0) return p.Style;
             return p.Props.TryGetStr(TextPropertyNumbers.NamedStyle, out var s) ? s : string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Bullets and numbering as FieldWorks draws them: the scheme (10 to 15 number styles, 100 and up bullets), the number of
+    /// a paragraph from the run of paragraphs before it, and the text drawn in the hanging space.
+    /// </summary>
+    public static class BulletNumbers
+    {
+        public const int Arabic = 10, RomanUpper = 11, RomanLower = 12, LetterUpper = 13, LetterLower = 14, Arabic01 = 15, BulletBase = 100;
+
+        // The bullet glyphs of the FieldWorks styles dialog, in scheme order from 100.
+        static readonly int[] Bullets =
+        {
+            0x00B7, 0x2022, 0x25CF, 0x274D, 0x25AA, 0x25A0, 0x25AB, 0x25A1, 0x2751, 0x2752,
+            0x2B27, 0x29EB, 0x25C6, 0x2756, 0x2318, 0x261E, 0x271E, 0x271E, 0x2730, 0x27A2,
+            0x27B2, 0x2794, 0x2794, 0x21E8, 0x2713
+        };
+
+        /// <summary>The font a bullet is drawn in.</summary>
+        public const string BulletFont = "Quivira";
+
+        public static bool IsBullet(int scheme) => scheme >= BulletBase && scheme < BulletBase + Bullets.Length;
+        public static bool IsNumber(int scheme) => scheme >= Arabic && scheme <= Arabic01;
+
+        /// <summary>The number of paragraph <paramref name="index"/> in its run. A paragraph starts a new sequence when its scheme
+        /// differs from the previous paragraph's (it then has its start-at value, else 1) or when it has a start-at value the
+        /// previous paragraph did not; otherwise it is one more than the previous.</summary>
+        public static int Sequence(Func<int, ParaFormat> formatOf, int index)
+        {
+            int k = index;
+            while (k > 0)
+            {
+                var cur = formatOf(k);
+                var prev = formatOf(k - 1);
+                if (cur.BulNumScheme != prev.BulNumScheme || (cur.BulNumStartAt != null && cur.BulNumStartAt != prev.BulNumStartAt)) break;
+                k--;
+            }
+            return (formatOf(k).BulNumStartAt ?? 1) + (index - k);
+        }
+
+        /// <summary>The label of a paragraph: the number or bullet between the style's before and after text, or empty for none.</summary>
+        public static string Label(ParaFormat format, int number)
+        {
+            int scheme = format.BulNumScheme;
+            if (IsBullet(scheme)) return char.ConvertFromUtf32(Bullets[scheme - BulletBase]);
+            if (!IsNumber(scheme)) return string.Empty;
+            return format.BulNumTextBefore + Number(scheme, number) + format.BulNumTextAfter;
+        }
+
+        public static string Number(int scheme, int n)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            switch (scheme)
+            {
+                case Arabic01: return n >= 0 && n < 10 ? "0" + n.ToString(inv) : n.ToString(inv);
+                case RomanUpper: return n > 0 && n <= 14999 ? Roman(n).ToUpperInvariant() : n.ToString(inv);
+                case RomanLower: return n > 0 && n <= 14999 ? Roman(n) : n.ToString(inv);
+                case LetterUpper: return Letters(n, 'A');
+                case LetterLower: return Letters(n, 'a');
+                default: return n.ToString(inv);
+            }
+        }
+
+        static readonly string[] Ones = { "", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix" };
+        static readonly string[] Tens = { "", "x", "xx", "xxx", "xl", "l", "lx", "lxx", "lxxx", "xc" };
+        static readonly string[] Hundreds = { "", "c", "cc", "ccc", "cd", "d", "dc", "dcc", "dccc", "cm" };
+
+        static string Roman(int n) => new string('m', n / 1000) + Hundreds[(n / 100) % 10] + Tens[(n / 10) % 10] + Ones[n % 10];
+
+        /// <summary>A, B, ... Z, AA, BB, ... ZZ, AAA, ...: the letter repeated; the count wraps at 780.</summary>
+        static string Letters(int n, char first)
+        {
+            if (n < 1) return n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (n > 780) n = ((n - 1) % 780) + 1;
+            return new string((char)(first + (n - 1) % 26), (n - 1) / 26 + 1);
+        }
+
+        /// <summary>The character properties packed in a style's number font string: for each property its number and its value as
+        /// two UTF-16 units (low then high), the font family last as its number followed by the name.</summary>
+        public static PropertyBag ParseFontInfo(string info)
+        {
+            var bag = new PropertyBag();
+            int i = 0;
+            while (i < info.Length)
+            {
+                int tpt = info[i++];
+                if (tpt == TextPropertyNumbers.FontFamily)
+                {
+                    bag.SetStr(tpt, info.Substring(i));
+                    break;
+                }
+                if (i + 1 >= info.Length) break;
+                int value = info[i] | (info[i + 1] << 16);
+                i += 2;
+                bag.SetInt(tpt, value);
+            }
+            return bag;
         }
     }
 }

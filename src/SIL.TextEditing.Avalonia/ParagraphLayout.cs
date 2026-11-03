@@ -47,14 +47,17 @@ namespace SIL.TextEditing.Avalonia
         readonly FlowDirection _flowDirection;
         readonly TextRunProperties _default;
 
-        public ParagraphProperties(FlowDirection flowDirection, TextRunProperties defaultProperties)
+        readonly TextAlignment _alignment;
+
+        public ParagraphProperties(FlowDirection flowDirection, TextRunProperties defaultProperties, TextAlignment alignment = TextAlignment.Start)
         {
             _flowDirection = flowDirection;
             _default = defaultProperties;
+            _alignment = alignment;
         }
 
         public override FlowDirection FlowDirection => _flowDirection;
-        public override TextAlignment TextAlignment => TextAlignment.Start;
+        public override TextAlignment TextAlignment => _alignment;
         public override double LineHeight => double.NaN;
         public override bool FirstLineInParagraph => true;
         public override TextRunProperties DefaultTextRunProperties => _default;
@@ -123,17 +126,27 @@ namespace SIL.TextEditing.Avalonia
 
     public sealed class LineInfo
     {
-        public LineInfo(TextLine line, double y)
+        public LineInfo(TextLine line, double y, double x = 0, double height = -1)
         {
             Line = line;
             Y = y;
+            X = x;
+            Height = height < 0 ? line.Height : height;
             Start = line.FirstTextSourceIndex;
             Length = line.Length;
             End = Start + Length;
         }
 
         public TextLine Line { get; }
+        /// <summary>The top of the line's slot in paragraph coordinates; a line height rule can make the slot taller (or shorter)
+        /// than the text, which sits at the bottom of it.</summary>
         public double Y { get; }
+        /// <summary>The left edge of the line's available width in paragraph coordinates; the line's own alignment offset is inside it.</summary>
+        public double X { get; }
+        /// <summary>The height of the slot.</summary>
+        public double Height { get; }
+        /// <summary>Where the text of the line starts vertically.</summary>
+        public double TextY => Y + Height - Line.Height;
         public int Start { get; }
         public int Length { get; }
         public int End { get; }
@@ -159,6 +172,24 @@ namespace SIL.TextEditing.Avalonia
         public int PreeditAt { get; private set; } = -1;
         public int PreeditLength { get; private set; }
         public bool Rtl => Paragraph.Rtl;
+
+        /// <summary>The paragraph's resolved formatting (alignment, indents, spacing, borders, numbering).</summary>
+        public ParaFormat Format { get; private set; } = new ParaFormat();
+        /// <summary>The paragraph box (inside the margins, border included): its left edge, top and width in paragraph coordinates.</summary>
+        Rect Box { get; set; }
+        /// <summary>The left edge of the text area, and its width.</summary>
+        public double ContentLeft { get; private set; }
+        public double ContentWidth { get; private set; }
+        /// <summary>True when lines past the style's maximum were left out.</summary>
+        public bool Truncated { get; private set; }
+        double _borderLeft, _borderTop, _borderRight, _borderBottom;
+        IBrush? _fill, _borderBrush;
+        CharFormat? _labelFormat;
+        WritingSystemInfo? _labelWs;
+        string _labelWsTag = string.Empty;
+        IBrush? _labelForeground;
+        string? _labelText;
+        TextLine? _label;
 
         /// <summary>Builds the text run properties for a run: the writing system's font and size, then the paragraph style,
         /// character style and the run's own properties, resolved through <paramref name="styles"/>.</summary>
@@ -286,8 +317,24 @@ namespace SIL.TextEditing.Avalonia
 
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
             var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles);
-            var paragraphProperties = new ParagraphProperties(paragraph.Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, defaultProperties);
-            double w = double.IsInfinity(width) ? 100000 : Math.Max(width, 10);
+            var baseWs = writingSystems.Get(defaultRun.Ws);
+            var pf = FormatResolver.ResolveParagraph(paragraph, styles, baseWs.Size);
+            layout.Format = pf;
+            layout.ApplyBox(pf, width, paragraph.Rtl, foreground);
+            if (pf.BulNumScheme != 0)
+            {
+                var lf = FormatResolver.ResolveChar(paragraph, defaultRun, styles, baseWs.Size);
+                if (pf.BulNumFontInfo.Length > 0) lf.ApplyOver(BulletNumbers.ParseFontInfo(pf.BulNumFontInfo));
+                if (BulletNumbers.IsBullet(pf.BulNumScheme)) lf.FontFamily = BulletNumbers.BulletFont;
+                layout._labelFormat = lf;
+                layout._labelWs = baseWs;
+                layout._labelWsTag = defaultRun.Ws;
+                layout._labelForeground = foreground;
+            }
+            var paragraphProperties = new ParagraphProperties(paragraph.Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, defaultProperties, Alignment(pf.Align));
+            double w = Math.Max(layout.ContentWidth, 10);
+            double firstIndent = pf.FirstIndent;
+            double lineHeightRule = pf.LineHeight;
             if (source.Text.Length == 0)
             {
                 // A line cannot be formatted from zero characters through the public API; use the font metrics.
@@ -297,27 +344,128 @@ namespace SIL.TextEditing.Avalonia
                     ? (-glyphTypeface.Metrics.Descent - glyphTypeface.Metrics.Ascent + glyphTypeface.Metrics.LineGap) / (double)glyphTypeface.Metrics.DesignEmHeight * fontSize
                     : fontSize * 1.3;
                 if (lineHeight <= 0) lineHeight = fontSize * 1.3;
-                layout.Height = lineHeight;
+                double slot = layout.SlotHeight(lineHeight);
+                layout.EmptyLineTop = layout.TopInset + slot - lineHeight;
+                layout.EmptyLineHeight = lineHeight;
+                layout.Height = layout.TopInset + slot + layout.BottomInset;
                 layout.Width = 0;
                 return layout;
             }
             int index = 0;
-            double y = 0;
+            double y = layout.TopInset;
             TextLineBreak? previous = null;
             var formatter = TextFormatter.Current;
             while (index < source.Text.Length || layout.Lines.Count == 0)
             {
-                var line = formatter.FormatLine(source, index, w, paragraphProperties, previous);
+                if (pf.MaxLines > 0 && layout.Lines.Count >= pf.MaxLines) { layout.Truncated = true; break; }
+                bool first = layout.Lines.Count == 0;
+                // The first line starts firstIndent further in (or, hanging, further out); the others use the whole text area.
+                double lineWidth = first ? Math.Max(w - firstIndent, 1) : w;
+                double lineX = layout.ContentLeft + (first && !paragraph.Rtl ? firstIndent : 0);
+                var line = formatter.FormatLine(source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
-                layout.Lines.Add(new LineInfo(line, y));
-                y += line.Height;
+                double slot = layout.SlotHeight(line.Height);
+                layout.Lines.Add(new LineInfo(line, y, lineX, slot));
+                y += slot;
                 layout.Width = Math.Max(layout.Width, line.WidthIncludingTrailingWhitespace);
                 if (line.Length <= 0) break;
                 index += line.Length;
                 previous = line.TextLineBreak;
             }
-            layout.Height = y;
+            layout.Height = y + layout.BottomInset;
             return layout;
+        }
+
+        // ---- paragraph formatting ----
+
+        /// <summary>The space above the first line (space before, margin, border, padding) and below the last.</summary>
+        public double TopInset { get; private set; }
+        public double BottomInset { get; private set; }
+        /// <summary>Where the caret sits in an empty paragraph, vertically.</summary>
+        double EmptyLineTop, EmptyLineHeight;
+
+        static TextAlignment Alignment(int align)
+        {
+            switch (align)
+            {
+                case 1: return TextAlignment.Left;
+                case 2: return TextAlignment.Center;
+                case 3: return TextAlignment.Right;
+                case 4: return TextAlignment.End;
+                // Justify: Avalonia's TextFormatter does not stretch lines and its justifier (InterWordJustification) is internal, so
+                // the lines are laid out against the leading edge, as the last line of a justified paragraph is.
+                case 5: return TextAlignment.Start;
+                default: return TextAlignment.Start;
+            }
+        }
+
+        /// <summary>The slot a line of the given natural height takes under the style's line height: exact fixes it, otherwise it is at least that.</summary>
+        double SlotHeight(double natural)
+        {
+            double rule = Format.LineHeight;
+            if (rule <= 0) return natural;
+            return Format.ExactLineHeight ? rule : Math.Max(rule, natural);
+        }
+
+        /// <summary>Works out the margin, border and padding boxes from the format. Leading is the right side in a right-to-left paragraph.
+        /// A hanging first indent is added to the leading padding, as FieldWorks does, so the first line starts at the padding edge.</summary>
+        void ApplyBox(ParaFormat pf, double width, bool rtl, IBrush foreground)
+        {
+            double total = double.IsInfinity(width) ? 100000 : Math.Max(width, 10);
+            double hang = Math.Max(-pf.FirstIndent, 0);
+            double marginLeft = rtl ? pf.TrailingIndent : pf.LeadingIndent, marginRight = rtl ? pf.LeadingIndent : pf.TrailingIndent;
+            _borderLeft = rtl ? pf.BorderTrailing : pf.BorderLeading;
+            _borderRight = rtl ? pf.BorderLeading : pf.BorderTrailing;
+            _borderTop = pf.BorderTop;
+            _borderBottom = pf.BorderBottom;
+            double padLeft = (rtl ? pf.PadTrailing : pf.PadLeading + hang), padRight = (rtl ? pf.PadLeading + hang : pf.PadTrailing);
+            ContentLeft = marginLeft + _borderLeft + padLeft;
+            ContentWidth = Math.Max(total - ContentLeft - marginRight - _borderRight - padRight, 10);
+            TopInset = pf.SpaceBefore + pf.MarginTop + pf.BorderTop + pf.PadTop;
+            BottomInset = pf.PadBottom + pf.BorderBottom + pf.SpaceAfter;
+            Box = new Rect(marginLeft, pf.SpaceBefore + pf.MarginTop, Math.Max(total - marginLeft - marginRight, 0), 0);
+            _fill = ColorBrush(pf.ParaColor);
+            _borderBrush = _borderLeft + _borderTop + _borderRight + _borderBottom > 0 ? (ColorBrush(pf.BorderColor) ?? Brushes.Black) : null;
+        }
+
+        /// <summary>Paints the paragraph's fill colour and borders; <paramref name="top"/> is the paragraph's top in the control.</summary>
+        public void DrawBox(DrawingContext context, double top)
+        {
+            if (_fill == null && _borderBrush == null) return;
+            var box = new Rect(Box.X, top + Box.Y, Box.Width, Height - Format.SpaceAfter - Box.Y);
+            if (_fill != null) context.DrawRectangle(_fill, null, box);
+            if (_borderBrush == null) return;
+            if (_borderTop > 0) context.DrawRectangle(_borderBrush, null, new Rect(box.X, box.Y, box.Width, _borderTop));
+            if (_borderBottom > 0) context.DrawRectangle(_borderBrush, null, new Rect(box.X, box.Bottom - _borderBottom, box.Width, _borderBottom));
+            if (_borderLeft > 0) context.DrawRectangle(_borderBrush, null, new Rect(box.X, box.Y, _borderLeft, box.Height));
+            if (_borderRight > 0) context.DrawRectangle(_borderBrush, null, new Rect(box.Right - _borderRight, box.Y, _borderRight, box.Height));
+        }
+
+        /// <summary>The bullet or number label's line, formatted in the number font (the style's number font info over the first run's format).</summary>
+        TextLine? LabelLine(string text)
+        {
+            if (_labelFormat == null || _labelWs == null || text.Length == 0) return null;
+            if (_label != null && _labelText == text) return _label;
+            _label?.Dispose();
+            var props = MakeProperties(_labelFormat, _labelWs, _labelWsTag, _labelForeground ?? Brushes.Black);
+            var source = new ParagraphSource { Text = text };
+            source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = text.Length, Properties = props });
+            _label = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props), null);
+            _labelText = text;
+            return _label;
+        }
+
+        /// <summary>Draws the paragraph's bullet or number at the start of its first line, on the same baseline.</summary>
+        public void DrawLabel(DrawingContext context, double top, string text)
+        {
+            var label = LabelLine(text);
+            if (label == null) return;
+            double lineTop, baseline, x;
+            if (Lines.Count > 0) { lineTop = Lines[0].TextY; baseline = Lines[0].Line.Baseline; }
+            else { lineTop = EmptyLineTop; baseline = label.Baseline; }
+            double firstLineLeft = ContentLeft + (Rtl ? 0 : Format.FirstIndent);
+            x = Rtl ? ContentLeft + ContentWidth - Format.FirstIndent - label.WidthIncludingTrailingWhitespace : firstLineLeft;
+            label.Draw(context, new Point(x, top + lineTop + baseline - label.Baseline));
         }
 
         // ---- model offset <-> effective offset; they differ only while a preedit is shown ----
@@ -380,10 +528,10 @@ namespace SIL.TextEditing.Avalonia
         {
             int e = effective ? modelOffset : ToEffective(modelOffset);
             var li = LineOf(e, hit);
-            if (li == null) return new Rect(Rtl ? LayoutWidth : 0, 0, 1, Height);
+            if (li == null) return new Rect(EmptyCaretX(), EmptyLineTop, 1, EmptyLineHeight);
             var h = hit.HasValue && hit.Value.FirstCharacterIndex + hit.Value.TrailingLength == e ? hit.Value : new CharacterHit(e);
             double x = li.Line.GetDistanceFromCharacterHit(h);
-            return new Rect(x, li.Y, 1, li.Line.Height);
+            return new Rect(li.X + x, li.TextY, 1, li.Line.Height);
         }
 
         /// <summary>The model offset at a point in paragraph coordinates.</summary>
@@ -404,9 +552,9 @@ namespace SIL.TextEditing.Avalonia
             var li = Lines[Lines.Count - 1];
             foreach (var l in Lines)
             {
-                if (point.Y < l.Y + l.Line.Height) { li = l; break; }
+                if (point.Y < l.Y + l.Height) { li = l; break; }
             }
-            var h = li.Line.GetCharacterHitFromDistance(point.X);
+            var h = li.Line.GetCharacterHitFromDistance(point.X - li.X);
             int e = h.FirstCharacterIndex + h.TrailingLength;
             int max = TextEnd(li);
             bool last = li == Lines[Lines.Count - 1];
@@ -433,7 +581,7 @@ namespace SIL.TextEditing.Avalonia
                 int a = Math.Max(ef, li.Start), b = Math.Min(et, TextEnd(li));
                 if (b <= a) continue;
                 foreach (var tb in li.Line.GetTextBounds(a, b - a))
-                    result.Add(new Rect(tb.Rectangle.X, li.Y + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height));
+                    result.Add(new Rect(li.X + tb.Rectangle.X, li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height));
             }
             return result;
         }
@@ -457,8 +605,8 @@ namespace SIL.TextEditing.Avalonia
             while (guard++ < 10000)
             {
                 int o = h.FirstCharacterIndex + h.TrailingLength;
-                candidates.Add(new Stop { Hit = new CharacterHit(o), Offset = o, X = line.Line.GetDistanceFromCharacterHit(new CharacterHit(o)) });
-                if (h.TrailingLength > 0) candidates.Add(new Stop { Hit = h, Offset = o, X = line.Line.GetDistanceFromCharacterHit(h) });
+                candidates.Add(new Stop { Hit = new CharacterHit(o), Offset = o, X = line.X + line.Line.GetDistanceFromCharacterHit(new CharacterHit(o)) });
+                if (h.TrailingLength > 0) candidates.Add(new Stop { Hit = h, Offset = o, X = line.X + line.Line.GetDistanceFromCharacterHit(h) });
                 var n = line.Line.GetNextCaretCharacterHit(h);
                 int no = n.FirstCharacterIndex + n.TrailingLength;
                 if (no <= o || no > max) break;
@@ -498,15 +646,26 @@ namespace SIL.TextEditing.Avalonia
                     var li = LineOf(e);
                     if (li != null)
                         foreach (var tb in li.Line.GetTextBounds(e, 1))
-                            result.Add(new KeyValuePair<Rect, string>(new Rect(tb.Rectangle.X, li.Y + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height), r.ObjData));
+                            result.Add(new KeyValuePair<Rect, string>(new Rect(li.X + tb.Rectangle.X, li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height), r.ObjData));
                 }
                 pos += r.Text.Length;
             }
             return result;
         }
 
+        /// <summary>The caret's x in a paragraph with no text: where the first line would start, following the alignment.</summary>
+        double EmptyCaretX()
+        {
+            double firstLeft = ContentLeft + (Rtl ? 0 : Format.FirstIndent);
+            double width = Math.Max(ContentWidth - Format.FirstIndent, 1);
+            bool right = Format.Align == 3 || (Format.Align == 4 && !Rtl) || ((Format.Align == 0 || Format.Align == 5) && Rtl);
+            if (Format.Align == 2) return firstLeft + width / 2;
+            return right ? firstLeft + width : firstLeft;
+        }
+
         public void Dispose()
         {
+            _label?.Dispose();
             foreach (var l in Lines) l.Line.Dispose();
             Lines.Clear();
         }

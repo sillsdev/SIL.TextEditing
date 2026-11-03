@@ -213,6 +213,7 @@ namespace SIL.TextEditing.Avalonia
                 var pl = ParagraphLayoutFor(i);
                 if (y + pl.Height >= 0 && y <= clip.Bottom + 1)
                 {
+                    pl.DrawBox(context, y);
                     if (Editor.HasSelection && i >= a.Paragraph && i <= b.Paragraph)
                     {
                         int s = i == a.Paragraph ? a.Offset : 0;
@@ -220,7 +221,12 @@ namespace SIL.TextEditing.Avalonia
                         foreach (var r in pl.SelectionRects(s, e))
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
-                    foreach (var li in pl.Lines) li.Line.Draw(context, new Point(0, y + li.Y));
+                    foreach (var li in pl.Lines) li.Line.Draw(context, new Point(li.X, y + li.TextY));
+                    if (pl.Format.BulNumScheme != 0)
+                    {
+                        int number = BulletNumbers.IsNumber(pl.Format.BulNumScheme) ? BulletNumbers.Sequence(k => ParagraphLayoutFor(k).Format, i) : 0;
+                        pl.DrawLabel(context, y, BulletNumbers.Label(pl.Format, number));
+                    }
                     if (ObjectAsGlyph)
                     {
                         foreach (var o in pl.ObjectRects())
