@@ -40,6 +40,7 @@ namespace SIL.TextEditing.Playground
             public const string Paste = "PasteButton";
             public const string ReadOnly = "ReadOnlyCheck";
             public const string SingleParagraph = "SingleParagraphCheck";
+            public const string HostHandlesLeave = "HostHandlesLeaveCheck";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
             public const string DefaultVernacular = "DefaultVernacularButton";
             public const string WsLabel = "WsLabel";
@@ -75,6 +76,7 @@ namespace SIL.TextEditing.Playground
         readonly ComboBox _countPicker;
         CheckBox _readOnlyCheck = null!;
         CheckBox _singleParagraphCheck = null!;
+        CheckBox _leaveHandled = null!;
         readonly TextBlock _description;
         readonly TextBlock _wsLabel;
         readonly TextBlock _selectionLabel;
@@ -174,6 +176,9 @@ namespace SIL.TextEditing.Playground
                 Log("single paragraph: " + (_active.Field.SingleParagraph ? "on" : "off"));
             };
             toolbar.Children.Add(_singleParagraphCheck);
+            _leaveHandled = new CheckBox { Name = Names.HostHandlesLeave, Content = "Host takes leave requests", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_leaveHandled, "Tab, Shift+Tab, Ctrl+Tab and arrows at the field's edge raise LeaveRequested; when ticked the host marks it handled, so Tab does not move focus");
+            toolbar.Children.Add(_leaveHandled);
 
             var wsBar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
             wsBar.Children.Add(_wsLabel);
@@ -294,6 +299,12 @@ namespace SIL.TextEditing.Playground
                 if (_active != session) return;
                 UpdateWsLabel();
                 Log("caret ws " + o + " -> " + n + ": would switch keyboard to " + n);
+            };
+            field.LeaveRequested += (o, e) =>
+            {
+                if (_active != session) return;
+                Log("leave requested: " + e.Direction + " by " + e.Key + (e.ToEnd ? " (to the " + (e.Direction == LeaveDirection.Next ? "last" : "first") + " field)" : string.Empty) + (double.IsNaN(e.GoalX) ? string.Empty : " at x " + Math.Round(e.GoalX)) + (_leaveHandled.IsChecked == true ? ": the host moved focus" : string.Empty));
+                e.Handled = _leaveHandled.IsChecked == true;
             };
             field.EnterRequested += m => Log("Enter passed to the host" + (m == KeyModifiers.None ? string.Empty : " (" + m + ")") + ": the host's default button would run");
             field.UndoRequested += () => { Activate(session); UndoLast("Ctrl+Z in the field"); };

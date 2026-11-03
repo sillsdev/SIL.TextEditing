@@ -108,6 +108,9 @@ namespace SIL.TextEditing.Avalonia
         /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it
         /// also keeps bubbling.</summary>
         public event Action<KeyModifiers>? EnterRequested;
+        /// <summary>Tab, Shift+Tab, Ctrl+Tab or an arrow key that cannot move further asks to leave the field (ADR 0021); the
+        /// host moves focus.</summary>
+        public event EventHandler<LeaveRequestedEventArgs>? LeaveRequested;
         /// <summary>The editor asks the host to undo (Ctrl+Z); the host owns the undo stack.</summary>
         public event Action? UndoRequested;
         public event Action? RedoRequested;
@@ -356,6 +359,24 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
+        // ADR 0021: a Left or Right that moves nothing, with no selection to collapse, asks to leave the field.
+        void MoveOrLeave(bool left, bool ctrl, bool shift)
+        {
+            var before = Editor.Caret;
+            bool hadSelection = Editor.HasSelection;
+            bool forward = Editor.Document.Paragraphs[before.Paragraph].Rtl ? left : !left;
+            if (ctrl) MoveByWord(left, shift); else MoveVisualLeftRight(left, shift);
+            if (!shift && !hadSelection && Editor.Caret.Equals(before))
+                RaiseLeave(forward ? LeaveDirection.Next : LeaveDirection.Previous, left ? LeaveKey.Left : LeaveKey.Right, false, double.NaN);
+        }
+
+        bool RaiseLeave(LeaveDirection direction, LeaveKey key, bool toEnd, double goalX)
+        {
+            var args = new LeaveRequestedEventArgs(direction, key, toEnd, goalX);
+            LeaveRequested?.Invoke(this, args);
+            return args.Handled;
+        }
+
         void MoveVertical(bool down, bool extend)
         {
             var c = Editor.Caret;
@@ -370,13 +391,23 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (pl.Lines.Count > 0 && li + 1 < pl.Lines.Count) y = top + pl.Lines[li + 1].Y + 1;
                 else if (c.Paragraph + 1 < _layouts.Count) y = top + pl.Height + 1;
-                else { Move(new TextPosition(c.Paragraph, pl.Paragraph.Length), extend, true); return; }
+                else
+                {
+                    if (!extend && RaiseLeave(LeaveDirection.Next, LeaveKey.Down, false, gx)) return;
+                    Move(new TextPosition(c.Paragraph, pl.Paragraph.Length), extend, true);
+                    return;
+                }
             }
             else
             {
                 if (li > 0) y = top + pl.Lines[li - 1].Y + 1;
                 else if (c.Paragraph > 0) y = top - 1;
-                else { Move(new TextPosition(c.Paragraph, 0), extend, true); return; }
+                else
+                {
+                    if (!extend && RaiseLeave(LeaveDirection.Previous, LeaveKey.Up, false, gx)) return;
+                    Move(new TextPosition(c.Paragraph, 0), extend, true);
+                    return;
+                }
             }
             var target = Locate(new Point(gx, y));
             _goalX = gx;
@@ -418,8 +449,10 @@ namespace SIL.TextEditing.Avalonia
             var lastPara = _layouts.Count - 1;
             switch (key)
             {
-                case Key.Left: if (ctrl) MoveByWord(true, shift); else MoveVisualLeftRight(true, shift); return true;
-                case Key.Right: if (ctrl) MoveByWord(false, shift); else MoveVisualLeftRight(false, shift); return true;
+                case Key.Left: MoveOrLeave(true, ctrl, shift); return true;
+                case Key.Right: MoveOrLeave(false, ctrl, shift); return true;
+                case Key.Tab when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0:
+                    return RaiseLeave(shift ? LeaveDirection.Previous : LeaveDirection.Next, LeaveKey.Tab, ctrl, double.NaN);
                 case Key.Up: MoveVertical(false, shift); return true;
                 case Key.Down: MoveVertical(true, shift); return true;
                 case Key.Home:
