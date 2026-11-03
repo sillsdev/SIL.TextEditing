@@ -48,7 +48,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             double WidthWith(string? features)
             {
                 var p = Para("en", "en", "0123456789");
-                var layout = ParagraphLayout.Build(p, 2000, new WritingSystemRegistry().Add(new WritingSystemInfo("en", "Constantia", 28, false, features)), null, global::Avalonia.Media.Brushes.Black);
+                var layout = ParagraphLayout.Build(p, 2000, new WritingSystemRegistry().Add(WritingSystemRegistry.Define("en", "Constantia", 28, false, features)), null, global::Avalonia.Media.Brushes.Black);
                 return layout.Width;
             }
             double plain = WidthWith(null), lining = WidthWith("lnum=1"), oldstyle = WidthWith("onum=1");

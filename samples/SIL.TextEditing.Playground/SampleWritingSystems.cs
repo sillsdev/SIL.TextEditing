@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using SIL.TextEditing.Avalonia;
+using SIL.WritingSystems;
 
 namespace SIL.TextEditing.Playground
 {
@@ -12,13 +13,13 @@ namespace SIL.TextEditing.Playground
             Tag = tag;
             Name = name;
             Vernacular = vernacular;
-            Info = new WritingSystemInfo(tag, font, size, rtl);
+            Definition = WritingSystemRegistry.Define(tag, font, (float)size, rtl);
         }
 
         public string Tag { get; }
         public string Name { get; }
         public bool Vernacular { get; }
-        public WritingSystemInfo Info { get; }
+        public WritingSystemDefinition Definition { get; }
         public string Kind => Vernacular ? "vernacular" : "analysis";
     }
 
@@ -51,7 +52,7 @@ namespace SIL.TextEditing.Playground
         public static WritingSystemRegistry CreateRegistry()
         {
             var registry = WritingSystemRegistry.CreateDefault();
-            foreach (var ws in All) registry.Add(ws.Info);
+            foreach (var ws in All) registry.Add(ws.Definition);
             return registry;
         }
     }

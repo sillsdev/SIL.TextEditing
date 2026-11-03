@@ -44,3 +44,7 @@ jobs:
       # Warnings are errors, so a trim or AOT warning in either library fails the publish.
       - name: Publish a net10.0 app that references both libraries with NativeAOT
         run: dotnet publish tests/AotCheck/AotCheck.csproj -c Release -r win-x64
+
+      # Run the published exe: it exercises libpalaso (SLDR init and JSON parsing), which trimming can break silently.
+      - name: Run the published app
+        run: bin/AotCheck/Release/net10.0/win-x64/publish/AotCheck.exe
