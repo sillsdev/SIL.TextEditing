@@ -32,6 +32,8 @@ namespace SIL.TextEditing.Playground
             public const string Bold = "BoldButton";
             public const string Italic = "ItalicButton";
             public const string Underline = "UnderlineButton";
+            public const string CharStyle = "CharStyleBox";
+            public const string ParaStyle = "ParaStyleBox";
             public const string Undo = "UndoButton";
             public const string Redo = "RedoButton";
             public const string Picture = "PictureButton";
@@ -144,6 +146,11 @@ namespace SIL.TextEditing.Playground
             toolbar.Children.Add(Tool(Names.Italic, new TextBlock { Text = "I", FontStyle = FontStyle.Italic }, "Italic on the selection (Ctrl+I)", () => ToggleItalic()));
             toolbar.Children.Add(Tool(Names.Underline, new TextBlock { Text = "U", TextDecorations = TextDecorations.Underline }, "Underline on the selection (Ctrl+U)", () => ToggleUnderline()));
             toolbar.Children.Add(Spacer());
+            toolbar.Children.Add(Label("Character style:"));
+            toolbar.Children.Add(StyleBox(Names.CharStyle, SampleStyles.CharacterStyles, "Apply a character style to the selection (the host's stylesheet decides how it looks)", name => ApplyCharacterStyle(name)));
+            toolbar.Children.Add(Label("Paragraph style:"));
+            toolbar.Children.Add(StyleBox(Names.ParaStyle, SampleStyles.ParagraphStyles, "Apply a paragraph style to the paragraphs of the selection", name => ApplyParagraphStyle(name)));
+            toolbar.Children.Add(Spacer());
             toolbar.Children.Add(Tool(Names.Undo, "Undo", "Ask the host's undo stack to undo (Ctrl+Z)", () => UndoLast("button")));
             toolbar.Children.Add(Tool(Names.Redo, "Redo", "Redo (Ctrl+Y)", () => RedoLast("button")));
             toolbar.Children.Add(Spacer());
@@ -215,6 +222,22 @@ namespace SIL.TextEditing.Playground
 
         static Border Spacer() => new Border { Width = 12 };
 
+        ComboBox StyleBox(string name, IReadOnlyList<string> styles, string tip, Action<string> apply)
+        {
+            var box = new ComboBox { Name = name, MinWidth = 140, Margin = new Thickness(2), IsTabStop = false, ItemsSource = styles, SelectedIndex = -1, PlaceholderText = "(choose)" };
+            ToolTip.SetTip(box, tip);
+            box.SelectionChanged += (s, e) =>
+            {
+                if (_syncing || !(box.SelectedItem is string style)) return;
+                apply(style);
+                _syncing = true;
+                box.SelectedIndex = -1;
+                _syncing = false;
+                _active.Field.Focus();
+            };
+            return box;
+        }
+
         static Button Tool(string name, object content, string tip, Action click)
         {
             var button = new Button { Name = name, Content = content, Focusable = false, Margin = new Thickness(2), Padding = new Thickness(8, 3) };
@@ -253,6 +276,7 @@ namespace SIL.TextEditing.Playground
             {
                 WritingSystems = _registry,
                 ObjectImage = _pictures.Get,
+                StyleResolver = SampleStyles.Instance,
                 ShowCaretAlways = !many,
                 PreferredWidth = many ? 300 : 500,
                 Margin = new Thickness(many ? 2 : 6),
@@ -368,20 +392,63 @@ namespace SIL.TextEditing.Playground
 
         public bool ToggleBold() => Toggle("bold", TextPropertyNumbers.Bold);
         public bool ToggleItalic() => Toggle("italic", TextPropertyNumbers.Italic);
-        public bool ToggleUnderline() => Toggle("underline", TextPropertyNumbers.Underline);
+        public bool ToggleUnderline() => Toggle("underline", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSingle);
 
-        bool Toggle(string label, int property)
+        bool Toggle(string label, int property, int on = TextPropertyNumbers.ToggleOn)
         {
             return FormatSelection(label, runs =>
             {
-                bool allOn = runs.All(r => r.Props.TryGetInt(property, out var v) && v == TextPropertyNumbers.ToggleOn);
+                bool allOn = runs.All(r => r.Props.TryGetInt(property, out var v) && v == on);
                 Log("format: " + label + (allOn ? " off" : " on"));
                 return r =>
                 {
                     if (allOn) r.Props.IntProps.Remove(property);
-                    else r.Props.SetInt(property, TextPropertyNumbers.ToggleOn);
+                    else r.Props.SetInt(property, on);
                 };
             });
+        }
+
+        /// <summary>Sets (or, with "(none)", removes) the named character style on the selected runs.</summary>
+        public bool ApplyCharacterStyle(string style)
+        {
+            bool none = style == SampleStyles.None;
+            return FormatSelection("character style " + style, runs =>
+            {
+                Log("format: character style " + style);
+                return r =>
+                {
+                    if (none) r.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
+                    else r.Props.SetStr(TextPropertyNumbers.NamedStyle, style);
+                };
+            });
+        }
+
+        /// <summary>Gives the paragraphs of the selection (or the caret's paragraph) the named paragraph style; "(none)" clears it.</summary>
+        public bool ApplyParagraphStyle(string style)
+        {
+            var session = _active;
+            var editor = session.Field.Editor;
+            editor.Ordered(out var a, out var b);
+            var before = new List<Paragraph>();
+            var after = new List<Paragraph>();
+            for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
+            {
+                var original = editor.Document.Paragraphs[pi];
+                var edited = original.Clone();
+                edited.Style = style == SampleStyles.None ? string.Empty : style;
+                before.Add(original.Clone());
+                after.Add(edited);
+            }
+            Log("format: paragraph style " + style);
+            var delta = new EditDelta { Start = a.Paragraph, Before = before, After = after, CaretBefore = editor.Caret, CaretAfter = editor.Caret, Label = "paragraph style " + style };
+            session.Undo.Done.Add(delta);
+            session.Undo.Undone.Clear();
+            var anchor = editor.Anchor;
+            var caret = editor.Caret;
+            editor.Apply(delta);
+            editor.SetCaret(anchor);
+            editor.SetCaret(caret, true);
+            return true;
         }
 
         /// <summary>A writing-system button: with a selection it changes the writing system of the selected text; with

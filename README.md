@@ -89,9 +89,19 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
 - **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2);
   an inline object in right-to-left text is mis-ordered on both. `RichTextField.ObjectAsGlyph` is the workaround for the
   second.
-- **Paragraph and character properties**: only bold, italic, underline, font size and the writing system's font are
-  drawn; other bag entries are carried untouched. Per-run OpenType features are not read (the writing system's
-  features are).
+- **Paragraph and character properties**: drawn, with the host's `IStyleResolver` supplying named styles (ADR 0004): weight (any 100 to
+  900, invert), italic, foreground and background colour, underline type and colour (dotted, dashed, single, double,
+  strikethrough; the squiggle is not drawn), superscript and subscript, font size (absolute, relative, named), font
+  family and per-run font features; for a paragraph, alignment, first-line and hanging indents, margins, space before
+  and after, line height, paragraph colour, borders and padding, a line limit, bullets and numbers. Not drawn: the baseline
+  offset (Avalonia cannot shift one run's baseline), justification (Avalonia's justifier is internal, so a justified
+  paragraph is laid out against the leading edge) and the squiggle. Pagination properties and the rest are carried untouched.
+  Lengths in points are drawn as device-independent pixels, as font sizes are.
+  Text a line limit hides stays in the model but cannot be reached: the caret, Right, End, Up/Down and mouse stop at the end of
+  the last line shown, as FieldWorks puts an insertion point in truncated text at the last visible position. Typing, Delete, Enter, paste
+  and composition are refused at that point, and Backspace at the start of the next paragraph does not join it onto the hidden end.
+  Select All and Copy still take the hidden text, because the selection model holds it. (FieldWorks also
+  draws an ellipsis on the last line; this field does not yet.)
 - **Graphemes**: `GraphemeClusters` is `StringInfo` plus Indic conjuncts (GB9c, six scripts; .NET 10 lacks it). The
   netstandard2.0 build also fuses Extend, SpacingMark, emoji ZWJ sequences and flags per UAX #29, with approximated
   property tables; caret stops in the field come from the shaper, not from this class.

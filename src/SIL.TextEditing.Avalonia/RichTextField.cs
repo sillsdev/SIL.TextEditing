@@ -20,7 +20,22 @@ namespace SIL.TextEditing.Avalonia
     public class RichTextField : Control
     {
         readonly List<ParagraphLayout?> _layouts = new List<ParagraphLayout?>();
+        // One entry per paragraph, kept in step with _layouts: what a paragraph's layout needs from the paragraphs before it.
+        readonly List<ParaInfo> _info = new List<ParaInfo>();
+
+        const int NoNumber = int.MinValue;
+
+        sealed class ParaInfo
+        {
+            /// <summary>The resolved paragraph format; it depends only on the paragraph itself.</summary>
+            public ParaFormat? Format;
+            /// <summary>The paragraph's place in its numbered run, or <see cref="NoNumber"/> until worked out.</summary>
+            public int Number = NoNumber;
+            /// <summary>The bullet or number text, or null until worked out.</summary>
+            public string? Label;
+        }
         readonly InputMethodClient _ime;
+        IStyleResolver? _styles;
         double _layoutWidth = -1;
         string? _preedit;
         string? _heldHigh;
@@ -44,7 +59,7 @@ namespace SIL.TextEditing.Avalonia
         public RichTextField(Document document)
         {
             Editor = new DocumentEditor(document);
-            for (int i = 0; i < document.Paragraphs.Count; i++) _layouts.Add(null);
+            for (int i = 0; i < document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             Editor.DocumentChanged += OnDocumentChanged;
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => ActiveWsChanged?.Invoke(o, n);
@@ -71,6 +86,17 @@ namespace SIL.TextEditing.Avalonia
             get => Editor.Document.Normalization;
             set => Editor.Document.Normalization = value;
         }
+        /// <summary>The host's styles (ADR 0004): asked for the formatting of a paragraph or character style name in a writing
+        /// system. Null draws only the properties in the runs' own bags.</summary>
+        public IStyleResolver? StyleResolver
+        {
+            get => _styles;
+            set
+            {
+                _styles = value;
+                InvalidateAllLayouts();
+            }
+        }
         public IBrush Foreground { get; set; } = Brushes.Black;
         public IBrush Background { get; set; } = Brushes.White;
         public bool ShowCaretAlways { get; set; }
@@ -95,18 +121,64 @@ namespace SIL.TextEditing.Avalonia
             {
                 _layouts[start]?.Dispose();
                 _layouts.RemoveAt(start);
+                _info.RemoveAt(start);
             }
-            for (int i = 0; i < added; i++) _layouts.Insert(start, null);
+            for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
+            ForgetNumbersFrom(start);
             InvalidateMeasure();
             InvalidateVisual();
         }
 
         // ------------------------------------------------ layout
 
+        /// <summary>The format of a paragraph, resolved once until the paragraph or the styles change.</summary>
+        ParaFormat FormatOf(int index) => _info[index].Format ??= ParagraphLayout.ResolveFormat(Editor.Document.Paragraphs[index], WritingSystems, _styles);
+
+        void ForgetNumbersFrom(int start)
+        {
+            for (int i = Math.Max(start, 0); i < _info.Count; i++) { _info[i].Number = NoNumber; _info[i].Label = null; }
+        }
+
+        /// <summary>True when paragraph <paramref name="k"/> begins a new run of numbers: its scheme differs from the paragraph
+        /// above, or it gives a start-at value the one above did not (see <see cref="BulletNumbers.Sequence"/>).</summary>
+        bool StartsNumbering(int k)
+        {
+            var cur = FormatOf(k);
+            var prev = FormatOf(k - 1);
+            return cur.BulNumScheme != prev.BulNumScheme || (cur.BulNumStartAt != null && cur.BulNumStartAt != prev.BulNumStartAt);
+        }
+
+        /// <summary>The number of a paragraph in its run, worked out by walking back only to the last known number or the start of
+        /// the run and remembered, so a list costs one step per paragraph however often it is drawn.</summary>
+        int NumberOf(int index)
+        {
+            int k = index;
+            while (k > 0 && _info[k].Number == NoNumber && !StartsNumbering(k)) k--;
+            int n = _info[k].Number != NoNumber ? _info[k].Number : (FormatOf(k).BulNumStartAt ?? 1);
+            _info[k].Number = n;
+            for (int j = k + 1; j <= index; j++) _info[j].Number = ++n;
+            return _info[index].Number;
+        }
+
+        /// <summary>The bullet or number text of a paragraph, or empty for none.</summary>
+        string LabelOf(int index)
+        {
+            var info = _info[index];
+            if (info.Label != null) return info.Label;
+            var format = FormatOf(index);
+            return info.Label = format.BulNumScheme == 0 ? string.Empty : BulletNumbers.Label(format, BulletNumbers.IsNumber(format.BulNumScheme) ? NumberOf(index) : 0);
+        }
+
         public ParagraphLayout ParagraphLayoutFor(int index)
         {
             var existing = _layouts[index];
-            if (existing != null) return existing;
+            string label = LabelOf(index);
+            double above = index > 0 ? FormatOf(index - 1).SpaceAfter : 0;
+            if (existing != null)
+            {
+                if (existing.LabelText == label && existing.PreviousSpaceAfter == above) return existing;
+                existing.Dispose();   // the paragraph above changed its number or its space after
+            }
             int preeditAt = -1;
             string? preedit = null;
             Run? template = null;
@@ -116,7 +188,7 @@ namespace SIL.TextEditing.Avalonia
                 preedit = _preedit;
                 template = new Run { Ws = Editor.ActiveWs };
             }
-            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template);
+            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
             _layouts[index] = layout;
             LayoutCount++;
             return layout;
@@ -135,6 +207,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 _layouts[i]?.Dispose();
                 _layouts[i] = null;
+                _info[i] = new ParaInfo();
             }
             InvalidateMeasure();
             InvalidateVisual();
@@ -146,7 +219,8 @@ namespace SIL.TextEditing.Avalonia
         {
             foreach (var l in _layouts) l?.Dispose();
             _layouts.Clear();
-            for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) _layouts.Add(null);
+            _info.Clear();
+            for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -201,6 +275,8 @@ namespace SIL.TextEditing.Avalonia
                 var pl = ParagraphLayoutFor(i);
                 if (y + pl.Height >= 0 && y <= clip.Bottom + 1)
                 {
+                    pl.DrawBox(context, y);
+                    pl.DrawBackgrounds(context, y);
                     if (Editor.HasSelection && i >= a.Paragraph && i <= b.Paragraph)
                     {
                         int s = i == a.Paragraph ? a.Offset : 0;
@@ -208,7 +284,8 @@ namespace SIL.TextEditing.Avalonia
                         foreach (var r in pl.SelectionRects(s, e))
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
-                    foreach (var li in pl.Lines) li.Line.Draw(context, new Point(0, y + li.Y));
+                    foreach (var li in pl.Lines) li.Line.Draw(context, new Point(li.X, y + li.TextY));
+                    pl.DrawLabel(context, y);
                     if (ObjectAsGlyph)
                     {
                         foreach (var o in pl.ObjectRects())
@@ -226,8 +303,31 @@ namespace SIL.TextEditing.Avalonia
 
         // ------------------------------------------------ caret movement
 
+        /// <summary>The text a caret can reach in a paragraph: all of it, or the part a line limit leaves showing.</summary>
+        int VisibleLength(int paragraph) => ParagraphLayoutFor(paragraph).VisibleEnd;
+
+        /// <summary>A position moved back to the end of the visible text when it is in text a line limit hides (FieldWorks puts an
+        /// insertion point that would land in truncated text at the last visible position).</summary>
+        TextPosition Visible(TextPosition p)
+        {
+            if (p.Paragraph < 0 || p.Paragraph >= _layouts.Count) return p;
+            var pl = ParagraphLayoutFor(p.Paragraph);
+            return pl.Truncated && p.Offset > pl.VisibleEnd ? new TextPosition(p.Paragraph, pl.VisibleEnd) : p;
+        }
+
         void OnCaretMoved()
         {
+            // A caret set from outside (the host, or typing at the end of the visible text) can land in hidden text: bring it back.
+            if (!_moving && Editor.Document.Paragraphs.Count == _layouts.Count)
+            {
+                var caret = Editor.Caret;
+                var visible = Visible(caret);
+                if (!visible.Equals(caret))
+                {
+                    Editor.SetCaret(visible, Editor.HasSelection);
+                    return;
+                }
+            }
             if (!_moving) { _goalX = -1; _hit = null; }
             InvalidateVisual();
             _ime.NotifyCaret();
@@ -244,6 +344,7 @@ namespace SIL.TextEditing.Avalonia
 
         void Move(TextPosition p, bool extend, bool keepGoal = false, CharacterHit? hit = null)
         {
+            p = Visible(p);
             if (!keepGoal) _goalX = -1;
             _hit = hit;
             _hitPosition = p;
@@ -270,7 +371,7 @@ namespace SIL.TextEditing.Avalonia
             }
             if (forward)
             {
-                if (c.Offset < para.Length)
+                if (c.Offset < VisibleLength(c.Paragraph))
                 {
                     int n = GraphemeClusters.Next(para.Text, c.Offset);
                     Move(new TextPosition(c.Paragraph, n), extend, false, ParagraphLayoutFor(c.Paragraph).EndHit(n));
@@ -284,7 +385,7 @@ namespace SIL.TextEditing.Avalonia
             }
             else if (c.Paragraph > 0)
             {
-                int pi = c.Paragraph - 1, len = Editor.Document.Paragraphs[pi].Length;
+                int pi = c.Paragraph - 1, len = VisibleLength(pi);
                 Move(new TextPosition(pi, len), extend, false, ParagraphLayoutFor(pi).EndHit(len));
             }
             return true;
@@ -301,11 +402,11 @@ namespace SIL.TextEditing.Avalonia
             if (backward)
             {
                 if (c.Offset > 0) Move(new TextPosition(c.Paragraph, WordBreaks.PreviousWordStart(para.Text, c.Offset)), extend);
-                else if (c.Paragraph > 0) Move(new TextPosition(c.Paragraph - 1, Editor.Document.Paragraphs[c.Paragraph - 1].Length), extend);
+                else if (c.Paragraph > 0) Move(new TextPosition(c.Paragraph - 1, VisibleLength(c.Paragraph - 1)), extend);
             }
             else
             {
-                if (c.Offset < para.Length) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para.Text, c.Offset)), extend);
+                if (c.Offset < VisibleLength(c.Paragraph)) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para.Text, c.Offset)), extend);
                 else if (c.Paragraph + 1 < Editor.Document.Paragraphs.Count) Move(new TextPosition(c.Paragraph + 1, 0), extend);
             }
         }
@@ -324,7 +425,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (pl.Lines.Count > 0 && li + 1 < pl.Lines.Count) y = top + pl.Lines[li + 1].Y + 1;
                 else if (c.Paragraph + 1 < _layouts.Count) y = top + pl.Height + 1;
-                else { Move(new TextPosition(c.Paragraph, pl.Paragraph.Length), extend, true); return; }
+                else { Move(new TextPosition(c.Paragraph, pl.VisibleEnd), extend, true); return; }
             }
             else
             {
@@ -396,9 +497,9 @@ namespace SIL.TextEditing.Avalonia
                     Move(new TextPosition(c.Paragraph, o), shift, false, hit);
                     return true;
                 }
-                case Key.Back: Editor.Backspace(); return true;
-                case Key.Delete: Editor.DeleteForward(); return true;
-                case Key.Enter: Editor.Enter(); return true;
+                case Key.Back: if (!JoinsIntoHiddenEnd()) Editor.Backspace(); return true;
+                case Key.Delete: if (!AtHiddenEdge()) Editor.DeleteForward(); return true;
+                case Key.Enter: if (!AtHiddenEdge()) Editor.Enter(); return true;
                 case Key.A when ctrl:
                     Editor.Anchor = new TextPosition(0, 0);
                     Move(new TextPosition(lastPara, Editor.Document.Paragraphs[lastPara].Length), true);
@@ -412,13 +513,33 @@ namespace SIL.TextEditing.Avalonia
             return false;
         }
 
+        /// <summary>True when an insertion point sits at the end of the visible text of a paragraph whose line limit hides the rest.
+        /// Editing there would change text the user cannot see, so typing, Delete, Enter, paste and composition are refused (FieldWorks
+        /// does not let an edit start in truncated text). A selection is a deliberate act on visible text and is not refused.</summary>
+        bool AtHiddenEdge()
+        {
+            if (Editor.HasSelection) return false;
+            var c = Editor.Caret;
+            var pl = ParagraphLayoutFor(c.Paragraph);
+            return pl.Truncated && c.Offset >= pl.VisibleEnd;
+        }
+
+        /// <summary>True when Backspace at the start of a paragraph would join it onto a line-limited paragraph whose end is hidden:
+        /// the joined text would vanish from view, so the join is refused.</summary>
+        bool JoinsIntoHiddenEnd()
+        {
+            if (Editor.HasSelection) return false;
+            var c = Editor.Caret;
+            return c.Offset == 0 && c.Paragraph > 0 && ParagraphLayoutFor(c.Paragraph - 1).Truncated;
+        }
+
         /// <summary>Inserts a held lone high surrogate as it is (it never got its low half).</summary>
         void FlushHeld()
         {
             if (_heldHigh == null) return;
             var h = _heldHigh;
             _heldHigh = null;
-            Editor.TypeText(h);
+            if (!AtHiddenEdge()) Editor.TypeText(h);
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -453,7 +574,7 @@ namespace SIL.TextEditing.Avalonia
                 _layouts[Editor.Caret.Paragraph]?.Dispose();
                 _layouts[Editor.Caret.Paragraph] = null;
             }
-            Editor.TypeText(text);
+            if (!AtHiddenEdge()) Editor.TypeText(text);
             e.Handled = true;
         }
 
@@ -540,6 +661,7 @@ namespace SIL.TextEditing.Avalonia
 
         public async Task PasteAsync()
         {
+            if (AtHiddenEdge()) return;
             var topLevel = TopLevel.GetTopLevel(this);
             var xml = await ClipboardCompat.GetXmlAsync(topLevel);
             if (!string.IsNullOrEmpty(xml))
@@ -556,6 +678,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Shows an uncommitted composition string inline at the caret; it never enters the model.</summary>
         public void SetPreedit(string? text, int? cursor)
         {
+            if (!string.IsNullOrEmpty(text) && AtHiddenEdge()) text = null;   // no composition at the end of hidden text
             _preedit = string.IsNullOrEmpty(text) ? null : text;
             _preeditCursor = cursor ?? (_preedit?.Length ?? 0);
             int pi = Editor.Caret.Paragraph;
