@@ -497,9 +497,9 @@ namespace SIL.TextEditing.Avalonia
                     Move(new TextPosition(c.Paragraph, o), shift, false, hit);
                     return true;
                 }
-                case Key.Back: Editor.Backspace(); return true;
-                case Key.Delete: Editor.DeleteForward(); return true;
-                case Key.Enter: Editor.Enter(); return true;
+                case Key.Back: if (!JoinsIntoHiddenEnd()) Editor.Backspace(); return true;
+                case Key.Delete: if (!AtHiddenEdge()) Editor.DeleteForward(); return true;
+                case Key.Enter: if (!AtHiddenEdge()) Editor.Enter(); return true;
                 case Key.A when ctrl:
                     Editor.Anchor = new TextPosition(0, 0);
                     Move(new TextPosition(lastPara, Editor.Document.Paragraphs[lastPara].Length), true);
@@ -513,13 +513,33 @@ namespace SIL.TextEditing.Avalonia
             return false;
         }
 
+        /// <summary>True when an insertion point sits at the end of the visible text of a paragraph whose line limit hides the rest.
+        /// Editing there would change text the user cannot see, so typing, Delete, Enter, paste and composition are refused (FieldWorks
+        /// does not let an edit start in truncated text). A selection is a deliberate act on visible text and is not refused.</summary>
+        bool AtHiddenEdge()
+        {
+            if (Editor.HasSelection) return false;
+            var c = Editor.Caret;
+            var pl = ParagraphLayoutFor(c.Paragraph);
+            return pl.Truncated && c.Offset >= pl.VisibleEnd;
+        }
+
+        /// <summary>True when Backspace at the start of a paragraph would join it onto a line-limited paragraph whose end is hidden:
+        /// the joined text would vanish from view, so the join is refused.</summary>
+        bool JoinsIntoHiddenEnd()
+        {
+            if (Editor.HasSelection) return false;
+            var c = Editor.Caret;
+            return c.Offset == 0 && c.Paragraph > 0 && ParagraphLayoutFor(c.Paragraph - 1).Truncated;
+        }
+
         /// <summary>Inserts a held lone high surrogate as it is (it never got its low half).</summary>
         void FlushHeld()
         {
             if (_heldHigh == null) return;
             var h = _heldHigh;
             _heldHigh = null;
-            Editor.TypeText(h);
+            if (!AtHiddenEdge()) Editor.TypeText(h);
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -554,7 +574,7 @@ namespace SIL.TextEditing.Avalonia
                 _layouts[Editor.Caret.Paragraph]?.Dispose();
                 _layouts[Editor.Caret.Paragraph] = null;
             }
-            Editor.TypeText(text);
+            if (!AtHiddenEdge()) Editor.TypeText(text);
             e.Handled = true;
         }
 
@@ -641,6 +661,7 @@ namespace SIL.TextEditing.Avalonia
 
         public async Task PasteAsync()
         {
+            if (AtHiddenEdge()) return;
             var topLevel = TopLevel.GetTopLevel(this);
             var xml = await ClipboardCompat.GetXmlAsync(topLevel);
             if (!string.IsNullOrEmpty(xml))
@@ -657,6 +678,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Shows an uncommitted composition string inline at the caret; it never enters the model.</summary>
         public void SetPreedit(string? text, int? cursor)
         {
+            if (!string.IsNullOrEmpty(text) && AtHiddenEdge()) text = null;   // no composition at the end of hidden text
             _preedit = string.IsNullOrEmpty(text) ? null : text;
             _preeditCursor = cursor ?? (_preedit?.Length ?? 0);
             int pi = Editor.Caret.Paragraph;

@@ -246,6 +246,55 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void Typing_Delete_Enter_composition_and_Backspace_joins_are_refused_at_the_end_of_the_visible_text_of_a_line_limited_paragraph() => Headless.Run(async () =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 3000))
+            {
+                var paragraphs = s.Editor.Document.Paragraphs;
+                var pl = s.Field.ParagraphLayoutFor(TwoLines);
+                int visible = pl.VisibleEnd, length = paragraphs[TwoLines].Length, count = paragraphs.Count;
+                string text = paragraphs[TwoLines].Text;
+                string next = paragraphs[TwoLines + 1].Text;
+                s.Caret(TwoLines, visible);
+                s.Type("Z");
+                s.Press(global::Avalonia.Input.Key.Delete);
+                s.Press(global::Avalonia.Input.Key.Delete, global::Avalonia.Input.KeyModifiers.Control);
+                s.Press(global::Avalonia.Input.Key.Enter);
+                s.Field.SetPreedit("ni", null);
+                Assert.Null(s.Field.Preedit);
+                Assert.Equal(text, paragraphs[TwoLines].Text);
+                Assert.Equal(count, paragraphs.Count);
+                Assert.Equal(new TextPosition(TwoLines, visible), s.Editor.Caret);
+                // Paste goes nowhere either.
+                s.Select(Plain, 0, 5);
+                s.Click(PlaygroundView.Names.Copy);
+                await s.WaitClipboard();
+                s.Caret(TwoLines, visible);
+                s.Click(PlaygroundView.Names.Paste);
+                await s.WaitClipboard();
+                Assert.Equal(text, paragraphs[TwoLines].Text);
+                // Backspace at the start of the next paragraph would join it onto the hidden end: refused.
+                s.Caret(TwoLines + 1, 0);
+                s.Press(global::Avalonia.Input.Key.Back);
+                Assert.Equal(count, paragraphs.Count);
+                Assert.Equal(next, paragraphs[TwoLines + 1].Text);
+                Assert.Equal(text, paragraphs[TwoLines].Text);
+                // Elsewhere editing works as before: inside the visible text, and joins onto ordinary paragraphs.
+                s.Caret(TwoLines, 3);
+                s.Type("Q");
+                Assert.Equal(length + 1, paragraphs[TwoLines].Length);
+                s.Caret(TwoLines + 2, 0);
+                s.Press(global::Avalonia.Input.Key.Back);
+                Assert.Equal(count - 1, paragraphs.Count);
+                // A selection ending at the visible end is replaced like any other.
+                var again = s.Field.ParagraphLayoutFor(TwoLines);
+                s.Select(TwoLines, again.VisibleEnd - 3, again.VisibleEnd);
+                s.Type("W");
+                Assert.Contains("W", paragraphs[TwoLines].Text);
+            }
+        });
+
+        [Fact]
         public void Up_and_Down_move_between_the_visible_lines_and_the_paragraphs_around_a_line_limited_one() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Paragraphs, 700, 3000))
