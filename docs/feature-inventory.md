@@ -102,7 +102,7 @@ Unit and variation note: lengths are mpt (ktpvMilliPoint); colours are ktpvDefau
 | Read paragraph props for selection (style name, hard props, mixed) | SRS/EditingHelper.cs:1608 `GetStyleNameFromSelection`, 1644, 1732-1990 (`GetParagraphProps`, `IsParagraphProps`), V/VwSelection.cpp:817 `GetHardAndSoftParaProps` | PARTIAL | NO | M |
 | Paragraph-level tag test (which flids hold paragraph props) | SRS/EditingHelper.cs:2018 `IsParagraphLevelTag`, RS/RootSiteEditingHelper.cs:695 | NO | NO | S |
 | Special paragraph types (e.g. picture caption, footnote paragraphs) | SRS/EditingHelper.cs:1786, RS/RootSiteEditingHelper.cs:752 `HandleSpecialParagraphType` | NO | NO | S |
-| Hard line break within a paragraph (Shift+Enter inserts U+2028) | RS/RootSiteEditingHelper.cs:782-800, 821-840; V/VwRootBox.cpp:~1712 (`kecEnterKey`, `kfssShift`) | NO | YES: Shift+Enter inserts U+2028, both modes (src/SIL.TextEditing/DocumentEditor.cs:180; src/SIL.TextEditing.Avalonia/RichTextField.cs:508) | S |
+| Hard line break within a paragraph (Shift+Enter inserts U+2028) | RS/RootSiteEditingHelper.cs:782-800, 821-840; V/VwRootBox.cpp:~1712 (`kecEnterKey`, `kfssShift`) | NO | YES: Shift+Enter inserts U+2028, both modes (src/SIL.TextEditing/DocumentEditor.cs:180; src/SIL.TextEditing.Avalonia/RichTextField.cs:508) See ADR 0024. | S |
 | Enter splits paragraph (style and direction carried to both halves) | V/VwRootBox.cpp (kecEnterKey kfssNone); StText paragraph split | PARTIAL: inserts new paragraph AFTER, not a split (FA/FwStructuredTextField.cs:137-165, with Review note) | YES: TE/M/DocumentEditor.cs:270-297 | S |
 | Backspace/Delete joins paragraphs; paragraph identity rules | V/VwSelection.cpp OnTyping 4951; liblcm StTxtPara | PARTIAL: Backspace at empty para deletes it (FA/FwStructuredTextField.cs:155-165) | YES: DocumentEditor.cs:179-210 + `ReplaceRange` 211 (identity rules in tests) | S |
 | Add/delete paragraph (structural) | StText slice | YES: FA/FwStructuredTextField.cs:174-187 | PARTIAL: Enter/join only | S |
@@ -172,7 +172,7 @@ Dispatch: key down -> `EditingHelper.OnKeyDown` (SRS/EditingHelper.cs:648) -> `C
 | Paste hyperlink (URL or file name on clipboard becomes a link) | RS/RootSiteEditingHelper.cs:986 `CanPasteUrl`, 1006 `PasteUrl`; CFG:132 CmdPasteHyperlink | NO | NO | M |
 | Drag and drop of selected text within/between fields | NOT in legacy (finding 6) | NO | NO | M (new feature) |
 | Undo / redo (host-owned; one UOW per typed key, per delete, per paste) | RS/UndoTaskHelper.cs; RS/RootSiteEditingHelper.cs:821-876 (labels "Undo typing X", "CR", "Hard line break", "Delete"); RS/UndoActions.cs; CFG:121-122 (Ctrl+Z, Ctrl+Y) | PARTIAL: edits staged to host edit session (IDetailEditContext) | PARTIAL: host-owned; stand-in `SimpleUndoStack` (DocumentEditor.cs:367-395); UndoRequested/RedoRequested events (RichTextField.cs:77) | M |
-| Undo grouping rule: each OnKeyPress is its own task (no time-based coalescing found); typed-ahead run is one task; UNVERIFIED whether LCModel merges consecutive typing | SRS/EditingHelper.cs:1042; RS/RootSiteEditingHelper.cs:821-876 | N/A | N/A (TE reports labelled EditDeltas; host groups) | S |
+| Undo grouping rule: each OnKeyPress is its own task (no time-based coalescing found); typed-ahead run is one task; UNVERIFIED whether LCModel merges consecutive typing | SRS/EditingHelper.cs:1042; RS/RootSiteEditingHelper.cs:821-876 | N/A | N/A (TE reports labelled EditDeltas; host groups) Typing grouping: ADR 0023; delete and paste steps: ADR 0024. | S |
 | Selection after undo/redo restored | RS (see group 3) | N/A | PARTIAL | M |
 | Remove character formatting (Ctrl+Space) incl. optional style removal | SRS/EditingHelper.cs:698-703, 2268-2433 `RemoveCharFormatting`, RS/RootSiteEditingHelper.cs:549 | NO | NO | M |
 | Insert special character (character map dialog) | CFG:130 CmdShowCharMap ("Special _character...") | NO | NO | S (host dialog; editor needs InsertText API only) |
@@ -325,7 +325,7 @@ U+FFFC (ORC) carries `ktptObjData`: first char = kodt type, rest = payload (KRN:
 | Focus: initial selection on load (`WantInitialSelection`), selection kept per field when focus lost, `EnsureDefaultSelection` | SRS/SimpleRootSite.cs:3817-3830, 3132-3170; FA/DetailFocusMemory.cs | YES | NO | M |
 | Data-update monitor: ignore input while an update is in progress | SRS/DataUpdateMonitor.cs; SimpleRootSite.cs:4457 | N/A | N/A | S |
 | Commit on focus loss / selection change (`CompleteEdits`) | V/VwSelection.cpp:1257 `CompleteEdits`; V/VwRootBox.cpp:3531 `LoseFocus` | YES (focus-loss autosave) | PARTIAL: Committed event per edit | S |
-| "Edit boxes with text typed-ahead" (SemiEditable) | KRN:ktptSemiEditable | NO | YES: semi-editable text takes typing, deletion and paste; formatting refused (src/SIL.TextEditing/DocumentEditor.Editability.cs:61) | M |
+| "Edit boxes with text typed-ahead" (SemiEditable) | KRN:ktptSemiEditable | NO | YES: semi-editable text takes typing, deletion and paste; formatting refused (src/SIL.TextEditing/DocumentEditor.Editability.cs:61) See ADR 0024. | M |
 
 ---
 
