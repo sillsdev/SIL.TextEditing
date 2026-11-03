@@ -81,7 +81,7 @@ Engine entry: `VwPropertyStore::put_IntProperty` (V/VwPropertyStore.cpp:1177, ca
 | ktptRightToLeft (128) paragraph direction | :1357; V/VwTextBoxes (para RightToLeft()) | PARTIAL: box FlowDirection from ws (FA/FwFieldControls.cs:~790) | YES: Paragraph.Rtl (ParagraphLayout.cs:243) | S |
 | ktptPadLeading/Trailing/Top/Bottom (134-137) | :1425-1434; V/VwTextBoxes.cpp:9394 | NO | NO | S |
 | ktptBorderTop/Bottom/Leading/Trailing (138-141) + ktptBorderColor (142) | :1437-1446,1375; drawn V/VwSimpleBoxes.cpp:743,1087, V/VwTextBoxes.cpp:9766 | NO | NO | M |
-| ktptBulNumScheme (143): none, Arabic(10), RomanUpper, RomanLower, LetterUpper, LetterLower, Arabic01, bullets 100+ (25 glyphs, font "Quivira") | :1449; `GetBulNumString` V/VwTextBoxes.cpp:6604-6770; glyph table :6373; sequence `ParaNumber` :6380-6470; drawn :975,7105-7122; KRN:1273-1286 | NO | NO | L |
+| ktptBulNumScheme (143): none, Arabic(10), RomanUpper, RomanLower, LetterUpper, LetterLower, Arabic01, bullets 100+ (25 glyphs, font "Quivira") | :1449; `GetBulNumString` V/VwTextBoxes.cpp:6604-6770; glyph table :6373; sequence `ParaNumber` :6380-6470; drawn :975,7105-7122; KRN:1273-1286 | NO | YES: label drawn at the first indent; a label with no room beside the first word takes a line of its own (ParagraphLayout.PlaceFirstLine) | L |
 | ktptBulNumStartAt (144) | :1455 (VwCacheDa.cpp:1376 resets) | NO | NO | S |
 | ktptBulNumTxtBef/Aft (145,146) | :1630-1635; text around the number (:6760) | NO | NO | S |
 | ktptBulNumFontInfo (147) packed font props for the number | :1636; parsed :6700-6745 | NO | NO | M |

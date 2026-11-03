@@ -546,6 +546,49 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        const int WideLabel = 30, ArabicWideLabel = 31;
+
+        [Fact]
+        public void A_label_too_wide_to_leave_room_for_the_first_word_takes_the_first_line_and_the_text_starts_on_the_next_in_both_directions() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 240, 6000))
+            {
+                var shot = new Shot(s);
+                foreach (int p in new[] { WideLabel, ArabicWideLabel })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    var label = pl.LabelRect;
+                    var first = pl.Lines[0];
+                    Assert.True(label.Bottom <= first.TextY + 0.01, "paragraph " + p + " (content " + pl.ContentWidth + "): the label " + label + " is above the first line of text, at " + first.TextY);
+                    Assert.True(first.Y >= label.Bottom - 0.01, "the text's first line starts below the label's line");
+                    // The text starts at the hanging indent, on the full text width.
+                    if (pl.Rtl) Assert.Equal(pl.ContentLeft + pl.ContentWidth, Left(first) + first.Line.WidthIncludingTrailingWhitespace, 6);
+                    else Assert.Equal(pl.ContentLeft, Left(first), 1);
+                    Assert.True(first.Line.Length > 1, "more than one letter on the line");
+                    // The label sits at the first indent, on the leading side.
+                    if (pl.Rtl) Assert.Equal(pl.ContentLeft + pl.ContentWidth - pl.Format.FirstIndent, label.Right, 1);
+                    else Assert.Equal(pl.ContentLeft + pl.Format.FirstIndent, label.X, 1);
+                    // Pixels: the label's ink is in its own row band and the text's ink below it, none of it beside the label.
+                    double top = s.Field.ParagraphTop(p);
+                    Assert.NotEmpty(shot.InkColumns(label.X, label.Right, top + label.Y, top + label.Bottom));
+                    Assert.NotEmpty(shot.InkColumns(0, shot.Width, top + first.TextY, top + first.TextY + first.Line.Height));
+                    // Hit testing and the caret use the text line, not the label's.
+                    Assert.Equal(first.TextY, pl.CaretRect(0).Y, 3);
+                    Assert.Equal(0, pl.HitTest(new Point(pl.Rtl ? pl.ContentLeft + pl.ContentWidth - 2 : first.X + 2, label.Y + 1)));   // a click beside the label, at the leading edge, is the start of the text
+                }
+            }
+        });
+
+        [Fact]
+        public void A_label_that_leaves_room_for_the_first_word_stays_on_the_first_line() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 6000))
+            {
+                var pl = s.Field.ParagraphLayoutFor(WideLabel);
+                Assert.Equal(pl.Lines[0].TextY, pl.LabelRect.Y, 3);
+            }
+        });
+
         static double TextLeft(ParagraphLayout pl) => Left(pl.Lines[0]);
         static double TextRight(ParagraphLayout pl) => Left(pl.Lines[0]) + pl.Lines[0].Line.WidthIncludingTrailingWhitespace;
 
