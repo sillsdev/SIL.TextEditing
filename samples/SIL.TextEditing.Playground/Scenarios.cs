@@ -31,6 +31,7 @@ namespace SIL.TextEditing.Playground
         public const string IndicThai = "Devanagari, Tamil, Thai";
         public const string Unicode = "NFD, marks, surrogates, PUA";
         public const string Picture = "Inline picture (ORC)";
+        public const string Drawing = "Drawing properties";
         public const string Opaque = "Unknown properties";
         public const string Long = "Long document (200 paragraphs)";
         public const string ManyFields = "Many fields";
@@ -46,6 +47,7 @@ namespace SIL.TextEditing.Playground
             new Scenario(IndicThai, "Hindi conjuncts and vowel signs, Tamil, and Thai with stacked marks. Carets must stop on clusters, never inside one.", _ => One(IndicDoc())),
             new Scenario(Unicode, "Decomposed accents (NFD) next to composed ones, stacked combining marks, surrogate pairs, emoji sequences and private-use characters. The inspector shows the exact code units.", _ => One(Stored(UnicodeDoc(), System.Text.NormalizationForm.FormD))),
             new Scenario(Picture, "Inline picture objects (U+FFFC with object data), in LTR text, in RTL text and side by side. Backspace or Delete removes a picture whole. Use Picture to insert one.", _ => One(PictureDoc())),
+            new Scenario(Drawing, "Every drawing property of a FieldWorks text string, from the run's own properties and from the host's named styles (the playground keeps a small stylesheet). Pick a style in the toolbar to apply it.", _ => One(DrawingDoc())),
             new Scenario(Opaque, "Runs with property numbers the editor does not understand, and a paragraph style. They must survive typing, formatting, split, join, undo and copy and paste untouched.", _ => One(OpaqueDoc())),
             new Scenario(Long, "200 paragraphs in mixed writing systems: scrolling, caret at the far end, and cost of edits in a long document.", _ => One(LongDoc(200))),
             new Scenario(ManyFields, "N small fields in one window: tab between them by clicking, undo is per field, the inspector follows the focused field.", ManyDocs, many: true),
@@ -112,6 +114,131 @@ namespace SIL.TextEditing.Playground
             rtl.Runs.Add(new Run { Ws = "ar", Text = " بعد الصورة" });
 
             return Doc(inline, rtl, Para("en", false, "en", "Put the caret here and press Picture."));
+        }
+
+        /// <summary>A run with its text, writing system and integer properties given as (number, value, variation) triples.</summary>
+        static Run Styled(string ws, string text, params int[] props)
+        {
+            var r = new Run { Ws = ws, Text = text };
+            for (int i = 0; i < props.Length; i += 3) r.Props.SetInt(props[i], props[i + 1], props[i + 2]);
+            return r;
+        }
+
+        static Run NamedStyle(string ws, string text, string style)
+        {
+            var r = new Run { Ws = ws, Text = text };
+            r.Props.SetStr(TextPropertyNumbers.NamedStyle, style);
+            return r;
+        }
+
+        static Paragraph Runs(string defaultWs, string style, params Run[] runs)
+        {
+            var p = new Paragraph { DefaultWs = defaultWs, Style = style };
+            p.Runs.AddRange(runs);
+            return p;
+        }
+
+        static Document DrawingDoc()
+        {
+            const int mp = TextPropertyNumbers.VariationMilliPoint;
+            var heading = Runs("en", "Heading 1", new Run { Ws = "en", Text = "Drawing properties" });
+            var weights = Runs("en", "",
+                new Run { Ws = "en", Text = "Weights: normal, " },
+                Styled("en", "bold", TextPropertyNumbers.Bold, 1, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "weight 300", TextPropertyNumbers.Bold, 300, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "weight 900", TextPropertyNumbers.Bold, 900, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "italic", TextPropertyNumbers.Italic, 1, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "bold italic", TextPropertyNumbers.Bold, 1, 0, TextPropertyNumbers.Italic, 1, 0),
+                new Run { Ws = "en", Text = ", and " },
+                NamedStyle("en", "Strong (a style)", "Strong"),
+                new Run { Ws = "en", Text = " and " },
+                NamedStyle("ar", "قوي (Strong in Arabic is larger)", "Strong"),
+                new Run { Ws = "en", Text = "." });
+            var sizes = Runs("en", "",
+                new Run { Ws = "en", Text = "Sizes: 16, " },
+                Styled("en", "24 point", TextPropertyNumbers.FontSize, 24000, mp),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "half size", TextPropertyNumbers.FontSize, 5000, TextPropertyNumbers.VariationRelative),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "named large", TextPropertyNumbers.FontSize, 4, TextPropertyNumbers.VariationEnum),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "named smaller", TextPropertyNumbers.FontSize, 7, TextPropertyNumbers.VariationEnum),
+                new Run { Ws = "en", Text = ", " },
+                NamedStyle("en", "Large (a style)", "Large"),
+                new Run { Ws = "en", Text = "; fonts " },
+                Fonts("<default serif>"),
+                new Run { Ws = "en", Text = ", " },
+                Fonts("<default sans serif>"),
+                new Run { Ws = "en", Text = ", " },
+                Fonts("<default monospace>"),
+                new Run { Ws = "en", Text = ", " },
+                Fonts("Comic Sans MS"),
+                new Run { Ws = "en", Text = "." });
+            var colours = Runs("en", "",
+                new Run { Ws = "en", Text = "Colours: " },
+                Styled("en", "red text", TextPropertyNumbers.ForeColor, SampleStyles.Red, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "green on pale yellow", TextPropertyNumbers.ForeColor, SampleStyles.Green, 0, TextPropertyNumbers.BackColor, SampleStyles.PaleYellow, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "transparent colour is the default", TextPropertyNumbers.ForeColor, unchecked((int)0xC0000000), 0),
+                new Run { Ws = "en", Text = ", " },
+                NamedStyle("en", "Warning (a style)", "Warning"),
+                new Run { Ws = "en", Text = "." });
+            var underlines = Runs("en", "",
+                new Run { Ws = "en", Text = "Lines: " },
+                Styled("en", "dotted", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineDotted, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "dashed", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineDashed, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "single", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSingle, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "double", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineDouble, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "strikethrough", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineStrikethrough, 0),
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "blue single", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSingle, 0, TextPropertyNumbers.UnderColor, SampleStyles.Blue, 0),
+                new Run { Ws = "en", Text = ", " },
+                NamedStyle("en", "Misspelled (a style: red double)", "Misspelled"),
+                new Run { Ws = "en", Text = "." });
+            var shifts = Runs("en", "",
+                new Run { Ws = "en", Text = "Position: H" },
+                Styled("en", "2", TextPropertyNumbers.Superscript, 2, 0),
+                new Run { Ws = "en", Text = "O, E=mc" },
+                Styled("en", "2", TextPropertyNumbers.Superscript, 1, 0),
+                new Run { Ws = "en", Text = ", " },
+                NamedStyle("en", "super", "Superscript"),
+                new Run { Ws = "en", Text = " and " },
+                NamedStyle("en", "sub", "Subscript"),
+                new Run { Ws = "en", Text = ", raised 4 pt: " },
+                Styled("en", "up", TextPropertyNumbers.Offset, 4000, mp),
+                new Run { Ws = "en", Text = ", lowered: " },
+                Styled("en", "down", TextPropertyNumbers.Offset, -4000, mp),
+                new Run { Ws = "en", Text = "." });
+            var features = Runs("en", "",
+                new Run { Ws = "en", Text = "Features: " },
+                FontFeatures("1234567890 (default)", null),
+                new Run { Ws = "en", Text = " " },
+                FontFeatures("1234567890 (tnum)", "tnum=1"),
+                new Run { Ws = "en", Text = "." });
+            return Doc(heading, weights, sizes, colours, underlines, shifts, features);
+        }
+
+        static Run Fonts(string family)
+        {
+            var r = new Run { Ws = "en", Text = family };
+            r.Props.SetStr(TextPropertyNumbers.FontFamily, family);
+            return r;
+        }
+
+        static Run FontFeatures(string text, string? features)
+        {
+            var r = new Run { Ws = "en", Text = text };
+            if (features != null) r.Props.SetStr(TextPropertyNumbers.FontVariations, features);
+            return r;
         }
 
         static Document OpaqueDoc()

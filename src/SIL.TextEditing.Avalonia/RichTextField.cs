@@ -21,6 +21,7 @@ namespace SIL.TextEditing.Avalonia
     {
         readonly List<ParagraphLayout?> _layouts = new List<ParagraphLayout?>();
         readonly InputMethodClient _ime;
+        IStyleResolver? _styles;
         double _layoutWidth = -1;
         string? _preedit;
         string? _heldHigh;
@@ -69,6 +70,17 @@ namespace SIL.TextEditing.Avalonia
             get => Editor.Document.Normalization;
             set => Editor.Document.Normalization = value;
         }
+        /// <summary>The host's styles (ADR 0004): asked for the formatting of a paragraph or character style name in a writing
+        /// system. Null draws only the properties in the runs' own bags.</summary>
+        public IStyleResolver? StyleResolver
+        {
+            get => _styles;
+            set
+            {
+                _styles = value;
+                InvalidateAllLayouts();
+            }
+        }
         public IBrush Foreground { get; set; } = Brushes.Black;
         public IBrush Background { get; set; } = Brushes.White;
         public bool ShowCaretAlways { get; set; }
@@ -114,7 +126,7 @@ namespace SIL.TextEditing.Avalonia
                 preedit = _preedit;
                 template = new Run { Ws = Editor.ActiveWs };
             }
-            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template);
+            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles);
             _layouts[index] = layout;
             LayoutCount++;
             return layout;

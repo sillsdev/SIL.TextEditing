@@ -17,9 +17,13 @@ namespace SIL.TextEditing.Avalonia
         readonly IBrush _foreground;
         readonly CultureInfo _culture;
         readonly FontFeatureCollection? _features;
+        readonly IBrush? _background;
+        readonly BaselineAlignment _baseline;
 
-        public RunTextProperties(Typeface typeface, double size, IBrush foreground, TextDecorationCollection? decorations, CultureInfo culture, FontFeatureCollection? features)
+        public RunTextProperties(Typeface typeface, double size, IBrush foreground, TextDecorationCollection? decorations, CultureInfo culture, FontFeatureCollection? features, IBrush? background = null, BaselineAlignment baseline = BaselineAlignment.Baseline)
         {
+            _background = background;
+            _baseline = baseline;
             _typeface = typeface;
             _size = size;
             _foreground = foreground;
@@ -32,7 +36,8 @@ namespace SIL.TextEditing.Avalonia
         public override double FontRenderingEmSize => _size;
         public override TextDecorationCollection? TextDecorations => _decorations;
         public override IBrush? ForegroundBrush => _foreground;
-        public override IBrush? BackgroundBrush => null;
+        public override IBrush? BackgroundBrush => _background;
+        public override BaselineAlignment BaselineAlignment => _baseline;
         public override CultureInfo? CultureInfo => _culture;
         public override FontFeatureCollection? FontFeatures => _features;
     }
@@ -155,30 +160,71 @@ namespace SIL.TextEditing.Avalonia
         public int PreeditLength { get; private set; }
         public bool Rtl => Paragraph.Rtl;
 
-        /// <summary>Builds the text run properties for a run: font and size from the writing system, bold, italic,
-        /// underline and size overrides from the run's property bag.</summary>
-        static RunTextProperties MakeProperties(Run run, WritingSystemRegistry writingSystems, IBrush foreground, bool preedit = false)
+        /// <summary>Builds the text run properties for a run: the writing system's font and size, then the paragraph style,
+        /// character style and the run's own properties, resolved through <paramref name="styles"/>.</summary>
+        static RunTextProperties MakeProperties(Paragraph paragraph, Run run, WritingSystemRegistry writingSystems, IBrush foreground, IStyleResolver? styles, bool preedit = false)
         {
             var ws = writingSystems.Get(run.Ws);
-            var weight = run.Props.TryGetInt(TextPropertyNumbers.Bold, out var bold) && bold == TextPropertyNumbers.ToggleOn ? FontWeight.Bold : FontWeight.Normal;
-            var style = run.Props.TryGetInt(TextPropertyNumbers.Italic, out var italic) && italic == TextPropertyNumbers.ToggleOn ? FontStyle.Italic : FontStyle.Normal;
-            double size = ws.Size;
-            if (run.Props.IntProps.TryGetValue(TextPropertyNumbers.FontSize, out var fs) && fs.Variation == TextPropertyNumbers.VariationMilliPoint)
-                size = fs.Value / 1000.0;
+            var f = FormatResolver.ResolveChar(paragraph, run, styles, ws.Size);
+            return MakeProperties(f, ws, run.Ws, foreground, preedit);
+        }
+
+        static RunTextProperties MakeProperties(CharFormat f, WritingSystemInfo ws, string wsTag, IBrush foreground, bool preedit = false)
+        {
+            var weight = (FontWeight)f.Weight;
+            var style = f.Italic ? FontStyle.Italic : FontStyle.Normal;
+            double size = f.SizePt > 0 ? f.SizePt : ws.Size;
+            if (f.Superscript != 0) size *= CharFormat.DefaultSuperscriptScale;
+            var featureList = new List<string>();
+            if (!string.IsNullOrEmpty(ws.Features)) featureList.AddRange(ws.Features!.Split(','));
+            if (!string.IsNullOrEmpty(f.FontFeatures)) featureList.AddRange(f.FontFeatures!.Split(','));
             FontFeatureCollection? features = null;
-            if (!string.IsNullOrEmpty(ws.Features))
+            foreach (var item in featureList)
             {
-                features = new FontFeatureCollection();
-                foreach (var f in ws.Features!.Split(','))
-                    features.Add(FontFeature.Parse(f.Trim()));
+                if (item.Trim().Length == 0) continue;
+                features ??= new FontFeatureCollection();
+                features.Add(FontFeature.Parse(item.Trim()));
             }
             CultureInfo culture;
-            try { culture = CultureInfo.GetCultureInfo(run.Ws); }
+            try { culture = CultureInfo.GetCultureInfo(wsTag); }
             catch (CultureNotFoundException) { culture = CultureInfo.InvariantCulture; }
-            TextDecorationCollection? decorations = null;
-            if (preedit || (run.Props.TryGetInt(TextPropertyNumbers.Underline, out var underline) && underline != 0))
-                decorations = new TextDecorationCollection { new TextDecoration { Location = TextDecorationLocation.Underline } };
-            return new RunTextProperties(new Typeface(new FontFamily(ws.Font), style, weight), size, foreground, decorations, culture, features);
+            IBrush text = ColorBrush(f.ForeColor) ?? foreground;
+            var decorations = preedit ? Decorations(3, null, text) : Decorations(f.Underline, f.UnderColor, text);
+            var baseline = f.Superscript == 1 ? BaselineAlignment.Superscript : f.Superscript == 2 ? BaselineAlignment.Subscript : BaselineAlignment.Baseline;
+            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline);
+        }
+
+        /// <summary>A FieldWorks BGR colour as a brush, or null for none or a special value.</summary>
+        internal static IBrush? ColorBrush(int? bgr)
+        {
+            if (bgr == null || !CharFormat.TryColor(bgr.Value, out var r, out var g, out var b)) return null;
+            return new SolidColorBrush(Color.FromRgb(r, g, b));
+        }
+
+        /// <summary>The decorations of a FieldWorks underline type (1 dotted, 2 dashed, 3 single, 4 double, 5 strikethrough);
+        /// 0 and the squiggle (6), which Avalonia cannot draw, give none.</summary>
+        static TextDecorationCollection? Decorations(int type, int? color, IBrush text)
+        {
+            if (type < 1 || type > 5) return null;
+            var colour = ColorBrush(color);
+            if (type == 3 && colour == null) return new TextDecorationCollection { new TextDecoration { Location = TextDecorationLocation.Underline } };
+            var stroke = colour ?? text;
+            TextDecoration Line(TextDecorationLocation where, double offset = 0, params double[] dashes)
+            {
+                var d = new TextDecoration { Location = where, Stroke = stroke, StrokeThickness = 1, StrokeThicknessUnit = TextDecorationUnit.Pixel, StrokeOffsetUnit = TextDecorationUnit.Pixel, StrokeOffset = offset };
+                if (dashes.Length > 0) d.StrokeDashArray = new global::Avalonia.Collections.AvaloniaList<double>(dashes);
+                return d;
+            }
+            var result = new TextDecorationCollection();
+            switch (type)
+            {
+                case 1: result.Add(Line(TextDecorationLocation.Underline, 0, 2, 2)); break;
+                case 2: result.Add(Line(TextDecorationLocation.Underline, 0, 6, 3)); break;
+                case 3: result.Add(Line(TextDecorationLocation.Underline)); break;
+                case 4: result.Add(Line(TextDecorationLocation.Underline)); result.Add(Line(TextDecorationLocation.Underline, 2)); break;
+                case 5: result.Add(Line(TextDecorationLocation.Strikethrough)); break;
+            }
+            return result;
         }
 
         /// <summary>
@@ -186,7 +232,7 @@ namespace SIL.TextEditing.Avalonia
         /// DrawableTextRun in a right-to-left paragraph gets the wrong visual order in 11.3 and 12.1): the object is
         /// laid out as an EM SPACE sized to the picture and the picture is painted over its text bounds.
         /// </summary>
-        public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null)
+        public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null)
         {
             var layout = new ParagraphLayout(paragraph, width);
             var source = new ParagraphSource { ObjectImage = objectImage, ObjectAsGlyph = objectAsGlyph };
@@ -202,14 +248,14 @@ namespace SIL.TextEditing.Avalonia
                 if (t.Length == 0) return;
                 int a = sb.Length;
                 sb.Append(t);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(r, writingSystems, foreground) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles) });
             }
 
             void AddPreedit()
             {
                 int a = sb.Length;
                 sb.Append(preedit);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(preeditRun, writingSystems, foreground, true) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, preeditRun, writingSystems, foreground, styles, true) });
                 preeditDone = true;
             }
 
@@ -227,7 +273,7 @@ namespace SIL.TextEditing.Avalonia
                 {
                     int s0 = sb.Length;
                     sb.Append(objectAsGlyph ? " " : r.Text);
-                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(r, writingSystems, foreground), IsObject = true, Data = r.ObjData });
+                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles), IsObject = true, Data = r.ObjData });
                 }
                 else AddSegment(r.Text, r);
                 pos += r.Text.Length;
@@ -239,7 +285,7 @@ namespace SIL.TextEditing.Avalonia
             layout.EffectiveText = source.Text;
 
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
-            var defaultProperties = MakeProperties(defaultRun, writingSystems, foreground);
+            var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles);
             var paragraphProperties = new ParagraphProperties(paragraph.Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, defaultProperties);
             double w = double.IsInfinity(width) ? 100000 : Math.Max(width, 10);
             if (source.Text.Length == 0)

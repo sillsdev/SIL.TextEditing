@@ -44,7 +44,7 @@ namespace SIL.TextEditing.Playground.Tests
                 s.Press(Key.B, KeyModifiers.Control);
                 s.Click(PlaygroundView.Names.Italic);
                 s.Click(PlaygroundView.Names.Underline);
-                Assert.Contains("ws=en \"The\" props{2=1, 3=1, 5=1}", s.Inspector);
+                Assert.Contains("ws=en \"The\" props{2=1, 3=1, 5=3}", s.Inspector);
             }
         });
 
