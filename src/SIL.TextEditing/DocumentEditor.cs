@@ -169,6 +169,8 @@ namespace SIL.TextEditing
         public void PasteText(string text)
         {
             if (string.IsNullOrEmpty(text) || !CanEditSelectionOrCaret()) return;
+            // Text that is only separators adds nothing in single-paragraph mode, but a paste still replaces the selection.
+            if (SingleParagraph && HasSelection && OneLine(Normalized(text)).Length == 0) { InOneUndoStep(() => DeleteSelection("type")); return; }
             InOneUndoStep(() => TypeText(text));
         }
 
@@ -262,8 +264,8 @@ namespace SIL.TextEditing
             }
             if (SingleParagraph && fragment != null)
             {
-                SeparatorsToSpaces(fragment);
                 if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
+                foreach (var p in fragment) SeparatorsToSpaces(p);
             }
             // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
             if (fragment != null && Document.Normalization is NormalizationForm form)

@@ -54,13 +54,38 @@ namespace SIL.TextEditing
             return new List<Paragraph> { joined };
         }
 
-        /// <summary>Gives every separator inside the runs of a fragment's paragraphs a space in its place.</summary>
-        static void SeparatorsToSpaces(List<Paragraph> fragment)
+        /// <summary>Turns every run of separators inside the paragraph's runs, across run boundaries, into one space, and drops
+        /// those at the start and the end, so a pasted run "foo, newline, bar, newline" gives "foo bar". Object runs count as content.</summary>
+        static void SeparatorsToSpaces(Paragraph paragraph)
         {
-            foreach (var p in fragment)
-                foreach (var r in p.Runs)
-                    if (!r.IsObject && r.Text.Any(IsParagraphSeparator))
-                        r.Text = new string(r.Text.Select(c => IsParagraphSeparator(c) ? ' ' : c).ToArray());
+            if (!paragraph.Runs.Any(r => !r.IsObject && r.Text.Any(IsParagraphSeparator))) return;
+            var runs = new List<Run>();
+            bool started = false, pending = false;   // started: some content so far; pending: a separator since the last content
+            foreach (var r in paragraph.Runs)
+            {
+                if (r.IsObject)
+                {
+                    if (pending) runs.Add(new Run { Text = " ", Ws = runs.Count > 0 ? runs[runs.Count - 1].Ws : r.Ws });
+                    pending = false;
+                    started = true;
+                    runs.Add(r);
+                    continue;
+                }
+                var sb = new System.Text.StringBuilder(r.Text.Length);
+                foreach (var c in r.Text)
+                {
+                    if (IsParagraphSeparator(c)) { if (started) pending = true; continue; }
+                    if (pending) sb.Append(' ');
+                    pending = false;
+                    started = true;
+                    sb.Append(c);
+                }
+                if (sb.Length == 0) continue;
+                r.Text = sb.ToString();
+                runs.Add(r);
+            }
+            paragraph.Runs = runs;
+            paragraph.Normalize();
         }
     }
 }

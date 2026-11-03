@@ -83,6 +83,46 @@ namespace SIL.TextEditing.Tests
             Assert.Equal(expected, e.Document.Paragraphs[0].Text);
         }
 
+        [Theory]
+        [InlineData("foo\nbar\n", "Xfoo bar")]
+        [InlineData("foo\n\nbar", "Xfoo bar")]
+        [InlineData("a\r\n\r\n\u2029\rb", "Xa b")]
+        [InlineData("\nfoo", "Xfoo")]
+        [InlineData("\n\n", "X")]
+        [InlineData("a\u2028\nb", "Xa\u2028 b")]
+        public void Separators_inside_one_pasted_run_collapse_to_one_space_and_never_lead_or_trail(string pasted, string expected)
+        {
+            var e = Single("X");
+            e.Paste(new List<Paragraph> { Para("en", "en", pasted) });
+            Assert.Equal(expected, e.Document.Paragraphs[0].Text);
+        }
+
+        [Fact]
+        public void Separators_collapse_across_run_and_paragraph_boundaries()
+        {
+            var e = Single("X");
+            var two = Para("en", "en", "foo\n");
+            two.Runs.Add(new Run { Text = "\nbar\n", Ws = "fr" });
+            e.Paste(new List<Paragraph> { two, Para("en", "en", "baz\n"), Para("en", "en", "\n") });
+            Assert.Equal("Xfoo bar baz", e.Document.Paragraphs[0].Text);
+            Assert.Equal(new TextPosition(0, 12), e.Caret);
+        }
+
+        [Fact]
+        public void Pasting_only_separators_over_a_selection_replaces_it_with_nothing()
+        {
+            var e = Single("hello");
+            e.SetCaret(new TextPosition(0, 0));
+            e.SetCaret(new TextPosition(0, 5), true);
+            e.PasteText("\n");
+            Assert.Equal(string.Empty, e.Document.Paragraphs[0].Text);
+
+            e = Single("hello");
+            e.SetCaret(new TextPosition(0, 1));
+            e.PasteText("\r\n");
+            Assert.Equal("hello", e.Document.Paragraphs[0].Text);
+        }
+
         [Fact]
         public void A_hard_line_break_is_not_a_paragraph_separator_and_stays_in_the_paragraph()
         {
