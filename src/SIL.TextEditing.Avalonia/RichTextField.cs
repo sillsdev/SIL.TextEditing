@@ -383,7 +383,7 @@ namespace SIL.TextEditing.Avalonia
         {
             if (p.Paragraph < 0 || p.Paragraph >= _layouts.Count) return p;
             var pl = ParagraphLayoutFor(p.Paragraph);
-            return pl.Truncated && p.Offset > pl.VisibleEnd ? new TextPosition(p.Paragraph, pl.VisibleEnd) : p;
+            return (pl.Truncated || pl.HiddenTrailingBreak) && p.Offset > pl.VisibleEnd ? new TextPosition(p.Paragraph, pl.VisibleEnd) : p;
         }
 
         void OnCaretMoved()
@@ -607,7 +607,9 @@ namespace SIL.TextEditing.Avalonia
                 case Key.Back: if (!JoinsIntoHiddenEnd()) Editor.Backspace(); return true;
                 case Key.Delete: if (!AtHiddenEdge()) Editor.DeleteForward(); return true;
                 case Key.Enter when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0:
-                    if (!AtHiddenEdge()) Editor.InsertLineBreak();   // FieldWorks: a hard line break inside the paragraph, whatever the mode
+                    // A hard line break inside the paragraph in either mode (our default in single-paragraph mode); refused when its
+                    // new line would be hidden by the line limit, so it never inserts a break the user cannot see.
+                    if (!AtHiddenEdge() && !BreakWouldBeHidden()) Editor.InsertLineBreak();
                     return true;
                 case Key.Enter:
                     if (SingleParagraph) { EnterRequested?.Invoke(modifiers); return false; }
@@ -637,13 +639,23 @@ namespace SIL.TextEditing.Avalonia
             return pl.Truncated && c.Offset >= pl.VisibleEnd;
         }
 
+        /// <summary>True when the paragraph already shows as many lines as its limit allows, so a hard line break would add a line
+        /// nobody can see.</summary>
+        bool BreakWouldBeHidden()
+        {
+            var pl = ParagraphLayoutFor(Editor.Caret.Paragraph);
+            return pl.Format.MaxLines > 0 && pl.Lines.Count >= pl.Format.MaxLines;
+        }
+
         /// <summary>True when Backspace at the start of a paragraph would join it onto a line-limited paragraph whose end is hidden:
         /// the joined text would vanish from view, so the join is refused.</summary>
         bool JoinsIntoHiddenEnd()
         {
             if (Editor.HasSelection) return false;
             var c = Editor.Caret;
-            return c.Offset == 0 && c.Paragraph > 0 && ParagraphLayoutFor(c.Paragraph - 1).Truncated;
+            if (c.Offset != 0 || c.Paragraph == 0) return false;
+            var above = ParagraphLayoutFor(c.Paragraph - 1);
+            return above.Truncated || above.HiddenTrailingBreak;
         }
 
         /// <summary>Inserts a held lone high surrogate as it is (it never got its low half).</summary>

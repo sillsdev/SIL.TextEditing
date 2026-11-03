@@ -225,5 +225,108 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(pl.Lines[0].TextY, pl.LabelRect.Y, 3);
             Assert.Equal(pl.Lines[1].TextY, Caret(field).Y, 3);
         });
+
+        static RichTextField Limited(string text, int caret, int maxLines) =>
+            Field(text, caret, shape: p => p.Props.SetInt(TextPropertyNumbers.MaxLines, maxLines));
+
+        static string Text(RichTextField field) => field.Editor.Document.Paragraphs[0].Text;
+
+        [Theory]
+        [InlineData("ab", 2, 1)]
+        [InlineData("ab", 1, 1)]
+        [InlineData("ab\u2028cd", 5, 2)]
+        [InlineData("ab\u2028cd", 1, 2)]
+        public void Shift_Enter_is_refused_when_the_new_line_would_be_hidden(string text, int caret, int maxLines) => Headless.Run(() =>
+        {
+            var field = Limited(text, caret, maxLines);
+            field.HandleKey(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(text, Text(field));
+            Assert.Equal(new TextPosition(0, caret), field.Editor.Caret);
+        });
+
+        [Fact]
+        public void Shift_Enter_still_works_when_the_new_line_fits_under_the_limit() => Headless.Run(() =>
+        {
+            var field = Limited("ab", 2, 2);
+            field.HandleKey(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal("ab" + Break, Text(field));
+            Assert.Equal(new TextPosition(0, 3), field.Editor.Caret);
+            Assert.Equal(2, field.ParagraphLayoutFor(0).Lines.Count);
+            Assert.False(field.ParagraphLayoutFor(0).Truncated);
+        });
+
+        [Theory]
+        [InlineData(1, "ab")]
+        [InlineData(2, "ab" + "\u2028" + "cd")]
+        public void A_trailing_break_with_nothing_after_it_is_not_hidden_text_and_the_caret_stays_before_it(int maxLines, string text) => Headless.Run(() =>
+        {
+            var field = Limited(text + Break, 0, maxLines);
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.False(pl.Truncated);
+            Assert.Equal(text.Length, pl.VisibleEnd);
+            field.Editor.SetCaret(new TextPosition(0, text.Length + 1));
+            Assert.Equal(new TextPosition(0, text.Length), field.Editor.Caret);   // pulled back before the break
+        });
+
+        [Theory]
+        [InlineData(1, "ab")]
+        [InlineData(2, "ab" + "\u2028" + "cd")]
+        public void The_keyboard_recovers_from_a_hidden_trailing_break(int maxLines, string text)
+        {
+            // Typing before the break, Delete (removes the break), and Backspace all work, so the field is never locked.
+            Headless.Run(() =>
+            {
+                var typing = Limited(text + Break, text.Length, maxLines);
+                typing.Type("x");
+                Assert.Equal(text + "x" + Break, Text(typing));
+            });
+            Headless.Run(() =>
+            {
+                var delete = Limited(text + Break, text.Length, maxLines);
+                delete.Press(Key.Delete);
+                Assert.Equal(text, Text(delete));
+            });
+            Headless.Run(() =>
+            {
+                var back = Limited(text + Break, text.Length, maxLines);
+                back.Press(Key.Back);
+                Assert.Equal(text.Substring(0, text.Length - 1) + Break, Text(back));
+                for (int i = 0; i < 6; i++) back.Press(Key.Back);   // Backspace can empty the field, but typing then still works
+                back.Type("z");
+                Assert.Contains("z", Text(back));
+            });
+        }
+
+        [Fact]
+        public void A_paragraph_that_is_only_a_break_in_a_one_line_field_takes_typing_and_Delete() => Headless.Run(() =>
+        {
+            var typing = Limited(Break, 0, 1);
+            typing.Type("x");
+            Assert.Equal("x" + Break, Text(typing));
+            var delete = Limited(Break, 0, 1);
+            delete.Press(Key.Delete);
+            Assert.Equal(string.Empty, Text(delete));
+        });
+
+        [Fact]
+        public void Text_after_a_break_that_the_limit_hides_still_refuses_Delete_and_typing_at_the_visible_end() => Headless.Run(() =>
+        {
+            var field = Limited("ab" + Break + "cd", 2, 1);
+            Assert.True(field.ParagraphLayoutFor(0).Truncated);
+            field.Press(Key.Delete);
+            field.Type("x");
+            Assert.Equal("ab" + Break + "cd", Text(field));
+        });
+
+        [Fact]
+        public void Backspace_from_the_next_paragraph_is_refused_when_the_one_above_ends_in_a_hidden_break() => Headless.Run(() =>
+        {
+            var p0 = Para("en", "en", "ab" + Break);
+            p0.Props.SetInt(TextPropertyNumbers.MaxLines, 1);
+            var field = Fixtures.Field(Doc(p0, Para("en", "en", "cd")), 520);
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Back);
+            Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
+        });
     }
 }

@@ -210,9 +210,13 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>True when lines past the style's maximum were left out.</summary>
         public bool Truncated { get; private set; }
 
+        /// <summary>True when the paragraph ends in a hard line break whose empty last line the line limit leaves out. No text is
+        /// hidden (so <see cref="Truncated"/> stays false), but the caret cannot sit after the break.</summary>
+        public bool HiddenTrailingBreak { get; private set; }
+
         /// <summary>The last model offset a caret can reach: the end of the text, or the end of the last line shown when the line
-        /// limit hid the rest. As in FieldWorks, a caret never sits in hidden text.</summary>
-        public int VisibleEnd => !Truncated || Lines.Count == 0 ? Paragraph.Length : Math.Min(Paragraph.Length, ToModel(TextEnd(Lines[Lines.Count - 1])));
+        /// limit hid the rest (or the empty line after a trailing break). As in FieldWorks, a caret never sits in hidden text.</summary>
+        public int VisibleEnd => !(Truncated || HiddenTrailingBreak) || Lines.Count == 0 ? Paragraph.Length : Math.Min(Paragraph.Length, ToModel(TextEnd(Lines[Lines.Count - 1])));
         double _borderLeft, _borderTop, _borderRight, _borderBottom;
         IBrush? _fill, _borderBrush;
         CharFormat? _labelFormat;
@@ -421,7 +425,9 @@ namespace SIL.TextEditing.Avalonia
             {
                 // A paragraph that ends in a hard line break has one more line, empty, and the caret can sit on it. The formatter
                 // makes no line from no text, so a space gives the height and the line is never drawn.
-                if (pf.MaxLines > 0 && layout.Lines.Count >= pf.MaxLines) layout.Truncated = true;
+                // At the line limit that line would be hidden, but it holds no text: nothing is truncated, and the caret simply stops
+                // before the break, so typing there and Delete (which removes the break) still work.
+                if (pf.MaxLines > 0 && layout.Lines.Count >= pf.MaxLines) layout.HiddenTrailingBreak = true;
                 else
                 {
                     var spaceSource = new ParagraphSource { Text = " " };
