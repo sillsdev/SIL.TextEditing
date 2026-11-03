@@ -143,16 +143,22 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
-        public void Semi_editable_text_is_refused_like_not_editable_text_and_cannot_be_formatted()
+        public void Semi_editable_text_takes_typing_and_deletion_like_editable_text_but_cannot_be_formatted()
         {
-            var e = Labelled(TextPropertyNumbers.EditableSemi);
+            // FieldWorks' views count semi-editable (type-ahead) text as editable and refuse only formatting in it.
+            var e = Labelled(TextPropertyNumbers.EditableSemi);   // "Gloss: " and " [fixed]" are semi-editable
+            e.SetCaret(new TextPosition(0, 3));
+            Assert.Equal(3, e.Caret.Offset);                       // the caret stays where it is put
+            e.TypeText("X");
+            Assert.Equal("GloXss: abc [fixed]xyz", Text(e));
             e.Anchor = new TextPosition(0, 0);
             e.SetCaret(new TextPosition(0, 4), true);
-            e.DeleteSelection();
-            Assert.Equal("Gloss: abc [fixed]xyz", Text(e));
+            Assert.True(e.CanEdit);
             Assert.False(e.CanFormatSelection);
-            e.Anchor = new TextPosition(0, 7);
-            e.SetCaret(new TextPosition(0, 10), true);
+            e.DeleteSelection();
+            Assert.Equal("ss: abc [fixed]xyz", Text(e));
+            e.Anchor = new TextPosition(0, 4);
+            e.SetCaret(new TextPosition(0, 7), true);              // "abc", an editable run
             Assert.True(e.CanFormatSelection);
         }
 

@@ -11,6 +11,10 @@ namespace SIL.TextEditing
         /// (<see cref="Apply"/>, <see cref="ExternalReplaceParagraph"/>) are not blocked.</summary>
         public bool IsReadOnly { get; set; }
 
+        /// <summary>Text the user may change: editable and semi-editable runs. FieldWorks' views treat semi-editable text (used
+        /// in type-ahead edit boxes) as editable for typing and deletion and refuse only formatting in it.</summary>
+        internal static bool AllowsEditing(Run r) => r.Editable != RunEditable.NotEditable;
+
         /// <summary>True when an insertion point at <paramref name="p"/> can take typing: the paragraph is empty, or the
         /// run on either side is editable (FieldWorks asks for both sides of the point).</summary>
         public bool IsEditableAt(TextPosition p)
@@ -19,7 +23,7 @@ namespace SIL.TextEditing
             if (para.Length == 0) return true;
             var before = para.RunBefore(p.Offset, out _);
             var after = para.RunAfter(p.Offset, out _);
-            return (before != null && before.Editable == RunEditable.Editable) || (after != null && after.Editable == RunEditable.Editable);
+            return (before != null && AllowsEditing(before)) || (after != null && AllowsEditing(after));
         }
 
         /// <summary>True when every character in [a, b) is in an editable run (a collapsed range asks about the point), and
@@ -42,7 +46,7 @@ namespace SIL.TextEditing
                 {
                     int rs = pos, re = pos + r.Text.Length;
                     pos = re;
-                    if (re > s && rs < e && r.Editable != RunEditable.Editable) return false;
+                    if (re > s && rs < e && !AllowsEditing(r)) return false;
                 }
             }
             return true;
@@ -54,7 +58,28 @@ namespace SIL.TextEditing
 
         /// <summary>True when the selection can be formatted: it is not read-only and every run in it is fully editable.
         /// FieldWorks refuses formatting in not-editable and semi-editable text alike.</summary>
-        public bool CanFormatSelection => HasSelection && CanEdit;
+        public bool CanFormatSelection
+        {
+            get
+            {
+                if (!HasSelection || !CanEdit) return false;
+                Ordered(out var a, out var b);
+                for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
+                {
+                    var p = Document.Paragraphs[pi];
+                    int s = pi == a.Paragraph ? a.Offset : 0;
+                    int e = pi == b.Paragraph ? b.Offset : p.Length;
+                    int pos = 0;
+                    foreach (var r in p.Runs)
+                    {
+                        int rs = pos, re = pos + r.Text.Length;
+                        pos = re;
+                        if (re > s && rs < e && r.Editable != RunEditable.Editable) return false;
+                    }
+                }
+                return true;
+            }
+        }
 
         bool CanEditSelectionOrCaret()
         {

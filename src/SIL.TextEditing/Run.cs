@@ -55,7 +55,8 @@ namespace SIL.TextEditing
         }
     }
 
-    /// <summary>The three values of FieldWorks' editable text property (ADR 0019).</summary>
+    /// <summary>The three values of FieldWorks' editable text property (ADR 0019). Semi-editable text ("type-ahead") takes typing
+    /// and deletion like editable text but cannot be formatted.</summary>
     public enum RunEditable { NotEditable, Editable, SemiEditable }
 
     /// <summary>A run's place in a paragraph, as ITsString GetRunInfo reports it.</summary>

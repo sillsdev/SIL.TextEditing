@@ -118,9 +118,9 @@ namespace SIL.TextEditing
         {
             var para = Document.Paragraphs[p.Paragraph];
             var b = para.RunBefore(p.Offset, out _);
-            if (b != null && !b.IsObject && b.Ws == ws && b.Editable == RunEditable.Editable) return b.Props;
+            if (b != null && !b.IsObject && b.Ws == ws && AllowsEditing(b)) return b.Props;
             var a = para.RunAfter(p.Offset, out _);
-            if (a != null && !a.IsObject && a.Ws == ws && a.Editable == RunEditable.Editable) return a.Props;
+            if (a != null && !a.IsObject && a.Ws == ws && AllowsEditing(a)) return a.Props;
             return null;
         }
 
