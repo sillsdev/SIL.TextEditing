@@ -4,7 +4,7 @@
   patterns (ITsString shape, property numbers, paragraph identity) is fine. Property numbers and behaviour are facts;
   the code is ours.
 - **Layering.** `src/SIL.TextEditing` is UI-free and has no Avalonia or liblcm reference. `src/SIL.TextEditing.Avalonia`
-  holds `RichTextField` and everything that touches Avalonia. Samples are samples and do not ship.
+  holds `RichTextField` and everything that touches Avalonia. Samples are samples and do not ship; `samples/SIL.TextEditing.Playground` is the one UI both hosts and `tests/SIL.TextEditing.Playground.Tests` use, so a new feature gets a playground control and a test that drives it.
 - **One source tree, two Avalonia versions.** netstandard2.0 builds against Avalonia 11.3.17 (FieldWorks, net48);
   net10.0 builds against Avalonia 12 (Motif). Versions live in `Directory.Packages.props` only. A per-target
   difference goes behind `#if NET10_0_OR_GREATER`, is small, and is listed in the README.
