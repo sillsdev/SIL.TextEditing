@@ -435,6 +435,65 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(new[] { "", "ab" }, Texts(forward));
         });
 
+        const double NarrowWidth = 150;
+        const string WrappingText = "aaaaaaaaa bbb ccccccc ddddd eeeeeeeeeee ff gggggggg hhhh iiiiiiiii jjj kkkkkkk lllll mmmmmmmmmmm nn oooooooo pppp";
+
+        static RichTextField NarrowLimited(int maxLines, int caret)
+        {
+            var field = Fixtures.Field(Doc(Limit(WrappingText, maxLines)), NarrowWidth);
+            field.Editor.SetCaret(new TextPosition(0, caret));
+            return field;
+        }
+
+        [Fact]
+        public void Shift_Enter_in_wrapped_text_is_judged_by_the_lines_the_result_lays_out_to_at_every_offset() => Headless.Run(() =>
+        {
+            int now = Fixtures.Field(OneParagraph(WrappingText), NarrowWidth).ParagraphLayoutFor(0).Lines.Count;
+            Assert.True(now >= 4, "the sample wraps onto several lines: " + now);
+            int allowedAtLimit = 0, refusedAtLimit = 0;
+            for (int o = 0; o <= WrappingText.Length; o++)
+            {
+                string broken = WrappingText.Substring(0, o) + Break + WrappingText.Substring(o);
+                int after = Fixtures.Field(OneParagraph(broken), NarrowWidth).ParagraphLayoutFor(0).Lines.Count;   // what the break leaves
+                foreach (int max in new[] { now, now + 1 })
+                {
+                    var field = NarrowLimited(max, o);
+                    field.Press(Key.Enter, KeyModifiers.Shift);
+                    bool allowed = Text(field) == broken;
+                    Assert.True(allowed == after <= max, "break at " + o + ", limit " + max + ": the result needs " + after + " lines");
+                    if (allowed)
+                    {
+                        var laid = field.ParagraphLayoutFor(0);
+                        Assert.False(laid.Truncated || laid.HiddenTrailingBreak, "a break at " + o + " hid text");
+                    }
+                    else Assert.Equal(WrappingText, Text(field));
+                    if (max == now) { if (allowed) allowedAtLimit++; else refusedAtLimit++; }
+                }
+            }
+            // At the limit a break that reflows the text into the same number of lines is fine; one that needs another line is not.
+            Assert.True(allowedAtLimit > 0 && refusedAtLimit > 0, allowedAtLimit + " allowed, " + refusedAtLimit + " refused at the limit");
+        });
+
+        [Fact]
+        public void Shift_Enter_over_a_selection_spanning_paragraphs_is_allowed_when_the_laid_out_result_fits_the_limit() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(Doc(Limit("ab", 2), Limit("cd", 2)), 520);
+            field.Editor.Anchor = new TextPosition(0, 2);
+            field.Editor.SetCaret(new TextPosition(1, 1), true);
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "ab" + Break + "d" }, Texts(field));   // two lines under a two-line limit
+        });
+
+        [Fact]
+        public void Shift_Enter_over_a_selection_spanning_paragraphs_is_refused_when_the_laid_out_result_wraps_past_the_limit() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(Doc(Limit("ab", 2), Limit(WrappingText, 2)), NarrowWidth);
+            field.Editor.Anchor = new TextPosition(0, 2);
+            field.Editor.SetCaret(new TextPosition(1, 0), true);
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "ab", WrappingText }, Texts(field));
+        });
+
         static RichTextField BoundarySelected(Paragraph first, Paragraph second)
         {
             var field = Fixtures.Field(Doc(first, second), 520);

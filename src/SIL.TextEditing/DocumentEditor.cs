@@ -187,6 +187,24 @@ namespace SIL.TextEditing
             InOneUndoStep(() => InsertOne(LineSeparator.ToString()));
         }
 
+        /// <summary>The paragraph <see cref="InsertLineBreak"/> would leave in place of the selection (or the caret), without
+        /// changing the document, so a field can lay it out and refuse a break whose result a line limit would hide. Null when
+        /// the break would change nothing. <paramref name="kept"/> is the index of the paragraph that keeps its identity
+        /// (<see cref="KeptParagraph"/>).</summary>
+        public Paragraph? PreviewLineBreak(out int kept)
+        {
+            kept = -1;
+            if (!CanEditSelectionOrCaret()) return null;
+            Ordered(out var a, out var b);
+            kept = KeptParagraph(a, b);
+            var scratch = new Document { Normalization = Document.Normalization };
+            for (int i = a.Paragraph; i <= b.Paragraph; i++) scratch.Paragraphs.Add(Document.Paragraphs[i].Clone());
+            var trial = new DocumentEditor(scratch) { Anchor = new TextPosition(0, a.Offset), Caret = new TextPosition(b.Paragraph - a.Paragraph, b.Offset) };
+            trial.SetActiveWs(ActiveWs);
+            trial.InsertLineBreak();
+            return scratch.Paragraphs[0];
+        }
+
         void InsertOne(string text)
         {
             if (!CanEditSelectionOrCaret()) return;
