@@ -139,6 +139,26 @@ namespace SIL.TextEditing.Avalonia
             End = Start + Length;
         }
 
+        /// <summary>The empty line after a hard line break that ends the paragraph. <paramref name="metrics"/> is a formatted line
+        /// that only gives its height; it has no text of this paragraph, so nothing but the caret place is asked of it.</summary>
+        internal LineInfo(TextLine metrics, double y, double x, double height, int at, double caretX)
+        {
+            Line = metrics;
+            Y = y;
+            X = x;
+            Height = height;
+            Start = at;
+            Length = 0;
+            End = at;
+            IsEmpty = true;
+            EmptyCaretX = caretX;
+        }
+
+        /// <summary>True for the empty last line a trailing hard line break makes: it holds no text, only a caret place.</summary>
+        public bool IsEmpty { get; }
+        /// <summary>Where the caret sits on an empty line, in paragraph coordinates (following the alignment).</summary>
+        internal double EmptyCaretX { get; }
+
         public TextLine Line { get; }
         /// <summary>The top of the line's slot in paragraph coordinates; a line height rule can make the slot taller (or shorter)
         /// than the text, which sits at the bottom of it.</summary>
@@ -397,9 +417,30 @@ namespace SIL.TextEditing.Avalonia
                 index += line.Length;
                 previous = line.TextLineBreak;
             }
+            if (!layout.Truncated && layout.Lines.Count > 0 && layout.Lines[layout.Lines.Count - 1].End == source.Text.Length && source.Text[source.Text.Length - 1] == HardLineBreak)
+            {
+                // A paragraph that ends in a hard line break has one more line, empty, and the caret can sit on it. The formatter
+                // makes no line from no text, so a space gives the height and the line is never drawn.
+                if (pf.MaxLines > 0 && layout.Lines.Count >= pf.MaxLines) layout.Truncated = true;
+                else
+                {
+                    var spaceSource = new ParagraphSource { Text = " " };
+                    spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
+                    var metrics = formatter.FormatLine(spaceSource, 0, w, paragraphProperties, null);
+                    if (metrics != null)
+                    {
+                        double slot = layout.SlotHeight(metrics.Height);
+                        layout.Lines.Add(new LineInfo(metrics, y, layout.ContentLeft, slot, source.Text.Length, layout.AlignedX(layout.ContentLeft, w)));
+                        y += slot;
+                    }
+                }
+            }
             layout.Height = y + layout.BottomInset;
             return layout;
         }
+
+        /// <summary>The hard line break (Shift+Enter), U+2028: it ends its line, takes no room and is not drawn.</summary>
+        const char HardLineBreak = '\u2028';
 
         // ---- paragraph formatting ----
 
@@ -566,7 +607,15 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>The last caret offset of a line (effective): any newline is part of the line length (the text source ends by
         /// returning null, not a TextEndOfParagraph run: that run broke caret distances in a final right-to-left run).</summary>
-        public int TextEnd(LineInfo line) => Math.Min(line.End - line.Line.NewLineLength, EffectiveText.Length);
+        public int TextEnd(LineInfo line)
+        {
+            if (line.IsEmpty) return line.Start;
+            int end = Math.Min(line.End - line.Line.NewLineLength, EffectiveText.Length);
+            // A hard line break ends its line but is not text on it: the caret before the break is at the end of this line, the
+            // caret after it at the start of the next.
+            if (end > line.Start && EffectiveText[end - 1] == HardLineBreak) end--;
+            return end;
+        }
 
         LineInfo? LineOf(int effective, CharacterHit? hit = null)
         {
@@ -592,6 +641,7 @@ namespace SIL.TextEditing.Avalonia
         /// keeps the caret at the end of the line instead of the start of the next one.</summary>
         CharacterHit TrailingHit(int effective)
         {
+            if (effective > 0 && effective <= EffectiveText.Length && EffectiveText[effective - 1] == HardLineBreak) return new CharacterHit(effective);   // after a hard line break the caret starts the next line
             int p = GraphemeClusters.Previous(EffectiveText, effective);
             return new CharacterHit(p, effective - p);
         }
@@ -615,7 +665,9 @@ namespace SIL.TextEditing.Avalonia
             int e = effective ? modelOffset : ToEffective(modelOffset);
             var li = LineOf(e, hit);
             if (li == null) return new Rect(EmptyCaretX(), EmptyLineTop, 1, EmptyLineHeight);
+            if (li.IsEmpty) return new Rect(li.EmptyCaretX, li.TextY, 1, li.Line.Height);
             var h = hit.HasValue && hit.Value.FirstCharacterIndex + hit.Value.TrailingLength == e ? hit.Value : new CharacterHit(e);
+            if (h.TrailingLength == 0 && e > li.Start && e == TextEnd(li) && e < li.End && EffectiveText[e] == HardLineBreak) h = TrailingHit(e);   // before the break: after the last character of the line
             double x = li.Line.GetDistanceFromCharacterHit(h);
             return new Rect(li.X + x, li.TextY, 1, li.Line.Height);
         }
@@ -640,6 +692,8 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (point.Y < l.Y + l.Height) { li = l; break; }
             }
+            if (li.IsEmpty)
+                return new HitResult { Offset = Paragraph.Length, CaretHit = new CharacterHit(li.Start), Character = Math.Max(0, Paragraph.Length - 1) };
             var h = li.Line.GetCharacterHitFromDistance(point.X - li.X);
             int e = h.FirstCharacterIndex + h.TrailingLength;
             int max = TextEnd(li);
@@ -684,6 +738,7 @@ namespace SIL.TextEditing.Avalonia
         /// previous one are different places there.</summary>
         public List<Stop> VisualStops(LineInfo line)
         {
+            if (line.IsEmpty) return new List<Stop> { new Stop { Hit = new CharacterHit(line.Start), Offset = line.Start, X = line.EmptyCaretX } };
             var candidates = new List<Stop>();
             var h = new CharacterHit(line.Start);
             int guard = 0;
@@ -740,10 +795,11 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>The caret's x in a paragraph with no text: where the first line would start, following the alignment.</summary>
-        double EmptyCaretX()
+        double EmptyCaretX() => AlignedX(_firstX, _firstWidth);
+
+        /// <summary>Where an empty line's caret goes in a box of the given left edge and width, following the alignment.</summary>
+        double AlignedX(double firstLeft, double width)
         {
-            double firstLeft = _firstX;
-            double width = _firstWidth;
             bool right = Format.Align == 3 || (Format.Align == 4 && !Rtl) || ((Format.Align == 0 || Format.Align == 5) && Rtl);
             if (Format.Align == 2) return firstLeft + width / 2;
             return right ? firstLeft + width : firstLeft;
