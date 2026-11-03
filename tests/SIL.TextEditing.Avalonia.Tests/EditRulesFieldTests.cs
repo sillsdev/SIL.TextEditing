@@ -131,6 +131,34 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void An_input_method_cannot_compose_or_commit_into_a_read_only_run_or_field() => Headless.Run(() =>
+        {
+            var locked = new Run { Ws = "en", Text = "locked" };
+            locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(locked);
+            var open = Para("en", "en", "free");
+            var field = Fixtures.Field(Doc(p, open));
+
+            field.Editor.SetCaret(new TextPosition(0, 3));            // the paragraph has no editable place, so the caret stays
+            Assert.Equal(new TextPosition(0, 3), field.Editor.Caret);
+            field.SetPreedit("ni", 2);
+            Assert.Null(field.Preedit);
+            field.Type("é");                                      // the commit arrives as text input
+            Assert.Equal("locked", field.Editor.Document.Paragraphs[0].Text);
+
+            field.Editor.SetCaret(new TextPosition(1, 4));
+            field.SetPreedit("ni", 2);
+            Assert.Equal("ni", field.Preedit);
+            field.IsReadOnly = true;                                   // turning read-only on drops a composition in progress
+            Assert.Null(field.Preedit);
+            field.SetPreedit("ni", 2);
+            Assert.Null(field.Preedit);
+            field.Type("x");
+            Assert.Equal("free", field.Editor.Document.Paragraphs[1].Text);
+        });
+
+        [Fact]
         public void Pasting_plain_text_is_one_undo_step_apart_from_the_typing_around_it() => Headless.Run(async () =>
         {
             var (window, field) = Fixtures.InWindow(OneParagraph("ab"));

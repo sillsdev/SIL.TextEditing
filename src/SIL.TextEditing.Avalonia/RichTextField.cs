@@ -85,6 +85,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (Editor.IsReadOnly == value) return;
                 Editor.IsReadOnly = value;
+                if (value && _preedit != null) SetPreedit(null, null);   // an input method cannot go on composing into read-only text
                 _peer?.RaiseReadOnlyChanged(!value, value);
             }
         }
