@@ -39,6 +39,7 @@ namespace SIL.TextEditing.Playground
             public const string Copy = "CopyButton";
             public const string Paste = "PasteButton";
             public const string ReadOnly = "ReadOnlyCheck";
+            public const string SingleParagraph = "SingleParagraphCheck";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
             public const string DefaultVernacular = "DefaultVernacularButton";
             public const string WsLabel = "WsLabel";
@@ -73,6 +74,7 @@ namespace SIL.TextEditing.Playground
         readonly ComboBox _picker;
         readonly ComboBox _countPicker;
         CheckBox _readOnlyCheck = null!;
+        CheckBox _singleParagraphCheck = null!;
         readonly TextBlock _description;
         readonly TextBlock _wsLabel;
         readonly TextBlock _selectionLabel;
@@ -163,6 +165,15 @@ namespace SIL.TextEditing.Playground
                 Log("field read-only: " + (_active.Field.IsReadOnly ? "on" : "off"));
             };
             toolbar.Children.Add(_readOnlyCheck);
+            _singleParagraphCheck = new CheckBox { Name = Names.SingleParagraph, Content = "Single paragraph", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_singleParagraphCheck, "Single-paragraph mode: Enter goes to the host instead of splitting the paragraph");
+            _singleParagraphCheck.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                _active.Field.SingleParagraph = _singleParagraphCheck.IsChecked == true;
+                Log("single paragraph: " + (_active.Field.SingleParagraph ? "on" : "off"));
+            };
+            toolbar.Children.Add(_singleParagraphCheck);
 
             var wsBar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
             wsBar.Children.Add(_wsLabel);
@@ -254,6 +265,7 @@ namespace SIL.TextEditing.Playground
             _active = _sessions[0];
             _syncing = true;
             _readOnlyCheck.IsChecked = false;
+            _singleParagraphCheck.IsChecked = false;
             _syncing = false;
             _selectionState = string.Empty;
             Log("scenario: " + scenario.Name + (scenario.Many ? " (" + documents.Count + " fields)" : string.Empty));
@@ -283,6 +295,7 @@ namespace SIL.TextEditing.Playground
                 UpdateWsLabel();
                 Log("caret ws " + o + " -> " + n + ": would switch keyboard to " + n);
             };
+            field.EnterRequested += m => Log("Enter passed to the host" + (m == KeyModifiers.None ? string.Empty : " (" + m + ")") + ": the host's default button would run");
             field.UndoRequested += () => { Activate(session); UndoLast("Ctrl+Z in the field"); };
             field.RedoRequested += () => { Activate(session); RedoLast("Ctrl+Y in the field"); };
             field.SelectionWsState += state =>
@@ -320,6 +333,7 @@ namespace SIL.TextEditing.Playground
             _selectionLabel.Text = string.Empty;
             _syncing = true;
             _readOnlyCheck.IsChecked = session.Field.IsReadOnly;
+            _singleParagraphCheck.IsChecked = session.Field.SingleParagraph;
             _syncing = false;
             Log("focus: field " + session.Number);
             UpdateWsLabel();

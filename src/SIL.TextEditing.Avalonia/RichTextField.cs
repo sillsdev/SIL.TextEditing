@@ -88,6 +88,13 @@ namespace SIL.TextEditing.Avalonia
                 _peer?.RaiseReadOnlyChanged(!value, value);
             }
         }
+        /// <summary>Single-paragraph mode (ADR 0012; forwards to <see cref="DocumentEditor.SingleParagraph"/>): Enter does not
+        /// split the paragraph but is passed to the host through <see cref="EnterRequested"/>.</summary>
+        public bool SingleParagraph
+        {
+            get => Editor.SingleParagraph;
+            set => Editor.SingleParagraph = value;
+        }
         /// <summary>The wrap width used when the available width is unbounded.</summary>
         public double PreferredWidth { get; set; } = 400;
         /// <summary>The number of paragraph layouts built so far, for measuring relayout cost.</summary>
@@ -97,6 +104,10 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Raised synchronously when the active writing system changes: old, new.</summary>
         public event Action<string, string>? ActiveWsChanged;
+        /// <summary>Raised in single-paragraph mode when Enter is pressed (any modifiers): the host decides what it means, as a
+        /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it
+        /// also keeps bubbling.</summary>
+        public event Action<KeyModifiers>? EnterRequested;
         /// <summary>The editor asks the host to undo (Ctrl+Z); the host owns the undo stack.</summary>
         public event Action? UndoRequested;
         public event Action? RedoRequested;
@@ -433,7 +444,10 @@ namespace SIL.TextEditing.Avalonia
                 }
                 case Key.Back: Editor.Backspace(); return true;
                 case Key.Delete: Editor.DeleteForward(); return true;
-                case Key.Enter: Editor.Enter(); return true;
+                case Key.Enter:
+                    if (SingleParagraph) { EnterRequested?.Invoke(modifiers); return false; }
+                    Editor.Enter();
+                    return true;
                 case Key.A when ctrl:
                     Editor.Anchor = new TextPosition(0, 0);
                     Move(new TextPosition(lastPara, Editor.Document.Paragraphs[lastPara].Length), true);

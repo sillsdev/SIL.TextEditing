@@ -152,7 +152,9 @@ namespace SIL.TextEditing
         {
             if (string.IsNullOrEmpty(text)) return;
             text = Normalized(text);
-            var parts = text.Replace("\r\n", "\n").Split('\n');
+            text = text.Replace("\r\n", "\n");
+            if (SingleParagraph) text = text.Replace('\n', ' ');
+            var parts = text.Split('\n');
             for (int i = 0; i < parts.Length; i++)
             {
                 if (i > 0) Enter();
@@ -228,6 +230,7 @@ namespace SIL.TextEditing
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
             if (IsReadOnly || !CanEditRange(a, b)) return;
+            if (SingleParagraph && fragment != null && fragment.Count > 1) fragment = JoinIntoOne(fragment);
             // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
             if (fragment != null && Document.Normalization is NormalizationForm form)
             {
@@ -297,7 +300,7 @@ namespace SIL.TextEditing
         /// stays on the right; anywhere else the left keeps the identity and the right is new.</summary>
         public void Enter()
         {
-            if (!CanEditSelectionOrCaret()) return;
+            if (SingleParagraph || !CanEditSelectionOrCaret()) return;
             if (HasSelection) DeleteSelection("enter-del");
             var d = Begin(Caret.Paragraph, Caret.Paragraph, "enter");
             var orig = Document.Paragraphs[Caret.Paragraph];
