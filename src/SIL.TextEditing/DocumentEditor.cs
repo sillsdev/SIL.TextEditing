@@ -152,8 +152,9 @@ namespace SIL.TextEditing
         {
             if (string.IsNullOrEmpty(text)) return;
             text = Normalized(text);
-            text = text.Replace("\r\n", "\n");
-            if (SingleParagraph) text = text.Replace('\n', ' ');
+            if (SingleParagraph) text = OneLine(text);
+            else text = text.Replace("\r\n", "\n");
+            if (text.Length == 0) return;
             var parts = text.Split('\n');
             for (int i = 0; i < parts.Length; i++)
             {
@@ -239,7 +240,12 @@ namespace SIL.TextEditing
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
             if (IsReadOnly || !CanEditRange(a, b)) return;
-            if (SingleParagraph && fragment != null && fragment.Count > 1) fragment = JoinIntoOne(fragment);
+            if (SingleParagraph && fragment != null)
+            {
+                fragment = fragment.Select(p => p.Clone()).ToList();
+                SeparatorsToSpaces(fragment);
+                if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
+            }
             // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
             if (fragment != null && Document.Normalization is NormalizationForm form)
             {
