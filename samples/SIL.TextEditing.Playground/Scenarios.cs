@@ -205,7 +205,9 @@ namespace SIL.TextEditing.Playground
                 Styled("en", "blue single", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSingle, 0, TextPropertyNumbers.UnderColor, SampleStyles.Blue, 0),
                 new Run { Ws = "en", Text = ", " },
                 NamedStyle("en", "Misspelled (a style: red double)", "Misspelled"),
-                new Run { Ws = "en", Text = "." });
+                new Run { Ws = "en", Text = ", " },
+                Styled("en", "scribble", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSquiggle, 0),
+                new Run { Ws = "en", Text = " (squiggle, not drawn yet)." });
             var shifts = Runs("en", "",
                 new Run { Ws = "en", Text = "Position: H" },
                 Styled("en", "2", TextPropertyNumbers.Superscript, 2, 0),

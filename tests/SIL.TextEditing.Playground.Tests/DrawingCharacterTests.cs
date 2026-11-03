@@ -243,6 +243,38 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        // The three properties below are carried and kept through every edit but not drawn yet (ADR 0005 exceptions, tracked as issues;
+        // justification is pinned in DrawingParagraphTests). When one starts being drawn these fail: replace the test with one for the feature.
+
+        /// <summary>How far below the top of its line the lowest ink of a box is.</summary>
+        static double Below(DrawingParagraphTests.Shot shot, Rect box) => shot.InkBottom(box) - box.Y;
+
+        [Fact]
+        public void Offset_is_not_drawn_yet_so_raised_and_lowered_runs_sit_on_the_text_baseline() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var shot = new DrawingParagraphTests.Shot(s);
+                Assert.Equal(4000, s.Editor.Document.Paragraphs[5].Runs.Single(r => r.Text == "up").Props.IntProps[TextPropertyNumbers.Offset].Value);
+                // The p of "up" (raised 4 pt) and the p of "pt" beside it end on the same row; so do the n of "down" (lowered) and the n of "drawn".
+                // (Measured from the top of the line, as the two may be on different lines; 1 pixel allows for rounding, a 4 point shift is 5.)
+                Assert.InRange(Below(shot, BoxOf(s, 5, ": up", 3, 1)) - Below(shot, BoxOf(s, 5, "pt", 0, 1)), -1, 1);
+                Assert.InRange(Below(shot, BoxOf(s, 5, "down", 3, 1)) - Below(shot, BoxOf(s, 5, "drawn", 4, 1)), -1, 1);
+            }
+        });
+
+        [Fact]
+        public void Squiggle_is_not_drawn_yet_so_the_run_has_no_underline() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                Assert.Null(RunWith(s, 4, "scribble").TextDecorations);
+                var shot = new DrawingParagraphTests.Shot(s);
+                // None of the letters of "scribble" go below the baseline, so any ink lower than the plain "Lines" before it would be a line.
+                Assert.InRange(Below(shot, BoxOf(s, 4, "scribble")) - Below(shot, BoxOf(s, 4, "Lines", 0, 5)), -1, 1);
+            }
+        });
+
         [Fact]
         public void The_character_style_box_sets_the_named_style_on_the_selection_and_none_clears_it() => Headless.Run(() =>
         {

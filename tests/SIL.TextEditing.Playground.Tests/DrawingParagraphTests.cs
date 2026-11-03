@@ -391,7 +391,7 @@ namespace SIL.TextEditing.Playground.Tests
             /// <summary>The lowest row with ink inside a box (its inner columns), or -1.</summary>
             public int InkBottom(Rect box)
             {
-                for (int y = Math.Min(Height - 1, (int)Math.Ceiling(box.Bottom) + 4); y >= (int)box.Y; y--)
+                for (int y = Math.Min(Height - 1, (int)Math.Ceiling(box.Bottom) - 1); y >= (int)box.Y; y--)
                     for (int x = (int)Math.Floor(box.X) + 1; x < (int)Math.Ceiling(box.Right) - 1; x++)
                         if (IsInk(x, y)) return y;
                 return -1;
