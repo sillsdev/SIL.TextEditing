@@ -492,7 +492,7 @@ namespace SIL.TextEditing.Avalonia
             BottomInset = pf.PadBottom + pf.BorderBottom + pf.SpaceAfter;
             Box = new Rect(marginLeft, gap, Math.Max(total - marginLeft - marginRight, 0), 0);
             _fill = ColorBrush(pf.ParaColor);
-            _borderBrush = _borderLeft + _borderTop + _borderRight + _borderBottom > 0 ? (ColorBrush(pf.BorderColor) ?? Brushes.Black) : null;
+            _borderBrush = _borderLeft + _borderTop + _borderRight + _borderBottom > 0 ? (ColorBrush(pf.BorderColor) ?? foreground) : null;
         }
 
         /// <summary>Paints the paragraph's fill colour and borders; <paramref name="top"/> is the paragraph's top in the control.</summary>
@@ -521,6 +521,9 @@ namespace SIL.TextEditing.Avalonia
             _labelText = text;
             return _label;
         }
+
+        /// <summary>How the bullet or number is drawn (font, size, decorations), or null when there is none.</summary>
+        public TextRunProperties? LabelProperties => LabelLine(LabelText)?.TextRuns[0].Properties;
 
         /// <summary>The bullet or number's box in paragraph coordinates, or an empty rectangle when the paragraph has none: its text only,
         /// at the first indent on the leading side (the gap that follows it is not part of it).</summary>

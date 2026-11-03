@@ -431,6 +431,23 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void A_border_with_no_colour_of_its_own_is_drawn_in_the_field_foreground_not_black() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 3000))
+            {
+                s.Editor.Document.Paragraphs[Plain].Props.SetInt(TextPropertyNumbers.BorderTop, 4000, 1);
+                s.Field.Foreground = Brushes.Red;
+                s.Field.Background = Brushes.Black;
+                s.Field.InvalidateAllLayouts();
+                Headless.Pump();
+                var pl = s.Field.ParagraphLayoutFor(Plain);
+                double top = s.Field.ParagraphTop(Plain);
+                Assert.Equal(Color.FromRgb(255, 0, 0), Pixel(s, 300, top + 1));
+                Assert.Equal(Color.FromRgb(255, 0, 0), Pixel(s, 300, top + 3));
+            }
+        });
+
+        [Fact]
         public void Bullets_and_numbers_count_runs_of_paragraphs_and_use_the_before_and_after_text() => Headless.Run(() =>
         {
             Assert.Equal(4, BulletNumbers.Sequence(i => new ParaFormat { BulNumScheme = BulletNumbers.Arabic }, 3));
