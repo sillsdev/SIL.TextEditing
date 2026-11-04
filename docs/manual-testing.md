@@ -192,6 +192,23 @@ Ctrl+Left goes to the next word.
 | 10.12 | Ctrl+Home, Ctrl+End, Ctrl+A, and with Shift for the first two. | The caret goes to the very start and end of the document; Ctrl+A selects everything, and the inspector shows `selection 0:0 -> last:end`. | | | | |
 | 10.13 | Select across three paragraphs with the mouse and press Delete (or Backspace, or type a letter). | One paragraph is left holding the text before and after the selection; its key in the inspector is the first paragraph's key (unless the first part was empty, then the last paragraph's key). Undo restores all three. | | | | |
 
+## 11. Host hooks: find and replace, context menu, paging (all hosts)
+
+Scenarios *Find and replace* (the find bar under the writing-system bar) and *Long document*. See ADR 0021 and ADR 0025.
+
+| # | Steps | Expected | D10 | D48 | W48 | Notes |
+|---|---|---|---|---|---|---|
+| 11.1 | In *Find and replace* type `cat` in Find and press Find Next repeatedly. | Each match is selected in turn and drawn in the current-match colour; with Highlight all ticked every other match is tinted. After the last one the status says it wrapped. Find Previous goes backwards. | | | | |
+| 11.2 | Tick Match case, then Whole word; each time repeat 11.1. | Match case skips `Cat` and `CAT`; Whole word skips `concat` and `category` but finds `cat-like`. | | | | |
+| 11.3 | Find `cafe` with Match diacritics ticked, then unticked. Find the composed `café` (type it with the accent). | Ticked finds only the bare `cafe`; unticked finds all four spellings; `café` finds both the composed and the decomposed forms, whichever you typed. | | | | |
+| 11.4 | Tick Regular expression and find `c[aeiou]t`; then type `(`. | Matches are found; `(` reports that it is not a valid regular expression and finds nothing. | | | | |
+| 11.5 | Find `Label` (the read-only label in the last paragraph); type `Tag` in Replace with and press Replace. | The label is selected exactly and nothing is replaced. | | | | |
+| 11.6 | Find `mat`, Replace with `rug`, press Replace twice, then Undo. | The first press selects the match, the second replaces it and looks for the next; one Undo brings `mat` back. | | | | |
+| 11.7 | Find `cat`, Replace with `catalog`, press Replace All, then Undo. | Every editable match is replaced (the one in the read-only label is not), the new text is not searched again, and one Undo restores everything. | | | | |
+| 11.8 | Right-click a word, then a picture, then inside a selection, then just after it. | The log says what the host was told: the word, its range and writing system, the picture's data, the selection. Inside a selection keeps it; elsewhere moves the caret first. A menu opens with the word and no spelling suggestions. | | | | |
+| 11.9 | Put the caret in a word and press the Menu key, then Shift+F10. | One request each, for the word at the caret. | | | | |
+| 11.10 | In *Long document* press PageDown and PageUp, then with Shift. | The caret moves by what shows in the window and keeps its place on the screen; Shift extends the selection; the log says `scroll requested: Page`. At the ends the caret stops on the first or last line. | | | | |
+| 11.11 | Drag from the middle of the field to well below its bottom edge, and above its top edge. | The selection grows and the view scrolls a little at each mouse movement (more when far outside); it stops when the mouse stops. | | | | |
 ## Record
 
 | | |
