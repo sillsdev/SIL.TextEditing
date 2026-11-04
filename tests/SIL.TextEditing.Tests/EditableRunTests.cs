@@ -247,9 +247,9 @@ namespace SIL.TextEditing.Tests
             p.Runs.Add(new Run { Ws = "en", Text = "cd" });
             var e = new DocumentEditor(Doc(p));
             // Counted, not timed: the question "does this point take typing?" is asked a handful of times, not once per offset of the
-            // locked run. The probe throws at the budget so a scan fails at once.
+            // locked run (now each run looked at counts too, a handful per call). The probe throws at the budget so a scan fails at once.
             int asked = 0;
-            e.EditableAtProbe = () => { if (++asked > 100) throw new System.InvalidOperationException("scanned the insertion points one by one"); };
+            e.EditableAtProbe = () => { if (++asked > 300) throw new System.InvalidOperationException("scanned the insertion points one by one"); };
             for (int i = 0; i < 10; i++)
             {
                 Assert.Equal(new TextPosition(0, 2), e.NearestEditable(new TextPosition(0, 50000)));          // the nearer side: the start of the lock
@@ -258,7 +258,7 @@ namespace SIL.TextEditing.Tests
                 Assert.Equal(new TextPosition(0, 2), e.NearestEditable(new TextPosition(0, 99999), -1));
                 Assert.Equal(new TextPosition(0, 1), e.NearestEditable(new TextPosition(0, 1)));                // already editable
             }
-            Assert.True(asked <= 100);
+            Assert.True(asked <= 300);
         }
 
         [Fact]
@@ -266,10 +266,10 @@ namespace SIL.TextEditing.Tests
         {
             var rng = new System.Random(60);
             int checkedPoints = 0;
-            for (int trial = 0; trial < 400; trial++)
+            for (int trial = 0; trial < 1500; trial++)
             {
                 var p = new Paragraph { DefaultWs = "en" };
-                int runs = rng.Next(0, 6);
+                int runs = rng.Next(0, 10);
                 for (int i = 0; i < runs; i++)
                 {
                     string text = new string('a', rng.Next(0, 4)) + (rng.Next(4) == 0 ? DocumentEditor.LineSeparator.ToString() : string.Empty);
@@ -290,6 +290,43 @@ namespace SIL.TextEditing.Tests
             Assert.True(checkedPoints > 1000);
         }
 
+        /// <summary>A paragraph of many runs that do not merge (their writing systems alternate) with locked runs in the middle.</summary>
+        static DocumentEditor ManyRuns(int runs, int lockedFrom, int lockedCount)
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            for (int i = 0; i < runs; i++)
+            {
+                bool locked = i >= lockedFrom && i < lockedFrom + lockedCount;
+                var r = locked ? Marked("LL", TextPropertyNumbers.EditableNo) : new Run { Ws = i % 2 == 0 ? "en" : "fr", Text = "ab" };
+                if (locked) r.Ws = i % 2 == 0 ? "en" : "fr";
+                p.Runs.Add(r);
+            }
+            return new DocumentEditor(Doc(p));
+        }
+
+        [Fact]
+        public void NearestEditable_walks_outward_from_the_point_so_its_cost_follows_the_distance_not_the_run_count()
+        {
+            // Counted, not timed (the probe fires once per run looked at): a point inside one locked run among 20,000 runs finds its
+            // neighbours after a few runs, and a stretch of six locked runs costs about as many runs as the way out of it.
+            var one = ManyRuns(20000, 10000, 1);
+            int asked = 0;
+            one.EditableAtProbe = () => asked++;
+            Assert.Equal(new TextPosition(0, 20000), one.NearestEditable(new TextPosition(0, 20001)));   // the middle of the locked run: back wins the tie
+            Assert.True(asked <= 12, asked + " runs looked at");
+
+            var six = ManyRuns(20000, 10000, 6);
+            asked = 0;
+            six.EditableAtProbe = () => asked++;
+            var at = new TextPosition(0, 20000 + 2 * 3 + 1);                                            // the middle of the stretch
+            var found = six.NearestEditable(at);
+            Assert.True(found.Offset == 20000 || found.Offset == 20000 + 12, found.ToString());
+            Assert.True(asked <= 30, asked + " runs looked at");
+
+            asked = 0;
+            Assert.Equal(new TextPosition(0, 5), one.NearestEditable(new TextPosition(0, 5)));           // already editable: asked once
+            Assert.True(asked <= 2);
+        }
         /// <summary>What NearestEditable answers, worked out the slow way: ask every insertion point up to the visible end.</summary>
         static TextPosition ByAskingEveryPoint(DocumentEditor e, TextPosition p, int direction, int visibleEnd)
         {

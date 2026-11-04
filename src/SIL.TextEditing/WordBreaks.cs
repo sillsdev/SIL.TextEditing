@@ -85,6 +85,39 @@ namespace SIL.TextEditing
             end = End(text, starts, b);
         }
 
+        /// <summary>For each offset 0 to the text length, whether a word starts or ends there: the start and end of the text, and
+        /// every cluster boundary where the class changes (word, white space, other) or an object sits. Offsets inside a cluster
+        /// are not boundaries. A whole-word find uses it.</summary>
+        public static bool[] Boundaries(string text)
+        {
+            var result = new bool[text.Length + 1];
+            result[0] = result[text.Length] = true;
+            if (text.Length == 0) return result;
+            var starts = GraphemeClusters.Starts(text);
+            var kinds = Classify(text, starts);
+            for (int k = 1; k < starts.Count; k++)
+                result[starts[k]] = kinds[k] != kinds[k - 1] || kinds[k] == Kind.Object || kinds[k - 1] == Kind.Object;
+            return result;
+        }
+
+        /// <summary>The word under <paramref name="charIndex"/>: true with its range when the character there is part of a word
+        /// (not white space, punctuation or an object); false with an empty range at the index otherwise.</summary>
+        public static bool TryWordAt(string text, int charIndex, out int start, out int end)
+        {
+            start = end = Math.Max(0, Math.Min(text.Length, charIndex));
+            if (text.Length == 0 || charIndex < 0 || charIndex >= text.Length) return false;
+            var starts = GraphemeClusters.Starts(text);
+            var kinds = Classify(text, starts);
+            int k = ClusterAt(starts, charIndex);
+            if (kinds[k] != Kind.Word) return false;
+            int a = k, b = k;
+            while (a > 0 && kinds[a - 1] == Kind.Word) a--;
+            while (b + 1 < starts.Count && kinds[b + 1] == Kind.Word) b++;
+            start = starts[a];
+            end = End(text, starts, b);
+            return true;
+        }
+
         /// <summary>Ctrl+Right: the start of the next word after <paramref name="index"/> (skipping the rest of the current
         /// word or punctuation run and then white space), or the text length.</summary>
         public static int NextWordStart(string text, int index)
