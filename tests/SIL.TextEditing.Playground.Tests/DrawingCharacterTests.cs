@@ -243,25 +243,7 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
-        // The three properties below are carried and kept through every edit but not drawn yet (ADR 0005 exceptions, tracked as issues;
-        // justification is pinned in DrawingParagraphTests). When one starts being drawn these fail: replace the test with one for the feature.
-
-        /// <summary>How far below the top of its line the lowest ink of a box is.</summary>
-        static double Below(DrawingParagraphTests.Shot shot, Rect box) => shot.InkBottom(box) - box.Y;
-
-        [Fact]
-        public void Offset_is_not_drawn_yet_so_raised_and_lowered_runs_sit_on_the_text_baseline() => Headless.Run(() =>
-        {
-            using (var s = new Session(Scenarios.Drawing))
-            {
-                var shot = new DrawingParagraphTests.Shot(s);
-                Assert.Equal(4000, s.Editor.Document.Paragraphs[5].Runs.Single(r => r.Text == "up").Props.IntProps[TextPropertyNumbers.Offset].Value);
-                // The p of "up" (raised 4 pt) and the p of "pt" beside it end on the same row; so do the n of "down" (lowered) and the n of "drawn".
-                // (Measured from the top of the line, as the two may be on different lines; 1 pixel allows for rounding, a 4 point shift is 5.)
-                Assert.InRange(Below(shot, BoxOf(s, 5, ": up", 3, 1)) - Below(shot, BoxOf(s, 5, "pt", 0, 1)), -1, 1);
-                Assert.InRange(Below(shot, BoxOf(s, 5, "down", 3, 1)) - Below(shot, BoxOf(s, 5, "drawn", 4, 1)), -1, 1);
-            }
-        });
+        // Justification is the one drawing property not drawn yet (an ADR 0005 exception tracked as an issue; it is pinned in DrawingParagraphTests).
 
         static bool IsRed(DrawingParagraphTests.Shot shot, int x, int y) { var c = shot.At(x, y); return c.R > 200 && c.G < 90 && c.B < 90; }
 
@@ -284,6 +266,59 @@ namespace SIL.TextEditing.Playground.Tests
             return (tops, above, System.Math.Max(0, (int)x1 - 1 - ((int)x0 + 1)));
         }
 
+
+        /// <summary>The row of the lowest ink inside a box grown by a few rows above and below.</summary>
+        static int InkBottomRow(DrawingParagraphTests.Shot shot, Rect box) => shot.InkBottom(new Rect(box.X, box.Y - 8, box.Width, box.Height + 16));
+
+        [Fact]
+        public void A_raised_run_is_drawn_four_pixels_higher_and_a_lowered_run_four_pixels_lower_than_the_text_beside_it() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var shot = new DrawingParagraphTests.Shot(s);
+                Assert.Equal(4000, s.Editor.Document.Paragraphs[5].Runs.Single(r => r.Text == "up").Props.IntProps[TextPropertyNumbers.Offset].Value);
+                Assert.Equal(-4000, s.Editor.Document.Paragraphs[5].Runs.Single(r => r.Text == "down").Props.IntProps[TextPropertyNumbers.Offset].Value);
+                // The p of "up" (raised 4 pt) and the p of "pt" beside it: the same letter, 4 pixels apart; and the n of "down" (lowered) and of "drawn".
+                // (They are on the same line, so the rows are comparable; a pixel allows for rounding.)
+                var paragraph = s.Field.ParagraphLayoutFor(5);
+                string text = s.ParagraphText(5);
+                Assert.Equal(paragraph.LineIndexOf(text.IndexOf(": up", System.StringComparison.Ordinal) + 3), paragraph.LineIndexOf(text.IndexOf("pt", System.StringComparison.Ordinal)));
+                int upP = InkBottomRow(shot, BoxOf(s, 5, ": up", 3, 1)), plainP = InkBottomRow(shot, BoxOf(s, 5, "pt", 0, 1));
+                Assert.InRange(plainP - upP, 3, 5);
+                int downN = InkBottomRow(shot, BoxOf(s, 5, "down", 3, 1)), plainN = InkBottomRow(shot, BoxOf(s, 5, "ordinary run", 11, 1));
+                Assert.InRange(downN - plainN, 3, 5);
+            }
+        });
+
+        /// <summary>The highest row (relative to the text's own baseline) with red ink in the columns of a range of text.</summary>
+        static int HighestRed(DrawingParagraphTests.Shot shot, Session s, int paragraph, int at, int length)
+        {
+            var pl = s.Field.ParagraphLayoutFor(paragraph);
+            var li = pl.Lines[pl.LineIndexOf(at)];
+            var bounds = li.Line.GetTextBounds(at, length);
+            double x0 = bounds.Min(b => b.Rectangle.X) + li.X, x1 = bounds.Max(b => b.Rectangle.Right) + li.X;
+            int baseline = (int)System.Math.Round(s.Field.ParagraphTop(paragraph) + li.TextY + li.Line.Baseline);
+            for (int dy = -12; dy < 12; dy++)
+                for (int x = (int)x0 + 1; x < (int)x1 - 1; x++)
+                    if (IsRed(shot, x, baseline + dy)) return dy;
+            return int.MaxValue;
+        }
+
+        [Fact]
+        public void The_squiggle_under_a_raised_run_is_raised_with_it() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var run = s.Editor.Document.Paragraphs[4].Runs.Single(r => r.Text == "scribble");
+                int at = s.ParagraphText(4).IndexOf("scribble", System.StringComparison.Ordinal);
+                int plain = HighestRed(new DrawingParagraphTests.Shot(s), s, 4, at, "scribble".Length);
+                run.Props.SetInt(TextPropertyNumbers.Offset, 4000, TextPropertyNumbers.VariationMilliPoint);
+                s.Field.RefreshFromDocument();
+                Headless.Pump();
+                int raised = HighestRed(new DrawingParagraphTests.Shot(s), s, 4, at, "scribble".Length);
+                Assert.InRange(plain - raised, 3, 5);   // the wave moved up with the run: 4 rows nearer the baseline of the text beside it, or past it
+            }
+        });
         [Fact]
         public void The_squiggle_underline_is_a_zigzag_below_the_baseline_in_the_under_colour_and_none_above_it() => Headless.Run(() =>
         {

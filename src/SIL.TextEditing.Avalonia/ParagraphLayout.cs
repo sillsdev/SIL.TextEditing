@@ -20,14 +20,18 @@ namespace SIL.TextEditing.Avalonia
         readonly IBrush? _background;
         readonly BaselineAlignment _baseline;
         readonly IBrush? _squiggle;
+        readonly double _offset;
 
-        public RunTextProperties(Typeface typeface, double size, IBrush foreground, TextDecorationCollection? decorations, CultureInfo culture, FontFeatureCollection? features, IBrush? background = null, BaselineAlignment baseline = BaselineAlignment.Baseline, IBrush? squiggle = null)
+        public RunTextProperties(Typeface typeface, double size, IBrush foreground, TextDecorationCollection? decorations, CultureInfo culture, FontFeatureCollection? features, IBrush? background = null, BaselineAlignment baseline = BaselineAlignment.Baseline, IBrush? squiggle = null, double offset = 0)
         {
             _squiggle = squiggle;
+            _offset = offset;
             _background = background;
             _baseline = baseline;
             _typeface = typeface;
-            _size = size;
+            // Avalonia 11 joins neighbouring runs whose properties compare equal into one run, so runs with different offsets (which it is
+            // not given) would lose them. A tiny size difference per offset keeps them apart; it is far below anything that can be drawn.
+            _size = size + offset * 0.00005;
             _foreground = foreground;
             _decorations = decorations;
             _culture = culture;
@@ -42,11 +46,12 @@ namespace SIL.TextEditing.Avalonia
         public IBrush? Back => _background;
         /// <summary>The colour of the run's squiggle underline, or null for none. Avalonia has no wavy decoration: the layout draws it itself, after the text.</summary>
         public IBrush? Squiggle => _squiggle;
+        /// <summary>How far the run's baseline is raised above the line's (negative: lowered), in pixels. Avalonia is not given it: the layout shifts the run when it draws it.</summary>
+        public double Offset => _offset;
         public override IBrush? BackgroundBrush => null;
         public override BaselineAlignment BaselineAlignment => _baseline;
         public override CultureInfo? CultureInfo => _culture;
-        public override FontFeatureCollection? FontFeatures => _features;
-    }
+        public override FontFeatureCollection? FontFeatures => _features;    }
 
     sealed class ParagraphProperties : TextParagraphProperties
     {
@@ -130,15 +135,47 @@ namespace SIL.TextEditing.Avalonia
         }
     }
 
+    /// <summary>The runs of a paragraph that have a baseline offset: effective text ranges and how far each is raised in pixels (negative: lowered).</summary>
+    sealed class OffsetMap
+    {
+        readonly List<int> _starts = new List<int>(), _ends = new List<int>();
+        readonly List<double> _values = new List<double>();
+        public bool IsEmpty => _starts.Count == 0;
+
+        public void Add(int start, int end, double offset)
+        {
+            _starts.Add(start);
+            _ends.Add(end);
+            _values.Add(offset);
+        }
+
+        public double At(int index)
+        {
+            for (int i = 0; i < _starts.Count; i++)
+                if (index >= _starts[i] && index < _ends[i]) return _values[i];
+            return 0;
+        }
+    }
+
     public sealed class LineInfo
     {
         public LineInfo(TextLine line, double y, double x = 0, double height = -1, double baselineInSlot = double.NaN)
+            : this(line, y, x, height, baselineInSlot, null)
+        {
+        }
+
+        internal LineInfo(TextLine line, double y, double x, double height, double baselineInSlot, OffsetMap? offsets)
         {
             Line = line;
             Y = y;
             X = x;
             Height = height < 0 ? line.Height : height;
             _baselineInSlot = baselineInSlot;
+            _offsets = offsets;
+            _runs = ParagraphLayout.RunOffsets(line, offsets, out var raise, out var lower);
+            HasOffsets = _runs != null;
+            Raise = raise;
+            Lower = lower;
             Start = line.FirstTextSourceIndex;
             Length = line.Length;
             End = Start + Length;
@@ -175,8 +212,47 @@ namespace SIL.TextEditing.Avalonia
         public double Height { get; }
         /// <summary>Where the text of the line starts vertically: at the bottom of the slot, or, under an exact line height, wherever puts the
         /// baseline at the same fraction of the slot as the text's own (the text then overflows the slot both ways when it is taller).</summary>
-        public double TextY => double.IsNaN(_baselineInSlot) ? Y + Height - Line.Height : Y + _baselineInSlot - Line.Baseline;
+        public double TextY => double.IsNaN(_baselineInSlot) ? Y + Height - Lower - Line.Height : Y + _baselineInSlot - Line.Baseline;
         readonly double _baselineInSlot;
+        /// <summary>True when a run on the line has a baseline offset, so the line is drawn run by run (<see cref="Draw"/>).</summary>
+        public bool HasOffsets { get; }
+        readonly OffsetMap? _offsets;
+        /// <summary>Every run of a line that has shifted runs, in drawing order, with its offset; null for a line with none.</summary>
+        internal List<KeyValuePair<DrawableTextRun, double>>? _runs;
+        /// <summary>How far the shifted runs reach above the text's own top, and below its bottom: room the slot makes for them.</summary>
+        public double Raise { get; }
+        public double Lower { get; }
+
+        /// <summary>Draws the line with its text at <paramref name="top"/> plus <see cref="TextY"/>. A line with no shifted run is Avalonia's own
+        /// drawing; otherwise each run is drawn where Avalonia would draw it, less the run's offset.</summary>
+        public void Draw(DrawingContext context, double top)
+        {
+            double y = top + TextY;
+            if (!HasOffsets) { Line.Draw(context, new Point(X, y)); return; }
+            double x = X + Line.Start;
+            foreach (var run in _runs!)
+            {
+                run.Key.Draw(context, new Point(x, y + ParagraphLayout.RunTop(Line, run.Key) - run.Value));
+                x += run.Key.Size.Width;
+            }
+        }
+
+        /// <summary>The boxes of the characters from <paramref name="from"/> to <paramref name="to"/> (effective offsets), one per run piece, with
+        /// each piece's baseline offset: x in paragraph coordinates, y from the top of the line's text (before the offset is applied).</summary>
+        internal List<KeyValuePair<Rect, double>> Pieces(int from, int to)
+        {
+            var result = new List<KeyValuePair<Rect, double>>();
+            foreach (var tb in Line.GetTextBounds(from, to - from))
+            {
+                var parts = _offsets != null && HasOffsets ? tb.TextRunBounds : null;
+                if (parts == null || parts.Count == 0)
+                    result.Add(new KeyValuePair<Rect, double>(new Rect(X + tb.Rectangle.X, tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height), 0));
+                else
+                    foreach (var part in parts)
+                        result.Add(new KeyValuePair<Rect, double>(new Rect(X + part.Rectangle.X, part.Rectangle.Y, part.Rectangle.Width, part.Rectangle.Height), _offsets!.At(part.TextSourceCharacterIndex)));
+            }
+            return result;
+        }
         public int Start { get; }
         public int Length { get; }
         public int End { get; }
@@ -265,9 +341,47 @@ namespace SIL.TextEditing.Avalonia
             IBrush text = ColorBrush(f.ForeColor) ?? foreground;
             var decorations = preedit ? Decorations(3, null, text) : Decorations(f.Underline, f.UnderColor, text);
             var baseline = f.Superscript == 1 ? BaselineAlignment.Superscript : f.Superscript == 2 ? BaselineAlignment.Subscript : BaselineAlignment.Baseline;
-            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null);
+            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null, preedit ? 0 : f.OffsetPt);
         }
 
+        /// <summary>Where a run's top is below the top of its line, as Avalonia draws it: baselines aligned, a superscript at the top, a subscript at the bottom.</summary>
+        internal static double RunTop(TextLine line, DrawableTextRun run)
+        {
+            switch (run.Properties?.BaselineAlignment)
+            {
+                case BaselineAlignment.Superscript: return 0;
+                case BaselineAlignment.Subscript: return line.Height - run.Size.Height;
+                default: return line.Baseline - run.Baseline;
+            }
+        }
+
+        /// <summary>The runs of a line with their baseline offsets, or null when the line has no shifted run (<paramref name="raise"/> and
+        /// <paramref name="lower"/> are then 0). Otherwise they are how far the shifted runs reach above the line's top and below its bottom.
+        /// Avalonia 11 hands back its own copy of each run's properties, so a run is matched to its offset by where it is in the text.</summary>
+        internal static List<KeyValuePair<DrawableTextRun, double>>? RunOffsets(TextLine line, OffsetMap? offsets, out double raise, out double lower)
+        {
+            raise = 0;
+            lower = 0;
+            if (offsets == null || offsets.IsEmpty || line.Length <= 0) return null;
+            var starts = new Dictionary<TextRun, int>();
+            foreach (var tb in line.GetTextBounds(line.FirstTextSourceIndex, line.Length))
+                foreach (var part in tb.TextRunBounds)
+                    if (part.TextRun != null) starts[part.TextRun] = part.TextSourceCharacterIndex;
+            var result = new List<KeyValuePair<DrawableTextRun, double>>();
+            bool any = false;
+            foreach (var run in line.TextRuns)
+            {
+                if (!(run is DrawableTextRun d)) continue;
+                double offset = starts.TryGetValue(run, out int at) ? offsets.At(at) : 0;
+                result.Add(new KeyValuePair<DrawableTextRun, double>(d, offset));
+                if (offset == 0) continue;
+                any = true;
+                double top = RunTop(line, d) - offset;
+                raise = Math.Max(raise, -top);
+                lower = Math.Max(lower, top + d.Size.Height - line.Height);
+            }
+            return any ? result : null;
+        }
         /// <summary>The paragraph's resolved formatting, sized from the writing system of its first run.</summary>
         internal static ParaFormat ResolveFormat(Paragraph paragraph, WritingSystemRegistry writingSystems, IStyleResolver? styles)
         {
@@ -370,6 +484,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (seg.IsObject || !(seg.Properties is RunTextProperties rp)) continue;
                 if (rp.Back != null) layout._backgrounds.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(seg.Start, new KeyValuePair<int, IBrush>(seg.End, rp.Back)));
+                if (rp.Offset != 0) layout._offsets.Add(seg.Start, seg.End, rp.Offset);
                 if (rp.Squiggle != null) layout._squiggles.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(seg.Start, new KeyValuePair<int, IBrush>(seg.End, rp.Squiggle)));
             }
 
@@ -438,9 +553,9 @@ namespace SIL.TextEditing.Avalonia
                 double lineX = first ? layout._firstX : layout.ContentLeft;
                 var line = formatter.FormatLine(source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
-                double slot = layout.SlotHeight(line.Height);
+                double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
                 if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = line.Baseline / line.Height;
-                layout.Lines.Add(new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot)));
+                layout.Lines.Add(new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets));
                 y += slot;
                 layout.Width = Math.Max(layout.Width, line.WidthIncludingTrailingWhitespace);
                 if (line.Length <= 0) break;
@@ -490,9 +605,18 @@ namespace SIL.TextEditing.Avalonia
                 {
                     int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, TextEnd(li));
                     if (b <= a) continue;
-                    foreach (var tb in li.Line.GetTextBounds(a, b - a))
-                        context.DrawRectangle(bg.Value.Value, null, new Rect(li.X + tb.Rectangle.X, top + li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height));
+                    foreach (var piece in li.Pieces(a, b))
+                        context.DrawRectangle(bg.Value.Value, null, new Rect(piece.Key.X, top + li.TextY + piece.Key.Y - piece.Value, piece.Key.Width, piece.Key.Height));
                 }
+        }
+
+        readonly OffsetMap _offsets = new OffsetMap();
+
+        /// <summary>The room a line needs for its shifted runs, above and below its own height.</summary>
+        static double ExtentOf(TextLine line, OffsetMap offsets)
+        {
+            RunOffsets(line, offsets, out var raise, out var lower);
+            return raise + lower;
         }
 
         // Runs with a squiggle underline: start, then end and brush (effective offsets).
@@ -512,11 +636,11 @@ namespace SIL.TextEditing.Avalonia
                     if (b <= a) continue;
                     double descent = Math.Max(li.Line.Height - li.Line.Baseline, 3);
                     double amplitude = Math.Min(2, Math.Max(1, descent / 2));
-                    double middle = top + li.TextY + li.Line.Baseline + 1 + amplitude;
                     var pen = new Pen(sq.Value.Value, 1);
-                    foreach (var tb in li.Line.GetTextBounds(a, b - a))
+                    foreach (var piece in li.Pieces(a, b))
                     {
-                        double x0 = li.X + tb.Rectangle.X, x1 = li.X + tb.Rectangle.Right;
+                        double middle = top + li.TextY + li.Line.Baseline + 1 + amplitude - piece.Value;
+                        double x0 = piece.Key.X, x1 = piece.Key.Right;
                         if (x1 - x0 < 1) continue;
                         var wave = new StreamGeometry();
                         using (var c = wave.Open())
@@ -787,7 +911,18 @@ namespace SIL.TextEditing.Avalonia
             var h = hit.HasValue && hit.Value.FirstCharacterIndex + hit.Value.TrailingLength == e ? hit.Value : new CharacterHit(e);
             if (h.TrailingLength == 0 && e > li.Start && e == TextEnd(li) && e < li.End && EffectiveText[e] == HardLineBreak) h = TrailingHit(e);   // before the break: after the last character of the line
             double x = li.Line.GetDistanceFromCharacterHit(h);
-            return new Rect(li.X + x, li.TextY, 1, li.Line.Height);
+            return new Rect(li.X + x, li.TextY - CaretOffset(li, e), 1, li.Line.Height);
+        }
+
+        /// <summary>How far a caret at the effective offset is raised: it follows the character before it (the one it would extend), or the one
+        /// after it at the start of a line.</summary>
+        double CaretOffset(LineInfo li, int effective)
+        {
+            if (!li.HasOffsets || li.IsEmpty) return 0;
+            int probe = effective > li.Start ? effective - 1 : effective;
+            if (probe >= EffectiveText.Length) return 0;
+            foreach (var piece in li.Pieces(probe, probe + 1)) return piece.Value;
+            return 0;
         }
 
         /// <summary>The model offset at a point in paragraph coordinates.</summary>
@@ -847,8 +982,8 @@ namespace SIL.TextEditing.Avalonia
                     }
                     continue;
                 }
-                foreach (var tb in li.Line.GetTextBounds(a, b - a))
-                    result.Add(new Rect(li.X + tb.Rectangle.X, li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height));
+                foreach (var piece in li.Pieces(a, b))
+                    result.Add(new Rect(piece.Key.X, li.TextY + piece.Key.Y - piece.Value, piece.Key.Width, piece.Key.Height));
             }
             return result;
         }
@@ -938,8 +1073,8 @@ namespace SIL.TextEditing.Avalonia
                     int e = ToEffective(pos);
                     var li = LineOf(e);
                     if (li != null)
-                        foreach (var tb in li.Line.GetTextBounds(e, 1))
-                            result.Add(new KeyValuePair<Rect, string>(new Rect(li.X + tb.Rectangle.X, li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height), r.ObjData));
+                        foreach (var piece in li.Pieces(e, e + 1))
+                            result.Add(new KeyValuePair<Rect, string>(new Rect(piece.Key.X, li.TextY + piece.Key.Y - piece.Value, piece.Key.Width, piece.Key.Height), r.ObjData));
                 }
                 pos += r.Text.Length;
             }

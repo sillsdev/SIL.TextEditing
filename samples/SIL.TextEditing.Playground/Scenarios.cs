@@ -221,11 +221,11 @@ namespace SIL.TextEditing.Playground
                 NamedStyle("en", "super", "Superscript"),
                 new Run { Ws = "en", Text = " and " },
                 NamedStyle("en", "sub", "Subscript"),
-                new Run { Ws = "en", Text = ", raised 4 pt (not drawn yet): " },
+                new Run { Ws = "en", Text = ", raised 4 pt: " },
                 Styled("en", "up", TextPropertyNumbers.Offset, 4000, mp),
-                new Run { Ws = "en", Text = ", lowered (not drawn yet): " },
+                new Run { Ws = "en", Text = ", lowered 4 pt: " },
                 Styled("en", "down", TextPropertyNumbers.Offset, -4000, mp),
-                new Run { Ws = "en", Text = "." });
+                new Run { Ws = "en", Text = " and an ordinary run." });
             var features = Runs("en", "",
                 new Run { Ws = "en", Text = "Features: " },
                 FontFeatures("1234567890 (default)", null),
