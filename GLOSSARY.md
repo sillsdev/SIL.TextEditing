@@ -88,4 +88,8 @@ The Markdown form of FieldWorks text: a strict profile of Pandoc Markdown that p
 _Avoid_: GDR Markdown (for the general format), FWMD (in prose)
 
 **GDR Markdown**:
-The profile of FieldWorks Markdown that Motif's Grammar Design Records are written in.
+A Grammar Design Record written in FieldWorks Markdown, following the GDR template.
+_Avoid_: GDR profile, GDR format
+
+**Project path**:
+The path of a FieldWorks object in the designed project tree, used in links.
