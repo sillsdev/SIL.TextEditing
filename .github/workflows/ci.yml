@@ -28,7 +28,10 @@ jobs:
         run: |
           Invoke-WebRequest "https://github.com/jgm/pandoc/releases/download/$env:PANDOC_VERSION/pandoc-$env:PANDOC_VERSION-windows-x86_64.zip" -OutFile "$env:RUNNER_TEMP/pandoc.zip"
           Expand-Archive "$env:RUNNER_TEMP/pandoc.zip" -DestinationPath "$env:RUNNER_TEMP/pandoc"
-          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP/pandoc/pandoc-$env:PANDOC_VERSION"
+          # Wherever the zip put pandoc.exe: its folder goes on the PATH of the steps that follow.
+          $exe = Get-ChildItem "$env:RUNNER_TEMP/pandoc" -Recurse -Filter pandoc.exe | Select-Object -First 1
+          if (-not $exe) { throw "pandoc.exe is not in the downloaded zip" }
+          Add-Content $env:GITHUB_PATH $exe.DirectoryName
 
       - name: Show the Pandoc version
         run: pandoc --version
