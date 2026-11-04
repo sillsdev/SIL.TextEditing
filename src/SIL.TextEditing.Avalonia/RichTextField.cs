@@ -80,6 +80,7 @@ namespace SIL.TextEditing.Avalonia
                 if (_foreground == null) InvalidateAllLayouts();
                 else InvalidateVisual();
             };
+            HookContextRequests();
         }
 
         /// <summary>The dispatcher the field belongs to. Avalonia 12 lets a control live on a dispatcher other than the main UI
@@ -222,6 +223,7 @@ namespace SIL.TextEditing.Avalonia
             for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
             ForgetNumbersFrom(start);
             RequestSpellingIdle();
+            FindDocumentChanged();
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -318,6 +320,7 @@ namespace SIL.TextEditing.Avalonia
             foreach (var l in _layouts) l?.Dispose();
             _layouts.Clear();
             _info.Clear();
+            FindDocumentChanged();   // the highlight and the current match were worked out from the old text
             for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             InvalidateMeasure();
             InvalidateVisual();
@@ -376,6 +379,7 @@ namespace SIL.TextEditing.Avalonia
                 {
                     pl.DrawBox(context, y);
                     pl.DrawBackgrounds(context, y);
+                    DrawFindHighlights(context, pl, i, y);
                     if (Editor.HasSelection && i >= a.Paragraph && i <= b.Paragraph)
                     {
                         int s = i == a.Paragraph ? a.Offset : 0;
@@ -510,6 +514,9 @@ namespace SIL.TextEditing.Avalonia
                 SelectionWsState?.Invoke(set.Count > 1 ? "mixed:" + string.Join(",", set) : set[0]);
             }
             else SelectionWsState?.Invoke(Editor.ActiveWs);
+            // Typing and the host's own caret changes in a field the user is working in ask the host to show the caret (a move the
+            // field makes itself asks from Move).
+            if (!_moving && !_dragging && IsFocused && Editor.Document.Paragraphs.Count == _layouts.Count) RequestCaretIntoView();
         }
 
         /// <summary>The caret hit (affinity) that applies to the current caret, or null when it has none.</summary>
@@ -524,6 +531,7 @@ namespace SIL.TextEditing.Avalonia
             _moving = true;
             try { Editor.SetCaret(p, extend, p.CompareTo(Editor.Caret)); }
             finally { _moving = false; }
+            if (!_dragging) RequestCaretIntoView();
         }
 
         /// <summary>Left or Right arrow, logical as in FieldWorks: Left goes backwards in a left-to-right paragraph and
@@ -685,6 +693,9 @@ namespace SIL.TextEditing.Avalonia
                     return RaiseLeave(shift ? LeaveDirection.Previous : LeaveDirection.Next, LeaveKey.Tab, ctrl, double.NaN);
                 }
                 case Key.Up: MoveVertical(false, shift); return true;
+                case Key.F10 when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0: RaiseKeyboardContextRequest(); return true;
+                case Key.PageUp when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: if (ctrl) MovePageEdge(false, shift); else MovePage(false, shift); return true;
+                case Key.PageDown when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: if (ctrl) MovePageEdge(true, shift); else MovePage(true, shift); return true;
                 case Key.Down: MoveVertical(true, shift); return true;
                 case Key.Home:
                 {
@@ -836,8 +847,9 @@ namespace SIL.TextEditing.Avalonia
             if (!props.IsLeftButtonPressed)
             {
                 // Right click (context menu): keep a selection that was clicked inside, otherwise move the caret there.
+                // Inside means the pointer is over a selected character, not merely beside the selection's end.
                 Editor.Ordered(out var sa, out var sb);
-                bool inside = Editor.HasSelection && loc.Position.CompareTo(sa) >= 0 && loc.Position.CompareTo(sb) <= 0;
+                bool inside = Editor.HasSelection && loc.Character.CompareTo(sa) >= 0 && loc.Character.CompareTo(sb) < 0;
                 if (!inside) Move(loc.Position, false, false, loc.Hit);
                 e.Handled = true;
                 return;
@@ -885,7 +897,7 @@ namespace SIL.TextEditing.Avalonia
         protected override void OnPointerMoved(PointerEventArgs e)
         {
             if (!_dragging) return;
-            var loc = Locate(e.GetPosition(this));
+            var loc = Locate(DragPoint(e.GetPosition(this)));
             if (_dragUnit == DragUnit.Character) Move(loc.Position, true, false, loc.Hit);
             else SelectUnit(loc, false);
         }
@@ -894,6 +906,7 @@ namespace SIL.TextEditing.Avalonia
         {
             _dragging = false;
             e.Pointer.Capture(null);
+            base.OnPointerReleased(e);   // Avalonia raises its context request for a right click from here
         }
 
         protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)

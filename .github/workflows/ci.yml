@@ -21,7 +21,7 @@ jobs:
       - name: Build everything (libraries, tests, samples)
         run: dotnet build SIL.TextEditing.sln -c Release
 
-      # Each test project targets net48 (Avalonia 11.3.17 through netstandard2.0) and net10.0 (Avalonia 12).
+      # Each test project targets net48 (Avalonia 11.3.17 through netstandard2.0) and net10.0 (Avalonia 12), except the second-dispatcher tests, which are net10.0 only.
       - name: Test both target frameworks
         run: dotnet test SIL.TextEditing.sln -c Release --no-build --logger trx --results-directory TestResults
 

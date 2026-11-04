@@ -37,6 +37,7 @@ namespace SIL.TextEditing.Playground
         public const string Spelling = "Spell checking";
         public const string Long = "Long document (200 paragraphs)";
         public const string ReadOnlyRuns = "Read-only runs";
+        public const string FindReplace = "Find and replace";
         public const string ManyFields = "Many fields";
         public const string Empty = "Empty";
 
@@ -56,6 +57,7 @@ namespace SIL.TextEditing.Playground
             new Scenario(ReadOnlyRuns, "A label that may not be edited in front of editable text, a semi-editable run, and a paragraph that is all read-only. The caret moves to the nearest place where editing is allowed; typing, Delete, Backspace, cut and paste are refused across read-only text; selection and copy still work.", _ => One(ReadOnlyDoc())),
             new Scenario(Spelling, "Misspelled words get a red squiggle when the field is idle, in the paragraphs in view; a word that runs two writing systems together gets a blue one. The host's dictionaries are a short English and French word list (no Arabic). Text marked do-not-check, read-only text and the object in a word are skipped as FieldWorks skips them; text that forces checking is checked even when read-only. Put the caret in a marked word and use the Spelling buttons.", _ => One(SpellingDoc())),
             new Scenario(Long, "200 paragraphs in mixed writing systems: scrolling, caret at the far end, and cost of edits in a long document.", _ => One(LongDoc(200))),
+            new Scenario(FindReplace, "Text for the find bar: repeated words in several cases, an accented word stored composed, decomposed and bare, words in two writing systems, a picture, and a read-only label. Try Match case, Match diacritics, Whole word, a regular expression, Highlight all, Replace and Replace All (one undo step). Right-click a word, a picture or a selection to see what a context menu is told.", _ => One(FindDoc())),
             new Scenario(ManyFields, "N small fields in one window: tab between them by clicking, undo is per field, the inspector follows the focused field.", ManyDocs, many: true),
             new Scenario(Empty, "One empty paragraph: type from scratch.", _ => One(EmptyDoc())),
         };
@@ -328,6 +330,25 @@ namespace SIL.TextEditing.Playground
             var r = new Run { Ws = ws, Text = text };
             r.Props.SetInt(TextPropertyNumbers.Editable, editable);
             return r;
+        }
+
+        static Document FindDoc()
+        {
+            string acute = ((char)0x0301).ToString();
+            string composed = "caf" + (char)0x00E9;
+            var accents = Para("en", false, "en", "Accents: " + composed + " (composed), cafe" + acute + " (decomposed), cafe (bare), CAFE" + acute + ".");
+            var picture = Para("en", false, "en", "A cat beside a picture ");
+            picture.Runs.Add(Run.Object("en", RedPicture));
+            picture.Runs.Add(new Run { Ws = "en", Text = " and another cat." });
+            var label = new Paragraph { DefaultWs = "en" };
+            label.Runs.Add(Marked("en", "Label: cat ", TextPropertyNumbers.EditableNo));
+            label.Runs.Add(new Run { Ws = "en", Text = "and an editable cat." });
+            return Doc(
+                Para("en", false, "en", "The cat sat on the mat. Cat, CAT, concat and category; a cat-like cat."),
+                accents,
+                Para("en", false, "en", "Say ", "fr", "bonjour", "en", " and then ", "fr", "bonjour", "en", " again, or hello."),
+                picture,
+                label);
         }
 
         static Document ReadOnlyDoc()
