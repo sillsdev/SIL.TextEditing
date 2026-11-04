@@ -54,24 +54,88 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(new TextPosition(0, 3), field.Editor.Caret);
         });
 
-        [Fact]
-        public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_takes_linear_time() => Headless.Run(() =>
+        sealed class CountingList : IReadOnlyList<ParagraphSource.Segment>
         {
-            // The joined paragraph has one run per paragraph (the writing system alternates), and the field lays it out as the
-            // caret lands in it, so the layout is part of what the paste costs. Counted, not timed, so a busy machine cannot
-            // fail it: the layout looks up the run for a character a few times per run (binary search), where a scan from the
-            // first run would make about runs times runs / 2 lookups.
+            readonly ParagraphSource.Segment[] _items;
+            public int Reads;
+            public CountingList(ParagraphSource.Segment[] items) { _items = items; }
+            public int Count => _items.Length;
+            public ParagraphSource.Segment this[int index] { get { Reads++; return _items[index]; } }
+            public IEnumerator<ParagraphSource.Segment> GetEnumerator() => ((IEnumerable<ParagraphSource.Segment>)_items).GetEnumerator();
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        }
+
+        [Fact]
+        public void The_layout_finds_the_segment_of_a_character_by_binary_search_not_a_scan_from_the_first_run()
+        {
+            // A paragraph of many runs is laid out one segment lookup per run. Counted, not timed, so a busy machine cannot fail
+            // it: each lookup reads a few segments (log2 of the count), where a scan from the first run reads about half of them.
+            const int runs = 8000;
+            var items = new ParagraphSource.Segment[runs];
+            for (int i = 0; i < runs; i++) items[i] = new ParagraphSource.Segment { Start = i * 10, End = i * 10 + 10 };
+            var list = new CountingList(items);
+            for (int i = 0; i < runs; i++)
+                Assert.Equal(i, ParagraphSource.SegmentAt(list, i * 10 + 3));
+            Assert.Equal(runs, ParagraphSource.SegmentAt(list, runs * 10));   // past the end: none
+            Assert.True(list.Reads > 0);
+            Assert.True(list.Reads < 20L * runs, $"{list.Reads} segment reads for {runs} lookups");
+        }
+
+        [Fact]
+        public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_joins_them_into_one_laid_out_paragraph() => Headless.Run(() =>
+        {
             const int paragraphsPasted = 8000;
             var paragraphs = new List<Paragraph>();
             for (int i = 0; i < paragraphsPasted; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
             var field = Fixtures.Field(OneParagraph(string.Empty), 520, f => f.SingleParagraph = true);
-            long before = ParagraphSource.Probes;
             field.Editor.Paste(paragraphs);
             Fixtures.Layout(field, 520);
-            long probes = ParagraphSource.Probes - before;
             Assert.Single(field.Editor.Document.Paragraphs);
-            Assert.True(probes > 0);   // the layout did go through the lookup
-            Assert.True(probes < 100L * paragraphsPasted, $"{probes} segment probes for {paragraphsPasted} runs");
+            Assert.Equal(paragraphsPasted, field.Editor.Document.Paragraphs[0].Runs.Count);
+            Assert.True(field.ParagraphLayoutFor(0).Lines.Count > 0);
+        });
+
+        static long LayoutsForTabs(int paragraphs, System.Action<Paragraph>? shape = null)
+        {
+            var doc = new Document();
+            for (int i = 0; i < paragraphs; i++)
+            {
+                var p = new Paragraph { DefaultWs = "en" };
+                p.Runs.Add(new Run { Ws = "en", Text = "abc " + i });
+                var locked = new Run { Ws = "en", Text = "LOCK" };
+                locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+                p.Runs.Add(locked);
+                p.Runs.Add(new Run { Ws = "en", Text = "def" });
+                shape?.Invoke(p);
+                doc.Paragraphs.Add(p);
+            }
+            var field = Fixtures.Field(doc, 520);
+            field.InvalidateAllLayouts();   // nothing is laid out, as in a long document whose paragraphs are not on screen
+            field.Editor.SetCaret(new TextPosition(0, 0));
+            long before = field.LayoutCount;
+            field.HandleKey(Key.Tab, KeyModifiers.None);           // to the place after the locked run
+            field.HandleKey(Key.Tab, KeyModifiers.None);           // to the next paragraph
+            field.HandleKey(Key.Tab, KeyModifiers.Control);        // to the last place of the document
+            Assert.Equal(new TextPosition(paragraphs - 1, doc.Paragraphs[paragraphs - 1].Length), field.Editor.Caret);
+            return field.LayoutCount - before;
+        }
+
+        [Fact]
+        public void Tab_over_a_long_document_lays_out_only_the_paragraphs_with_a_line_limit_it_has_to_ask() => Headless.Run(() =>
+        {
+            // Only a paragraph with a line limit needs its layout to know what is visible, so Tab in a document without limits lays
+            // out the paragraphs around the caret and not every paragraph; the count does not grow with the document.
+            long small = LayoutsForTabs(20);
+            long large = LayoutsForTabs(200);
+            Assert.True(large <= small + 2, $"{large} layouts for 200 paragraphs, {small} for 20");
+            Assert.True(large < 20);
+        });
+
+        [Fact]
+        public void Tab_still_lays_out_a_paragraph_that_has_a_line_limit_to_find_what_is_visible() => Headless.Run(() =>
+        {
+            long limited = LayoutsForTabs(20, p => p.Props.SetInt(TextPropertyNumbers.MaxLines, 1));
+            Assert.True(limited >= 19, $"{limited} layouts for 20 limited paragraphs");   // all but the first, which the caret already laid out
         });
 
         [Fact]
@@ -181,6 +245,26 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.False(PauseTimerRunning(field));
             window.Close();
         });
+
+        [Fact]
+        public void A_field_with_a_pause_scheduler_never_allocates_a_dispatcher_timer() => Headless.Run(() =>
+        {
+            var (window, field) = Fixtures.InWindow(OneParagraph("ab"));
+            try
+            {
+                var scheduled = 0;
+                field.PauseScheduler = (after, run) => { scheduled++; return new NoPause(); };
+                field.Editor.SetCaret(new TextPosition(0, 2));
+                field.Type("x");
+                field.Type("y");
+                Assert.Equal(2, scheduled);   // the scheduler was asked after each edit
+                var timer = typeof(RichTextField).GetField("_pauseTimer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(field);
+                Assert.Null(timer);
+            }
+            finally { window.Close(); }
+        });
+
+        sealed class NoPause : System.IDisposable { public void Dispose() { } }
 
         static bool PauseTimerRunning(RichTextField field)
         {

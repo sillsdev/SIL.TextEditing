@@ -52,15 +52,17 @@ one, and can change without superseding anything.
   spaces on every path (as in FieldWorks). Pasting only separators and tabs, however many, over a selection replaces the
   selection with nothing. Because a trailing separator is dropped, pasting
   "a" and a newline at the start of "bcd" gives "abcd": the words fuse. That is the FieldWorks result, not a bug.
-- **Paste removes tab characters in every mode.** FieldWorks strips tabs from pasted text before it looks at
-  paragraphs, so a field that takes paragraphs removes them too; the field used to keep them there (issue #39). It
+- **Paste removes tab characters in every mode.** FieldWorks removes tabs from pasted text whether or not the
+  view holds paragraphs, so a field that takes paragraphs removes them too; the field used to keep them there (issue #39). It
   applies to a pasted fragment (each paragraph of it) and to pasted plain text. Typed text gets it too, as a default
   (the Tab key is navigation and never types a tab, above). Read from FieldWorks' paste behaviour, not an owner decision.
 - **Edits belong on the UI thread.** A change to the document made through `DocumentEditor` from another thread throws an
   `InvalidOperationException` at once, before anything changes (issue #33; `DocumentEditor.AccessCheck`, which
   `RichTextField` sets). The field answers document changes by changing Avalonia state, which only the UI thread may do,
-  and FieldWorks hosts make their edits on the UI thread, so a clear refusal is enough; marshalling the notification
-  would leave the document changing under a layout on another thread. Default, not an owner decision.
+  so a clear refusal is enough; marshalling the notification would leave the document changing under a layout on
+  another thread. FieldWorks marshals off-thread data changes itself, so a host adapter that forwards LCModel
+  `PropChanged` into `ExternalReplaceParagraph` or `Apply` must marshal to the UI thread first. Default, not an owner
+  decision.
 - **Enter at an editable and read-only boundary can leave a paragraph the field cannot join back.** Enter between an
   editable and a read-only run can make a paragraph that is entirely read-only. Backspace into it is refused (ADR 0019),
   so only the host's undo removes it. Delete in an empty editable paragraph beside read-only text is refused for the
@@ -79,6 +81,25 @@ one, and can change without superseding anything.
   The same holds when a wrap, not a break, puts the visible end on the boundary of a locked run and the hidden editable
   run after it (issue #38): the visible end has no editable neighbour that can be seen, so it is not an editable place,
   the caret is not offered there and Tab leaves. A lone break that ends the paragraph is not hidden text (above).
+- **Backspace and Delete join at a paragraph mark even when the text beside it is hidden.** A paragraph that starts with an
+  editable hard break and whose line limit hides the rest can be joined by Backspace at its start, or by Delete at the end
+  of the paragraph above (issue #56; since #38 the join had been refused, though it worked before). The caret rests at the
+  start of that paragraph, so the mark is reachable, and a join changes no text it cannot reach; the "hidden text is not
+  an editable place" rule above applies to typing and Tab, not to the mark. A mark whose neighbour may not be edited is
+  still refused (ADR 0019), and Backspace into a line-limited paragraph above whose end is hidden is still refused by the
+  field, because the joined text would vanish. Read from FieldWorks' Backspace at the start of a paragraph, which moves the
+  paragraph's text into the one above and looks at editability, not at truncation; the combination itself was not run
+  there. Default, not an owner decision.
+- **The writing-system event is complete for a host that switches keyboards (ADR 0008).** `ActiveWsChanged` carries the old and
+  the new writing system and is raised once per change, never when nothing changed: when the caret moves into text of another
+  writing system, when an edit, an undo or `SetActiveWs` (the writing-system toolbar) changes it, and when a selection's
+  first writing system changes. FieldWorks sets the keyboard for the first writing system a selection covers, not for the end
+  the caret is at, so selecting forward from English into French changes nothing and the field matches that. It is also raised
+  when the field gains focus, with the old and new both the writing system at the caret, because the keyboard in effect then
+  belongs to whatever had focus before (FieldWorks sets the keyboard for the selection on focus too). The one difference from
+  FieldWorks is ours: its views do not switch the keyboard while they lack focus, the field still reports a change while it lacks
+  focus, and the host ignores one from a field that is not the focused one. The old and new being equal on focus gain, and
+  reporting while unfocused, are defaults, not owner decisions.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

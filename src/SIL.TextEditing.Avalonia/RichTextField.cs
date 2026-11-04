@@ -65,18 +65,18 @@ namespace SIL.TextEditing.Avalonia
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => ActiveWsChanged?.Invoke(o, n);
             Editor.CaretMoved += OnCaretMoved;
-            Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count ? VisibleLength(p) : int.MaxValue;
+            Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count && FormatOf(p).MaxLines > 0 ? VisibleLength(p) : int.MaxValue;
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
-            GotFocus += (o, e) => InvalidateVisual();
+            GotFocus += (o, e) => { InvalidateVisual(); ActiveWsChanged?.Invoke(Editor.ActiveWs, Editor.ActiveWs); };
             LostFocus += (o, e) => { Editor.CloseUndoGroup(); InvalidateVisual(); };
             Editor.Committed += d => RestartPauseTimer();
             ActualThemeVariantChanged += (o, e) => InvalidateVisual();
         }
 
-        static void RequireUIThread()
+        void RequireUIThread()
         {
-            if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            if (!CheckAccess())
                 throw new InvalidOperationException("A RichTextField's document must be edited on the UI thread: the field changes Avalonia state when the document changes. Marshal the edit with Dispatcher.UIThread.");
         }
 
@@ -138,7 +138,15 @@ namespace SIL.TextEditing.Avalonia
         public string? Preedit => _preedit;
         public TextInputMethodClient ImeClient => _ime;
 
-        /// <summary>Raised synchronously when the active writing system changes: old, new.</summary>
+        /// <summary>Tells the host which writing system's keyboard to switch to (ADR 0008; the field never touches keyboards).
+        /// Raised synchronously, with the old and the new writing system, once per change and never when nothing changed: when the
+        /// caret moves into text of another writing system, when a selection's first writing system changes (FieldWorks uses the
+        /// first writing system a selection covers, not the end the caret is at), when an edit, an undo or <see cref="DocumentEditor.SetActiveWs"/>
+        /// (the writing-system toolbar) changes it. It is also raised when the field gains focus, with the old and new both the
+        /// writing system at the caret, because the keyboard then in effect belongs to whatever had focus before and the
+        /// writing system here may not have changed. The field raises it whether or not it has focus, as FieldWorks' views
+        /// do not: a host switches the keyboard only for the field the user is in (the one that last gained focus), and ignores
+        /// a change reported by any other.</summary>
         public event Action<string, string>? ActiveWsChanged;
         /// <summary>Raised in single-paragraph mode when Enter is pressed (Shift+Enter is not passed on: it inserts a hard line break): the host decides what it means, as a
         /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it
@@ -349,7 +357,7 @@ namespace SIL.TextEditing.Avalonia
             // Edits are refused off the UI thread (Editor.AccessCheck), so this is only reached from another thread when a host
             // has removed that check; a DispatcherTimer has thread affinity, so the timer is handed to the UI thread then. A field
             // that is not on screen has no timer (it closes the step when it leaves the screen).
-            if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            if (!CheckAccess())
             {
                 global::Avalonia.Threading.Dispatcher.UIThread.Post(RestartPauseTimer);
                 return;
@@ -361,12 +369,7 @@ namespace SIL.TextEditing.Avalonia
                 _pauseHandle = null;
                 return;
             }
-            if (_pauseTimer == null)
-            {
-                _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
-                _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
-            }
-            _pauseTimer.Stop();
+            _pauseTimer?.Stop();
             _pauseHandle?.Dispose();
             _pauseHandle = null;
             if (!Editor.HasOpenUndoGroup) return;
@@ -376,6 +379,11 @@ namespace SIL.TextEditing.Avalonia
                 _pauseHandle = scheduler(Editor.TypingPause, () => Editor.CloseUndoGroup());
                 return;
             }
+            if (_pauseTimer == null)
+            {
+                _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
+                _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
+            }
             _pauseTimer.Interval = Editor.TypingPause;
             _pauseTimer.Start();
         }
@@ -384,9 +392,10 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Starts the one-shot timer that ends a typing step when the pause passes (ADR 0023): it is given the pause
         /// (<see cref="DocumentEditor.TypingPause"/>) and the action to run when it elapses, and returns something that cancels
-        /// it; the field cancels and asks again after every edit. Null, the default, uses a dispatcher timer. A host or a test
-        /// with its own clock sets it to drive the pause without waiting.</summary>
-        public Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
+        /// it; the field cancels and asks again after every edit. Null, the default, uses a dispatcher timer, which the field
+        /// does not create while a scheduler is set. Internal: a test with its own clock sets it to drive the pause without
+        /// waiting, and the action it is given must run on the UI thread, which the field does not check.</summary>
+        internal Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
 
         bool _onScreen;
 
@@ -404,7 +413,9 @@ namespace SIL.TextEditing.Avalonia
             base.OnDetachedFromVisualTree(e);
         }
 
-        /// <summary>The text a caret can reach in a paragraph: all of it, or the part a line limit leaves showing.</summary>
+        /// <summary>The text a caret can reach in a paragraph with a line limit: the part the limit leaves showing. Only such a paragraph
+        /// needs a layout to know it; the editor is told there is no limit for any other, so searching for an editable place does not lay
+        /// out paragraphs that are not on screen.</summary>
         int VisibleLength(int paragraph) => ParagraphLayoutFor(paragraph).VisibleEnd;
 
         /// <summary>A position moved back to the end of the visible text when it is in text a line limit hides (FieldWorks puts an

@@ -223,7 +223,11 @@ namespace SIL.TextEditing.Tests
             }
             var e = new DocumentEditor(doc);
             e.SetCaret(new TextPosition(0, 0));
-            var clock = System.Diagnostics.Stopwatch.StartNew();
+            // Counted, not timed, so a busy machine cannot fail it: finding the places must not ask whether each insertion point
+            // takes typing (100 paragraphs of 100,000 characters would be ten million questions). The probe throws at the
+            // budget, so a scan fails at once instead of running to its end.
+            int asked = 0;
+            e.EditableAtProbe = () => { if (++asked > 1000) throw new System.InvalidOperationException("scanned the insertion points one by one"); };
             for (int i = 0; i < 10; i++)
             {
                 Assert.True(e.TryGetEditablePlace(EditablePlace.Next, out var next));
@@ -231,7 +235,7 @@ namespace SIL.TextEditing.Tests
                 Assert.True(e.TryGetEditablePlace(EditablePlace.Last, out var last));
                 Assert.Equal(new TextPosition(99, 100008), last);
             }
-            Assert.True(clock.ElapsedMilliseconds < 500, "ten rounds of Tab took " + clock.ElapsedMilliseconds + " ms");
+            Assert.True(asked <= 1000);
         }
 
         [Fact]

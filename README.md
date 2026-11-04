@@ -75,6 +75,16 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
   and pasted text (plain or rich) are converted before insertion and the caret lands after the converted text. Plain
   text the field puts on the clipboard is always NFC; the internal rich format keeps the stored form.
 
+## Keyboards (ADR 0008)
+
+The field never switches keyboards; the host does. Subscribe to `RichTextField.ActiveWsChanged` (old and new writing system)
+and switch the OS keyboard or Keyman to the new one, but only for the field the user is in: the event is raised whether or not
+the field has focus. It is raised once per change, never when the writing system stays the same, when the caret moves into text
+of another writing system, when a selection's first writing system changes (a selection takes the writing system of the first
+text it covers, as in FieldWorks), when an edit or undo leaves the caret in another one, and when the host or the writing-system
+toolbar calls `Editor.SetActiveWs`. It is also raised, with old and new equal, when the field gains focus, so the host can
+switch to the keyboard of the writing system at the caret even though nothing changed in this field.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48

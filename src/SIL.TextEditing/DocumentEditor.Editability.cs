@@ -28,18 +28,26 @@ namespace SIL.TextEditing
             return limit == null ? len : Math.Max(0, Math.Min(len, limit(paragraph)));
         }
 
+        /// <summary>Called each time an insertion point is asked whether it takes typing, so a test can count that work (and stop a
+        /// scan that asks about every offset) instead of timing it.</summary>
+        internal Action? EditableAtProbe { get; set; }
+
         /// <summary>True when an insertion point at <paramref name="p"/> can take typing: the paragraph is empty, or the
         /// run on either side is editable (FieldWorks asks for both sides of the point).</summary>
-        public bool IsEditableAt(TextPosition p)
+        public bool IsEditableAt(TextPosition p) => TakesTypingAt(p, true);
+
+        bool TakesTypingAt(TextPosition p, bool hiddenTextCounts)
         {
+            EditableAtProbe?.Invoke();
             var para = Document.Paragraphs[p.Paragraph];
             if (para.Length == 0) return true;
             var before = para.RunBefore(p.Offset, out _);
             var after = para.RunAfter(p.Offset, out _);
             if (before != null && AllowsEditing(before)) return true;
             // Text a line limit hides is not a place to edit, so the run after the visible end does not count: a point whose only
-            // editable neighbour is hidden is not editable (ADR 0024).
-            return after != null && AllowsEditing(after) && !IsHiddenFrom(p.Paragraph, p.Offset);
+            // editable neighbour is hidden is not editable (ADR 0024). A paragraph mark is not such a place: a join at it changes
+            // no hidden text, so it asks without this rule.
+            return after != null && AllowsEditing(after) && (!hiddenTextCounts || !IsHiddenFrom(p.Paragraph, p.Offset));
         }
 
         /// <summary>True when the text from <paramref name="offset"/> on is hidden by the line limit. A lone break that ends the
@@ -63,7 +71,7 @@ namespace SIL.TextEditing
             if (a.CompareTo(b) > 0) { var t = a; a = b; b = t; }
             if (a.Equals(b)) return IsEditableAt(a);
             for (int pi = a.Paragraph; pi < b.Paragraph; pi++)
-                if (!IsEditableAt(new TextPosition(pi, Document.Paragraphs[pi].Length)) || !IsEditableAt(new TextPosition(pi + 1, 0)))
+                if (!TakesTypingAt(new TextPosition(pi, Document.Paragraphs[pi].Length), false) || !TakesTypingAt(new TextPosition(pi + 1, 0), false))
                     return false;
             for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
             {
