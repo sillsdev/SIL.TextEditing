@@ -29,7 +29,13 @@ namespace SIL.TextEditing
 
         /// <summary>Raised after each edit with the reversible change.</summary>
         public event Action<EditDelta>? Committed;
-        /// <summary>Raised when the active writing system changes: old, new.</summary>
+        /// <summary>Raised when the active writing system changes: old, new (ADR 0008). That happens when the caret moves into
+        /// text of another writing system, when a selection's first writing system changes (FieldWorks sets the keyboard for
+        /// the first writing system a selection covers, not for the end the caret is at), when an edit or the host's
+        /// <see cref="Apply"/> leaves the caret in another one, and when <see cref="SetActiveWs"/> chooses one for typing. It is
+        /// raised once per change and never when the writing system stays the same. The editor has no notion of focus, so it
+        /// is raised whether or not the field has focus. A host that switches keyboards subscribes to
+        /// <c>RichTextField.ActiveWsChanged</c> instead, which is raised only while the field has focus.</summary>
         public event Action<string, string>? ActiveWsChanged;
         public event Action? CaretMoved;
         /// <summary>Raised on any change to the document: start paragraph, removed paragraphs, added paragraphs.</summary>
@@ -105,9 +111,29 @@ namespace SIL.TextEditing
             CaretMoved?.Invoke();
         }
 
+        /// <summary>The writing system of the first text a range selection covers, which is what FieldWorks sets the keyboard
+        /// for, whichever end the caret is at.</summary>
+        string FirstWsOfSelection()
+        {
+            Ordered(out var a, out var b);
+            for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
+            {
+                int s = pi == a.Paragraph ? a.Offset : 0;
+                int e = pi == b.Paragraph ? b.Offset : Document.Paragraphs[pi].Length;
+                int pos = 0;
+                foreach (var r in Document.Paragraphs[pi].Runs)
+                {
+                    int rs = pos, re = pos + r.Text.Length;
+                    pos = re;
+                    if (re > s && rs < e) return r.Ws;
+                }
+            }
+            return WsAt(Caret);
+        }
+
         void RefreshWs()
         {
-            var n = _wsOverride ? ActiveWs : WsAt(Caret);
+            var n = _wsOverride ? ActiveWs : HasSelection ? FirstWsOfSelection() : WsAt(Caret);
             if (n == ActiveWs) return;
             var o = ActiveWs;
             ActiveWs = n;

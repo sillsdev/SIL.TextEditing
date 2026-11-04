@@ -223,7 +223,11 @@ namespace SIL.TextEditing.Tests
             }
             var e = new DocumentEditor(doc);
             e.SetCaret(new TextPosition(0, 0));
-            var clock = System.Diagnostics.Stopwatch.StartNew();
+            // Counted, not timed, so a busy machine cannot fail it: finding the places must not ask whether each insertion point
+            // takes typing (100 paragraphs of 100,000 characters would be ten million questions). The probe throws at the
+            // budget, so a scan fails at once instead of running to its end.
+            int asked = 0;
+            e.EditableAtProbe = () => { if (++asked > 1000) throw new System.InvalidOperationException("scanned the insertion points one by one"); };
             for (int i = 0; i < 10; i++)
             {
                 Assert.True(e.TryGetEditablePlace(EditablePlace.Next, out var next));
@@ -231,7 +235,79 @@ namespace SIL.TextEditing.Tests
                 Assert.True(e.TryGetEditablePlace(EditablePlace.Last, out var last));
                 Assert.Equal(new TextPosition(99, 100008), last);
             }
-            Assert.True(clock.ElapsedMilliseconds < 500, "ten rounds of Tab took " + clock.ElapsedMilliseconds + " ms");
+            Assert.True(asked <= 1000);
+        }
+
+        [Fact]
+        public void Setting_the_caret_inside_a_very_long_read_only_run_finds_the_nearest_editable_point_from_the_run_boundaries()
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(new Run { Ws = "en", Text = "ab" });
+            p.Runs.Add(Marked(new string('L', 100000), TextPropertyNumbers.EditableNo));
+            p.Runs.Add(new Run { Ws = "en", Text = "cd" });
+            var e = new DocumentEditor(Doc(p));
+            // Counted, not timed: the question "does this point take typing?" is asked a handful of times, not once per offset of the
+            // locked run. The probe throws at the budget so a scan fails at once.
+            int asked = 0;
+            e.EditableAtProbe = () => { if (++asked > 100) throw new System.InvalidOperationException("scanned the insertion points one by one"); };
+            for (int i = 0; i < 10; i++)
+            {
+                Assert.Equal(new TextPosition(0, 2), e.NearestEditable(new TextPosition(0, 50000)));          // the nearer side: the start of the lock
+                Assert.Equal(new TextPosition(0, 100002), e.NearestEditable(new TextPosition(0, 60000)));
+                Assert.Equal(new TextPosition(0, 100002), e.NearestEditable(new TextPosition(0, 50000), 1));    // a direction searches that way first
+                Assert.Equal(new TextPosition(0, 2), e.NearestEditable(new TextPosition(0, 99999), -1));
+                Assert.Equal(new TextPosition(0, 1), e.NearestEditable(new TextPosition(0, 1)));                // already editable
+            }
+            Assert.True(asked <= 100);
+        }
+
+        [Fact]
+        public void NearestEditable_agrees_with_asking_every_insertion_point_in_paragraphs_of_mixed_runs_and_line_limits()
+        {
+            var rng = new System.Random(60);
+            int checkedPoints = 0;
+            for (int trial = 0; trial < 400; trial++)
+            {
+                var p = new Paragraph { DefaultWs = "en" };
+                int runs = rng.Next(0, 6);
+                for (int i = 0; i < runs; i++)
+                {
+                    string text = new string('a', rng.Next(0, 4)) + (rng.Next(4) == 0 ? DocumentEditor.LineSeparator.ToString() : string.Empty);
+                    p.Runs.Add(Marked(text, new[] { TextPropertyNumbers.EditableYes, TextPropertyNumbers.EditableNo, TextPropertyNumbers.EditableSemi }[rng.Next(3)]));
+                }
+                var e = new DocumentEditor(Doc(p));
+                int len = p.Length;
+                if (rng.Next(2) == 0) { int limit = rng.Next(0, len + 1); e.CaretLimit = para => limit; }
+                int visible = e.CaretLimit == null ? len : e.CaretLimit(0);
+                for (int offset = 0; offset <= len; offset++)
+                    foreach (int direction in new[] { -1, 0, 1 })
+                    {
+                        var at = new TextPosition(0, offset);
+                        Assert.Equal(ByAskingEveryPoint(e, at, direction, visible), e.NearestEditable(at, direction));
+                        checkedPoints++;
+                    }
+            }
+            Assert.True(checkedPoints > 1000);
+        }
+
+        /// <summary>What NearestEditable answers, worked out the slow way: ask every insertion point up to the visible end.</summary>
+        static TextPosition ByAskingEveryPoint(DocumentEditor e, TextPosition p, int direction, int visibleEnd)
+        {
+            if (e.IsEditableAt(p)) return p;
+            int Find(int from, int step)
+            {
+                for (int o = from; o >= 0 && o <= visibleEnd; o += step)
+                    if (e.IsEditableAt(new TextPosition(p.Paragraph, o))) return o;
+                return -1;
+            }
+            int fwd = Find(p.Offset + 1, 1), back = Find(p.Offset - 1, -1);
+            int pick;
+            if (fwd < 0) pick = back;
+            else if (back < 0) pick = fwd;
+            else if (direction > 0) pick = fwd;
+            else if (direction < 0) pick = back;
+            else pick = p.Offset - back <= fwd - p.Offset ? back : fwd;
+            return pick < 0 ? p : new TextPosition(p.Paragraph, pick);
         }
 
         [Fact]

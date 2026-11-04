@@ -130,28 +130,34 @@ namespace SIL.TextEditing.Avalonia
 
         public string Text = string.Empty;
         public List<Segment> Segments = new List<Segment>();
+        /// <summary>Test seam: when set, <see cref="GetTextRun"/> looks segments up in this list instead of <see cref="Segments"/>
+        /// (the same segments), so a test can count the reads.</summary>
+        internal IReadOnlyList<Segment>? SegmentLookup;
         public Func<string, IImage?>? ObjectImage;
         public bool ObjectAsGlyph;
 
-        /// <summary>Segments looked at by <see cref="GetTextRun"/> since the process started: a test reads it to prove a long
-        /// paragraph costs a few probes per call, not a scan, without depending on how fast the machine is.</summary>
-        internal static long Probes;
+        /// <summary>The index of the first segment that ends after <paramref name="textSourceIndex"/>, or the count when none does.</summary>
+        internal static int SegmentAt(IReadOnlyList<Segment> segments, int textSourceIndex)
+        {
+            // Segments are contiguous and in order, so the first one that ends after the index is the one that holds it. The
+            // formatter asks once per segment, so a scan from the start would make a paragraph of many runs quadratic.
+            int lo = 0, hi = segments.Count;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) / 2;
+                if (segments[mid].End > textSourceIndex) hi = mid; else lo = mid + 1;
+            }
+            return lo;
+        }
 
         public TextRun? GetTextRun(int textSourceIndex)
         {
             if (textSourceIndex >= Text.Length) return null;
-            // Segments are contiguous and in order, so the first one that ends after the index is the one that holds it. The
-            // formatter asks once per segment, so a scan from the start would make a paragraph of many runs quadratic.
-            int lo = 0, hi = Segments.Count;
-            while (lo < hi)
+            IReadOnlyList<Segment> segments = SegmentLookup ?? Segments;
+            int lo = SegmentAt(segments, textSourceIndex);
+            if (lo < segments.Count)
             {
-                Probes++;
-                int mid = (lo + hi) / 2;
-                if (Segments[mid].End > textSourceIndex) hi = mid; else lo = mid + 1;
-            }
-            if (lo < Segments.Count)
-            {
-                var s = Segments[lo];
+                var s = segments[lo];
                 if (textSourceIndex < s.Start) return null;
                 if (s.IsObject && ObjectAsGlyph)
                     return new TextCharacters(Text.AsMemory(textSourceIndex, 1), new RunTextProperties(s.Properties.Typeface, 28, s.Properties.ForegroundBrush ?? Brushes.Black, null, s.Properties.CultureInfo ?? CultureInfo.InvariantCulture, null));

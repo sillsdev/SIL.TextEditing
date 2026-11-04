@@ -27,6 +27,22 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void Gaining_focus_logs_the_keyboard_the_host_would_switch_to_even_when_the_writing_system_did_not_change() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.MixedBidi))
+            {
+                int inside = s.ParagraphText(0).IndexOf("كتاب") + 2;
+                s.Caret(0, inside);
+                s.Find<global::Avalonia.Controls.TextBox>(PlaygroundView.Names.EventLog).Focus();   // the keyboard of another control is in effect
+                Headless.Pump();
+                int before = System.Linq.Enumerable.Count(s.View.EventLog, l => l.Contains("focus gained, ws ar: would switch keyboard to ar"));
+                s.Field.Focus();
+                Headless.Pump();
+                Assert.Equal(before + 1, System.Linq.Enumerable.Count(s.View.EventLog, l => l.Contains("focus gained, ws ar: would switch keyboard to ar")));
+            }
+        });
+
+        [Fact]
         public void The_writing_system_buttons_set_what_is_typed_next_and_the_label_follows() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Empty))

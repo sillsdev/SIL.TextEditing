@@ -36,16 +36,22 @@ namespace SIL.TextEditing.Avalonia.Tests
         [Fact]
         public void Typing_through_text_input_uses_the_active_ws_and_the_ws_label_event_fires() => Headless.Run(() =>
         {
-            var field = Fixtures.Field(Basic());
-            var seen = new List<string>();
-            field.ActiveWsChanged += (o, n) => seen.Add(o + ">" + n);
-            field.Editor.SetCaret(new TextPosition(0, 9));
-            field.Editor.SetCaret(new TextPosition(0, 2));
-            Assert.Equal(new[] { "en>fr", "fr>en" }, seen);
-            field.Editor.SetCaret(new TextPosition(0, 13));
-            field.Editor.SetActiveWs("en");
-            field.Type("X");
-            Assert.Equal("en", field.Editor.Document.Paragraphs[0].RunAfter(13, out _)!.Ws);
+            var (window, field) = Fixtures.InWindow(Basic());   // announced only while the field has focus (#59)
+            try
+            {
+                field.Focus();
+                Headless.Pump();
+                var seen = new List<string>();
+                field.ActiveWsChanged += (o, n) => seen.Add(o + ">" + n);
+                field.Editor.SetCaret(new TextPosition(0, 9));
+                field.Editor.SetCaret(new TextPosition(0, 2));
+                Assert.Equal(new[] { "en>fr", "fr>en" }, seen);
+                field.Editor.SetCaret(new TextPosition(0, 13));
+                field.Editor.SetActiveWs("en");
+                field.Type("X");
+                Assert.Equal("en", field.Editor.Document.Paragraphs[0].RunAfter(13, out _)!.Ws);
+            }
+            finally { window.Close(); }
         });
 
         [Fact]
