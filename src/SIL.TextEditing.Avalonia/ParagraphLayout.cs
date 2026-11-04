@@ -454,6 +454,8 @@ namespace SIL.TextEditing.Avalonia
         }
         readonly OffsetMap? _offsets;
         readonly List<RunSlot>? _slots;
+        /// <summary>The carets of the line's text that the control holds away from where the layout has them (<see cref="ParagraphLayout.HitTestDetailed"/>); null until asked for.</summary>
+        internal List<ParagraphLayout.Stop>? HeldStops;
         Justification? _justification;
 
         /// <summary>True when the line is stretched to the edges of the text area (a justified paragraph's line that is not its last).</summary>
@@ -1580,7 +1582,11 @@ namespace SIL.TextEditing.Avalonia
                 }
             }
             if (!last && e == max && max > li.Start) caretHit = TrailingHit(max);
-            if (e <= max && PreeditAt < 0) HangingCaretAt(li, point.X, last, max, h.FirstCharacterIndex, ref e, ref caretHit);
+            if (e <= max && PreeditAt < 0)
+            {
+                HangingCaretAt(li, point.X, last, max, h.FirstCharacterIndex, ref e, ref caretHit);
+                HeldCaretAt(li, point.X, ref e, ref caretHit);
+            }
             int ch = Math.Max(0, Math.Min(Math.Max(0, EffectiveText.Length - 1), h.FirstCharacterIndex));
             var result = new HitResult
             {
@@ -1618,6 +1624,35 @@ namespace SIL.TextEditing.Avalonia
                 e = o;
                 caretHit = hit;
             }
+        }
+
+        /// <summary>A caret of the line's text that the control holds at its edge (text reaching past it, as a justified or right-aligned line's does) is
+        /// drawn at the edge, not where the layout has it, so a click at it goes to it when it is nearer than the caret the layout gave: the layout's own
+        /// answer for that x can be the letter beside it.</summary>
+        void HeldCaretAt(LineInfo li, double x, ref int e, ref CharacterHit caretHit)
+        {
+            var held = li.HeldStops ??= HeldStopsOf(li);
+            if (held.Count == 0) return;
+            double best = Math.Abs(CaretX(li, caretHit) - x);
+            foreach (var stop in held)
+            {
+                double away = Math.Abs(stop.X - x);
+                if (away >= best) continue;
+                best = away;
+                e = stop.Offset;
+                caretHit = stop.Hit;
+            }
+        }
+
+        /// <summary>The caret stops among a line's text (not the spaces it ends with) that are drawn somewhere other than the layout has them.</summary>
+        List<Stop> HeldStopsOf(LineInfo li)
+        {
+            var result = new List<Stop>();
+            if (li.IsEmpty || double.IsInfinity(LayoutWidth)) return result;
+            int core = TextBeforeTrailingSpaces(li);
+            foreach (var stop in VisualStops(li))
+                if (stop.Offset <= core && Math.Abs(CaretXBeforeClamp(li, stop.Hit) - stop.X) > 0.01) result.Add(stop);
+            return result;
         }
 
         public List<Rect> SelectionRects(int from, int to)
