@@ -76,6 +76,31 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void A_direct_ParagraphLayoutFor_after_the_host_changes_an_earlier_paragraphs_bullet_scheme_gives_the_new_number() => Headless.Run(() =>
+        {
+            var doc = Five();
+            foreach (var p in doc.Paragraphs.Skip(1)) p.Props.SetInt(TextPropertyNumbers.BulNumScheme, 10);
+            var f = Fixtures.Field(doc, 520);
+            string second = f.ParagraphLayoutFor(2).LabelText;
+            doc.Paragraphs[0].Props.SetInt(TextPropertyNumbers.BulNumScheme, 10);     // no measure in between: only the public call looks at paragraph 2
+            Assert.NotEqual(second, f.ParagraphLayoutFor(2).LabelText);
+            Assert.NotEqual(string.Empty, f.ParagraphLayoutFor(0).LabelText);
+        });
+
+        [Fact]
+        public void A_second_host_edit_before_the_next_measure_still_forgets_the_find_highlight_and_current_match() => Headless.Run(() =>
+        {
+            var doc = Five();
+            var f = Fixtures.Field(doc, 520);
+            var options = new FindOptions { Pattern = "four" };
+            doc.Paragraphs[0].Runs[0].Text = "one one";                  // the first host edit: nothing is measured after it
+            Assert.True(f.Find(options));                               // a match worked out from the text after the first edit
+            Assert.NotNull(f.CurrentMatch);
+            doc.Paragraphs[3].Runs[0].Text = "xx four";                 // the second edit, before any measure: the match no longer means anything
+            Assert.Null(f.CurrentMatch);
+        });
+
+        [Fact]
         public void A_direction_the_host_sets_changes_the_layout() => Headless.Run(() =>
         {
             var doc = Five();

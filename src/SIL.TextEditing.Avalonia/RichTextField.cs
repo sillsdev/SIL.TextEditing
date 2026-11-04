@@ -296,6 +296,7 @@ namespace SIL.TextEditing.Avalonia
         /// after it are worked out again. Comparing a number is cheap, so every use asks (issue 101).</summary>
         ParaInfo Current(int index)
         {
+            if (_stampsStale) SweepStamps();
             var info = _info[index];
             var paragraphs = Editor.Document.Paragraphs;
             if (index >= paragraphs.Count) return info;

@@ -24,7 +24,27 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>The match the host's dialog is on, or null. It is forgotten when the document changes (a replacement, typing,
         /// an undo), because its range may no longer mean anything.</summary>
-        public TextRange? CurrentMatch => _currentMatch;
+        public TextRange? CurrentMatch
+        {
+            get
+            {
+                SyncFindState();
+                return _currentMatch;
+            }
+        }
+
+        /// <summary>The value of <c>_docVersion</c> the current match and the highlight cache were worked out at.</summary>
+        int _findVersion;
+
+        /// <summary>Drops the current match and the highlight cache when a paragraph changed since they were worked out, even if the field has not
+        /// measured since (a second host edit before the next measure is not told apart from the first by the measure guard).</summary>
+        void SyncFindState()
+        {
+            int version = System.Threading.Volatile.Read(ref _docVersion);
+            if (version == _findVersion) return;
+            _findVersion = version;
+            FindDocumentChanged();
+        }
 
         /// <summary>Finds the next (or previous) match from the selection, selects it, makes it the current match and asks the host to
         /// scroll it into view (<see cref="ScrollRequested"/>). False when there is none.</summary>
@@ -48,6 +68,7 @@ namespace SIL.TextEditing.Avalonia
             finally { _moving = false; }
             _goalX = -1;
             _hit = null;
+            SyncFindState();
             _currentMatch = match;
             InvalidateVisual();
             RequestRangeIntoView(match);
@@ -87,6 +108,7 @@ namespace SIL.TextEditing.Avalonia
 
         void DrawFindHighlights(DrawingContext context, ParagraphLayout layout, int index, double y)
         {
+            SyncFindState();
             if (!_highlightAll && _currentMatch == null) return;
             if (_highlightAll && _highlightOptions != null && !_highlightTimedOut)
             {
