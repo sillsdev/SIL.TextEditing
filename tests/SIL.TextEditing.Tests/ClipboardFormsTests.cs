@@ -55,11 +55,11 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
-        public void A_run_with_no_writing_system_id_counts_as_lacking_one()
+        public void A_run_with_no_writing_system_id_takes_the_target_without_being_reported_as_missing()
         {
             var fragment = new[] { Para("", "", "text") };
             var mapping = ClipboardWritingSystems.MapMissing(fragment, ws => true, "en");
-            Assert.Equal(new[] { "" }, mapping.Missing.ToArray());
+            Assert.False(mapping.Any);
             Assert.Equal("en", fragment[0].Runs[0].Ws);
             Assert.Equal("en", fragment[0].DefaultWs);
         }

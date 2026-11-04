@@ -67,6 +67,10 @@ namespace SIL.TextEditing
 
         public string WsAtCaret() => WsAt(Caret);
 
+        /// <summary>The writing system of the selection: that of its first run, or at the caret when nothing is selected. Unlike <see cref="ActiveWs"/> it ignores a
+        /// writing system chosen for typing (a keyboard switch). Paste maps a writing system the target lacks to this one, as FieldWorks does.</summary>
+        public string SelectionWs => HasSelection ? FirstWsOfSelection() : WsAt(Caret);
+
         public string WsAt(TextPosition p)
         {
             var para = Document.Paragraphs[p.Paragraph];

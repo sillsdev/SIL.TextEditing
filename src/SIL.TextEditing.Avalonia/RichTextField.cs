@@ -1037,7 +1037,13 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The forms a copy writes and a paste reads, registered by the host (ADR 0029). Plain text is built in. A new field has
         /// none registered, so copy writes plain text only until the host adds its forms: TsString through the LCModel adapter and FieldWorks
         /// Markdown through the Markdown library. <see cref="ClipboardForms.PasteOrder"/> is the order paste prefers them.</summary>
-        public ClipboardForms ClipboardForms { get; set; } = new ClipboardForms();
+        public ClipboardForms ClipboardForms
+        {
+            get => _clipboardForms;
+            set => _clipboardForms = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        ClipboardForms _clipboardForms = new ClipboardForms();
 
         /// <summary>Whether the target has a writing system, asked when text is pasted (ADR 0029). With none set, the field asks its
         /// <see cref="WritingSystems"/> registry, and a registry with no writing systems in it (no project) accepts every one. Pasted text
@@ -1103,10 +1109,10 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>Pastes the first form of <see cref="ClipboardForms.PasteOrder"/> that the clipboard holds and that reads. Text in a
-        /// writing system the target lacks takes the selection's writing system and raises <see cref="WritingSystemsMapped"/>.</summary>
+        /// writing system the target lacks takes the selection's writing system and raises <see cref="WritingSystemsMapped"/> when the paste changed something.</summary>
         public async Task PasteAsync()
         {
-            if (AtHiddenEdge()) return;
+            if (AtHiddenEdge() || !Editor.CanEdit) return;   // a read-only field or text that may not be edited reads nothing and tells nobody
             var topLevel = TopLevel.GetTopLevel(this);
             foreach (var id in ClipboardForms.PasteOrder.ToList())
             {
@@ -1130,9 +1136,13 @@ namespace SIL.TextEditing.Avalonia
                 }
                 if (read == null || read.Count == 0) continue;
                 var fragment = read.ToList();
-                var mapping = ClipboardWritingSystems.MapMissing(fragment, IsWritingSystemKnown, Editor.ActiveWs);
-                Editor.Paste(fragment);
-                if (mapping.Any) WritingSystemsMapped?.Invoke(this, mapping);
+                var mapping = ClipboardWritingSystems.MapMissing(fragment, IsWritingSystemKnown, Editor.SelectionWs);
+                bool changed = false;
+                void Saw(EditDelta d) => changed = true;
+                Editor.Committed += Saw;
+                try { Editor.Paste(fragment); }
+                finally { Editor.Committed -= Saw; }
+                if (changed && mapping.Any) WritingSystemsMapped?.Invoke(this, mapping);
                 return;
             }
         }

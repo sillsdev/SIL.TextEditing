@@ -88,8 +88,8 @@ namespace SIL.TextEditing
             Target = target;
         }
 
-        /// <summary>The writing systems of the pasted text that the target lacks, each once, in the order they appear. An empty id
-        /// (a payload that named none) is listed as an empty string.</summary>
+        /// <summary>The writing systems of the pasted text that the target lacks, each once, in the order they appear. Text with no writing-system id
+        /// is mapped too but is not listed: nothing is missing, the payload just named none.</summary>
         public IReadOnlyList<string> Missing { get; }
 
         /// <summary>The writing system they were mapped to: the one of the selection the text replaced.</summary>
@@ -103,8 +103,8 @@ namespace SIL.TextEditing
     /// takes the writing system of the selection it lands in.</summary>
     public static class ClipboardWritingSystems
     {
-        /// <summary>Maps every run of the fragment whose writing system <paramref name="isKnown"/> refuses (an empty id is always
-        /// refused) to <paramref name="target"/>, and every paragraph default likewise; runs that become alike merge. The fragment is
+        /// <summary>Maps every run of the fragment whose writing system <paramref name="isKnown"/> refuses, and every run with no id (mapped but not listed as missing),
+        /// to <paramref name="target"/>, and every paragraph default likewise; runs that become alike merge. The fragment is
         /// changed in place, so it must be new objects (a form's <see cref="IClipboardForm.Read"/> gives that).</summary>
         public static WritingSystemMapping MapMissing(IEnumerable<Paragraph> fragment, Func<string, bool> isKnown, string target)
         {
@@ -112,7 +112,8 @@ namespace SIL.TextEditing
             bool Unknown(string? ws)
             {
                 string id = ws ?? string.Empty;
-                bool bad = id.Length == 0 || !isKnown(id);
+                if (id.Length == 0) return true;   // names no writing system: it takes the target's, and there is nothing to tell the user
+                bool bad = !isKnown(id);
                 if (bad && !missing.Contains(id)) missing.Add(id);
                 return bad;
             }

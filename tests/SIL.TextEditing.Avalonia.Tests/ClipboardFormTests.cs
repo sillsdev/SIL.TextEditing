@@ -267,5 +267,92 @@ namespace SIL.TextEditing.Avalonia.Tests
             }
             finally { window.Close(); }
         });
+
+        [Fact]
+        public void A_paste_a_read_only_field_refuses_changes_nothing_and_raises_no_notice() => Headless.Run(async () =>
+        {
+            var rich = new FakeClipboardForm(Rich) { ReadWs = "zzz" };
+            var (window, field, top) = Shown(Doc(Para("fr", "fr", "bonjour ")), rich);
+            try
+            {
+                field.WritingSystems = WritingSystemRegistry.CreateDefault();
+                field.IsReadOnly = true;
+                int told = 0;
+                field.WritingSystemsMapped += (s, e) => told++;
+                await Put(top, "plain", (rich, "[rich]monde"));
+                field.Editor.SetCaret(new TextPosition(0, 8));
+                await field.PasteAsync();
+                Assert.Equal("bonjour ", field.Editor.Document.Paragraphs[0].Text);
+                Assert.Equal(0, told);
+                Assert.Equal(0, rich.Reads);   // the clipboard was not even read
+            }
+            finally { window.Close(); }
+        });
+
+        [Fact]
+        public void A_paste_into_a_run_that_may_not_be_edited_changes_nothing_and_raises_no_notice() => Headless.Run(async () =>
+        {
+            var rich = new FakeClipboardForm(Rich) { ReadWs = "zzz" };
+            var p = Para("fr", "fr", "locked");
+            p.Runs[0].Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            var (window, field, top) = Shown(Doc(p), rich);
+            try
+            {
+                field.WritingSystems = WritingSystemRegistry.CreateDefault();
+                int told = 0;
+                field.WritingSystemsMapped += (s, e) => told++;
+                await Put(top, "plain", (rich, "[rich]monde"));
+                field.Editor.SetCaret(new TextPosition(0, 3));
+                await field.PasteAsync();
+                Assert.Equal("locked", field.Editor.Document.Paragraphs[0].Text);
+                Assert.Equal(0, told);
+            }
+            finally { window.Close(); }
+        });
+
+        [Fact]
+        public void The_missing_writing_system_becomes_the_writing_system_of_the_selection_not_the_one_chosen_for_typing() => Headless.Run(async () =>
+        {
+            var rich = new FakeClipboardForm(Rich) { ReadWs = "zzz" };
+            var (window, field, top) = Shown(Doc(Para("fr", "fr", "bonjour ")), rich);
+            try
+            {
+                field.WritingSystems = WritingSystemRegistry.CreateDefault();
+                field.Editor.SetCaret(new TextPosition(0, 8));
+                field.Editor.SetActiveWs("ar");                 // a keyboard switch: typing would be Arabic
+                WritingSystemMapping? told = null;
+                field.WritingSystemsMapped += (s, e) => told = e;
+                await Put(top, "plain", (rich, "[rich]monde"));
+                await field.PasteAsync();
+                Assert.Equal("fr", told!.Target);
+                Assert.All(field.Editor.Document.Paragraphs[0].Runs, r => Assert.Equal("fr", r.Ws));
+            }
+            finally { window.Close(); }
+        });
+
+        [Fact]
+        public void A_payload_that_names_no_writing_system_takes_the_selections_without_a_notice() => Headless.Run(async () =>
+        {
+            var rich = new FakeClipboardForm(Rich) { ReadWs = "" };
+            var (window, field, top) = Shown(Doc(Para("fr", "fr", "bonjour ")), rich);
+            try
+            {
+                int told = 0;
+                field.WritingSystemsMapped += (s, e) => told++;
+                await Put(top, "plain", (rich, "[rich]monde"));
+                field.Editor.SetCaret(new TextPosition(0, 8));
+                await field.PasteAsync();
+                Assert.All(field.Editor.Document.Paragraphs[0].Runs, r => Assert.Equal("fr", r.Ws));
+                Assert.Equal(0, told);
+            }
+            finally { window.Close(); }
+        });
+
+        [Fact]
+        public void The_clipboard_forms_cannot_be_set_to_null()
+        {
+            var field = new RichTextField(OneParagraph("x"));
+            Assert.Throws<System.ArgumentNullException>(() => field.ClipboardForms = null!);
+        }
     }
 }
