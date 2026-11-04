@@ -371,8 +371,12 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The top of the line's slot in paragraph coordinates; a line height rule can make the slot taller (or shorter)
         /// than the text, which sits at the bottom of it.</summary>
         public double Y { get; }
-        /// <summary>The left edge of the line's available width in paragraph coordinates; the line's own alignment offset is inside it.</summary>
-        public double X { get; }
+        /// <summary>The left edge of the line's available width in paragraph coordinates; the line's own alignment offset is inside it. A wrapped
+        /// line that is aligned by its text and not by the spaces it ends with has the difference moved into it (<see cref="Move"/>).</summary>
+        public double X { get; private set; }
+
+        /// <summary>Moves the line's origin sideways by <paramref name="dx"/>, the caret, the selection, the mouse and the drawing with it.</summary>
+        internal void Move(double dx) => X += dx;
         /// <summary>The height of the slot.</summary>
         public double Height { get; }
         /// <summary>Where the text of the line starts vertically: at the bottom of the slot, or, under an exact line height, wherever puts the
@@ -874,6 +878,7 @@ namespace SIL.TextEditing.Avalonia
                 double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
                 if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = ExactFraction(line);
                 var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl);
+                if (index + line.Length < source.Text.Length && line.NewLineLength == 0) shown.Move(layout.HangingShift(line, pf.Align));
                 layout.Lines.Add(shown);
                 if (pf.Align == 5 && index + line.Length < source.Text.Length) layout.Justify(shown, usedWidth);
                 y += slot;
@@ -904,6 +909,20 @@ namespace SIL.TextEditing.Avalonia
             }
             layout.Height = y + layout.BottomInset;
             return layout;
+        }
+
+        /// <summary>How far a wrapped line is moved so that its text, and not the spaces it ends with, is what the alignment puts at the edge. Avalonia
+        /// aligns a line by its width with those spaces, so against the right edge in a left-to-right paragraph (and the left edge in a right-to-left
+        /// one) the text stops a space width short of it, and is moved out by that much, as FieldWorks leaves the spaces out of the width it aligns by.</summary>
+        double HangingShift(TextLine line, int align)
+        {
+            double hang = line.WidthIncludingTrailingWhitespace - line.Width;
+            if (hang <= 0) return 0;
+            bool toRight = align == 3 || (align == 4 && !Rtl);
+            bool toLeft = align == 1 || (align == 4 && Rtl);
+            if (!Rtl && toRight) return hang;
+            if (Rtl && toLeft) return -hang;
+            return 0;
         }
 
         /// <summary>The hard line break (Shift+Enter), U+2028: it ends its line, takes no room and is not drawn.</summary>

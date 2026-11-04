@@ -69,7 +69,7 @@ Engine entry: `VwPropertyStore::put_IntProperty` (V/VwPropertyStore.cpp:1177, ca
 
 | Feature | Legacy source and behaviour | FA | TE | Size |
 |---|---|---|---|---|
-| ktptAlign (17): Leading, Left, Center, Right, Trailing, Justify (not on last line) | :1185; V/VwTextBoxes.cpp:3252-3275; enum KRN:653-663 | NO | YES: leading, left, centre, right, trailing; justify stretches every line but the last (ParagraphLayout Justification) | M |
+| ktptAlign (17): Leading, Left, Center, Right, Trailing, Justify (not on last line) | :1185; V/VwTextBoxes.cpp:3252-3275; enum KRN:653-663 | NO | YES: leading, left, centre, right, trailing; justify stretches every line but the last (ParagraphLayout Justification); a line that wraps is aligned by its text, the spaces it ends with hang outside it (`ParagraphLayout.HangingShift`) | M |
 | ktptFirstIndent (18) negative = hanging | :1460; V/VwTextBoxes.cpp:1252,7136; negative handled as pad V/VwTextBoxes.cpp:9394 | NO | NO (Indent=>0, `ParagraphProperties`) | M |
 | ktptLeadingIndent / ktptMarginLeading (19) | :1417; V/VwSimpleBoxes.cpp:679,1087,1165 | NO | NO | M |
 | ktptTrailingIndent / ktptMarginTrailing (20) | :1421 | NO | NO | M |
