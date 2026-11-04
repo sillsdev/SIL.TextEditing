@@ -43,7 +43,8 @@ one, and can change without superseding anything.
   becomes one space, across run and paragraph boundaries, and a pasted paragraph break is one too. Separators that end
   the pasted text are dropped. One at the start still gives a space, even at the start of the paragraph. Nothing else is
   collapsed: pasting "a", two newlines and "b" gives "a" and two spaces and "b", white space beside a separator stays, and
-  a no-break space is kept. Tab characters are removed (FieldWorks does the same; the field used to keep them, issue #35).
+  a no-break space is kept. Tab characters are removed (FieldWorks does the same; the field used to keep them, issue #35), and in
+  every mode, not only this one: see the next entry.
   U+2028 is kept as a hard line break and is not a separator for this. NEL and U+2029 count as separators here (ADR 0012),
   whereas FieldWorks converts only CR and LF. A separator followed only by tabs is dropped too (tabs are removed first, so
   "a", a newline and a tab gives "a"); this is deliberate and differs slightly from FieldWorks, which keeps a space there.
@@ -51,6 +52,10 @@ one, and can change without superseding anything.
   spaces on every path (as in FieldWorks). Pasting only separators and tabs, however many, over a selection replaces the
   selection with nothing. Because a trailing separator is dropped, pasting
   "a" and a newline at the start of "bcd" gives "abcd": the words fuse. That is the FieldWorks result, not a bug.
+- **Paste removes tab characters in every mode.** FieldWorks strips tabs from pasted text before it looks at
+  paragraphs, so a field that takes paragraphs removes them too; the field used to keep them there (issue #39). It
+  applies to a pasted fragment (each paragraph of it) and to pasted plain text. Typed text gets it too, as a default
+  (the Tab key is navigation and never types a tab, above). Read from FieldWorks' paste behaviour, not an owner decision.
 - **Enter at an editable and read-only boundary can leave a paragraph the field cannot join back.** Enter between an
   editable and a read-only run can make a paragraph that is entirely read-only. Backspace into it is refused (ADR 0019),
   so only the host's undo removes it. Delete in an empty editable paragraph beside read-only text is refused for the

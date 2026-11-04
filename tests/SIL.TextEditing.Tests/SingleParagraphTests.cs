@@ -206,12 +206,23 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
-        public void Tabs_are_kept_when_the_field_takes_paragraphs()
+        public void Tabs_are_removed_when_the_field_takes_paragraphs_too()
         {
             var e = new DocumentEditor(OneParagraph("X"));
             e.SetCaret(new TextPosition(0, 1));
             e.Paste(new List<Paragraph> { Para("en", "en", "a\tb") });
-            Assert.Equal("Xa\tb", e.Document.Paragraphs[0].Text);
+            Assert.Equal("Xab", e.Document.Paragraphs[0].Text);
+
+            e = new DocumentEditor(OneParagraph("X"));
+            e.SetCaret(new TextPosition(0, 1));
+            e.Paste(new List<Paragraph> { Para("en", "en", "\ta\t"), Para("en", "en", "\tb\t\tc") });
+            Assert.Equal(new[] { "Xa", "bc" }, new[] { e.Document.Paragraphs[0].Text, e.Document.Paragraphs[1].Text });
+            Assert.Equal(new TextPosition(1, 2), e.Caret);
+
+            e = new DocumentEditor(OneParagraph("X"));
+            e.SetCaret(new TextPosition(0, 1));
+            e.PasteText("a\tb\n\tc");
+            Assert.Equal(new[] { "Xab", "c" }, new[] { e.Document.Paragraphs[0].Text, e.Document.Paragraphs[1].Text });
         }
 
         [Fact]
