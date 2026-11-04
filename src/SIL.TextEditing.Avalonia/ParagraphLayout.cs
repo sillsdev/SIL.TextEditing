@@ -1202,19 +1202,19 @@ namespace SIL.TextEditing.Avalonia
         /// once and used for every line, so the baselines are one slot apart.</summary>
         static double ExactFraction(TextLine line)
         {
-            var characters = new Dictionary<int, int>();
-            int best = -1, bestCharacters = -1;
-            foreach (var run in line.TextRuns)
-            {
-                if (!(run is ShapedTextRun shaped)) continue;
-                int percent = shaped.Size.Height > 0 ? (int)(shaped.Baseline * 100 / shaped.Size.Height) : 0;
-                characters.TryGetValue(percent, out int count);
-                count += shaped.Length;
-                characters[percent] = count;
-                if (count > bestCharacters) { bestCharacters = count; best = percent; }
-            }
-            if (best < 0) return line.Height > 0 ? Math.Floor(line.Baseline * 100 / line.Height) / 100 : double.NaN;
-            return best / 100.0;
+            var shaped = line.TextRuns.OfType<ShapedTextRun>()
+                .Select((run, order) => new { Percent = run.Size.Height > 0 ? (int)(run.Baseline * 100 / run.Size.Height) : 0, run.Length, order })
+                .ToList();
+            if (shaped.Count == 0) return line.Height > 0 ? Math.Floor(line.Baseline * 100 / line.Height) / 100 : double.NaN;
+            // Each share with the characters in it, and where in the line it had them all: the last run of it that has any (or its first run).
+            var shares = shaped.GroupBy(run => run.Percent)
+                .Select(group => new
+                {
+                    Percent = group.Key,
+                    Characters = group.Sum(run => run.Length),
+                    Complete = group.Where(run => run.Length > 0).Select(run => run.order).DefaultIfEmpty(group.First().order).Max(),
+                });
+            return shares.OrderByDescending(share => share.Characters).ThenBy(share => share.Complete).First().Percent / 100.0;
         }
 
         /// <summary>Under an exact line height, the share of the text's height that is above its baseline, taken from the first line and used
