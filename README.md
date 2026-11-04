@@ -98,12 +98,23 @@ follows changes of writing system, so a click into text of the same writing syst
 default keyboard, subscribe to the field's `LostFocus` and switch when focus has moved to a control of your own application
 that is not a field. The field raises nothing when it loses focus.
 
+## Spell checking (ADR 0020, 0026)
+
+The host gives the field its dictionaries: set `RichTextField.SpellChecking` to an `ISpellCheckHost` that returns an
+`ISpellChecker` (`Check`, `Suggest`, `Add`, `Ignore`) for each writing system and says which characters form words. The
+field checks the paragraphs in view when idle and draws red squiggles (misspelled, or a word with an object in it) and blue
+ones (a word that mixes writing systems or has unchecked text inside). The rules are in `SpellScanner` (UI-free): words
+break at characters that are not word-forming, and do-not-check text and text that may not be edited (unless forced) are
+skipped. `SpellingSuggestionsAt`, `ApplySpellingSuggestion`, `AddToDictionary`, `IgnoreWord` and `RestartSpelling` are
+what a host's context menu and dictionary changes call. The playground's "Spell checking" scenario shows it with a
+short English and French word list.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
   `WinFormsAvaloniaControlHost` Avalonia's UIA subtree was empty in the spike (unexplained).
 - **Input**: real IME and Keyman interaction are untested (the headless tests drive the IME client directly). Missing:
-  scrolling inside long fields, drag and drop, spelling squiggles, find highlights, touch. Selection by mouse (click
+  scrolling inside long fields, drag and drop, find highlights, touch. Selection by mouse (click
   with bidi and soft-wrap affinity, Shift+click, drag across paragraphs, double-click word, triple-click paragraph) and
   keyboard (Shift+arrows, Ctrl+arrows by word, Home/End by visual line, Ctrl+Home/End, Ctrl+A, Up/Down with the
   preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with
