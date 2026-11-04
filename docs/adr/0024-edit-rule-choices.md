@@ -66,7 +66,11 @@ one, and can change without superseding anything.
   hidden behind a non-editable run (a non-editable U+2028 at the start of a MaxLines 1 paragraph, say), the field acts as
   having no editable place: the caret stays at the visible end, typing, paste and Delete are refused (Delete cannot remove a
   non-editable break), and Tab leaves the field. That is host data the field cannot repair; it settles and does not loop.
-  Our choice: FieldWorks was not checked for this combination.
+  The field does not count a non-editable break differently from any other (issue #34): FieldWorks' line limit counts
+  every line and truncates after the last one, with no notion of editability, and a selection cannot reach truncated
+  text, so the field does the same. Its layout code was read for this; the combination itself (a locked break at the
+  limit hiding the only editable text) was not run there. Not showing the line or leaving the break uncounted would
+  differ from FieldWorks, so a host that wants that text reachable must not put it behind a locked break at the limit.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

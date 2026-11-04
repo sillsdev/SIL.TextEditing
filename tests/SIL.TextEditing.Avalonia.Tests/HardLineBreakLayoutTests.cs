@@ -411,6 +411,29 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(1, left);   // Tab is not trapped by a place nobody can reach
         });
 
+        [Theory]
+        [InlineData("|", "y", 1)]
+        [InlineData("ab|", "cd", 1)]
+        [InlineData("a|b|", "cd", 2)]
+        public void A_non_editable_break_counts_toward_the_line_limit_and_the_editable_text_behind_it_stays_hidden(string locked, string editable, int maxLines) => Headless.Run(() =>
+        {
+            // The limit counts lines whatever their editability (as in FieldWorks), so host data that puts the only editable text
+            // behind a locked break at the limit is hidden and cannot be edited from the keyboard (ADR 0024).
+            string text = locked.Replace("|", Break) + editable;
+            var field = LockedThenEditable(locked.Replace("|", Break), editable, maxLines);
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.True(pl.Truncated);
+            Assert.Equal(maxLines, pl.Lines.Count);
+            Assert.True(pl.VisibleEnd <= locked.Length);
+            for (int o = 0; o <= text.Length; o++)
+                foreach (var act in new System.Action<RichTextField>[] { f => f.Type("x"), f => f.Press(Key.Delete), f => f.Press(Key.Back) })
+                {
+                    field.Editor.SetCaret(new TextPosition(0, o));
+                    act(field);
+                    Assert.Equal(text, Text(field));
+                }
+        });
+
         static Paragraph Limit(string text, int maxLines)
         {
             var p = Para("en", "en", text);
