@@ -84,6 +84,16 @@ namespace SIL.TextEditing.Avalonia.Tests
                 return _buffer[o + 3] > 128 && _buffer[o] < threshold && _buffer[o + 1] < threshold && _buffer[o + 2] < threshold;
             }
 
+            /// <summary>The colour of a pixel (premultiplied alpha undone), or transparent outside the shot.</summary>
+            public Color Pixel(int x, int y)
+            {
+                if (x < 0 || y < 0 || x >= Width || y >= Height) return Colors.Transparent;
+                int o = y * _stride + x * 4;
+                byte a = _buffer[o + 3];
+                if (a == 0) return Colors.Transparent;
+                return Color.FromArgb(a, (byte)Math.Min(255, _buffer[o + 2] * 255 / a), (byte)Math.Min(255, _buffer[o + 1] * 255 / a), (byte)Math.Min(255, _buffer[o] * 255 / a));
+            }
+
             /// <summary>True when the pixel was drawn on at all (it is not transparent).</summary>
             public bool HasColor(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height && _buffer[y * _stride + x * 4 + 3] > 128;
 

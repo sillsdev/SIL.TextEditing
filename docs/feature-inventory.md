@@ -362,7 +362,7 @@ U+FFFC (ORC) carries `ktptObjData`: first char = kodt type, rest = payload (KRN:
 | UIA TextPattern (caret, selection, ranges, attributes) | disabled in legacy (WM_GETOBJECT comment block: FWR-2874/3045) | via Avalonia TextBox: YES | NO (README "Known gaps"; empty UIA subtree inside WinFormsAvaloniaControlHost unexplained) | L |
 | Screen reader reads caret line / word on move | via IAccessible text events UNVERIFIED | via TextBox | NO | L |
 | On-screen keyboard compatibility | FWR-2874 note | UNVERIFIED | UNVERIFIED | S |
-| High-contrast / system colours for text and selection | V/VwColor.cpp, kclr* constants | YES (theme) | NO (hard-coded LightSkyBlue/Black, `RichTextField.ResolveSelectionBrush` and `Render`) | S |
+| High-contrast / system colours for text and selection | V/VwColor.cpp, kclr* constants | YES (theme) | PARTIAL: the selection and caret brushes, and the text, border and page defaults (when the host has not set `Foreground` or `Background`), come from theme or system resources and are re-resolved on a theme change; no high-contrast specific handling beyond what those resources give | S |
 | Keyboard-only operation of every command | Edit/Format menus | PARTIAL | PARTIAL | M |
 
 ---
