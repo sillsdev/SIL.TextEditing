@@ -844,7 +844,8 @@ namespace SIL.TextEditing.Avalonia
             foreach (var li in Lines)
                 foreach (var bg in _backgrounds)
                 {
-                    int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, TextEnd(li));
+                    // The spaces a wrapped line ends with hang outside its text and are not painted (the paragraph's last line is all text).
+                    int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, li == Lines[Lines.Count - 1] ? TextEnd(li) : TextBeforeTrailingSpaces(li));
                     if (b <= a) continue;
                     foreach (var piece in li.Pieces(a, b))
                         context.DrawRectangle(bg.Value.Value, null, new Rect(piece.Key.X, top + li.TextY + piece.Key.Y - piece.Value, piece.Key.Width, piece.Key.Height));
@@ -1166,6 +1167,14 @@ namespace SIL.TextEditing.Avalonia
             return end;
         }
 
+        /// <summary>The end of a line's text without the spaces it ends with (the ones a wrap leaves hanging past its last letter).</summary>
+        int TextBeforeTrailingSpaces(LineInfo line)
+        {
+            int end = TextEnd(line);
+            while (end > line.Start && EffectiveText[end - 1] == ' ') end--;
+            return end;
+        }
+
         LineInfo? LineOf(int effective, CharacterHit? hit = null)
         {
             if (Lines.Count == 0) return null;
@@ -1228,8 +1237,7 @@ namespace SIL.TextEditing.Avalonia
             double x = li.X + li.Map(li.Line.GetDistanceFromCharacterHit(h));
             int o = h.FirstCharacterIndex + h.TrailingLength;
             if (li.IsEmpty || li.Available <= 0 || li == Lines[Lines.Count - 1]) return x;
-            int core = TextEnd(li);
-            while (core > li.Start && EffectiveText[core - 1] == ' ') core--;
+            int core = TextBeforeTrailingSpaces(li);
             if (o <= core || core <= li.Start) return x;
             double inkEdge = double.NaN;
             foreach (var piece in li.Pieces(li.Start, core))
