@@ -348,17 +348,18 @@ namespace SIL.TextEditing.Avalonia
         {
         }
 
-        internal LineInfo(TextLine line, double y, double x, double height, double baselineInSlot, OffsetMap? offsets, bool rightToLeft = false)
+        internal LineInfo(TextLine line, double y, double x, double height, double baselineInSlot, OffsetMap? offsets, bool rightToLeft = false, List<RunSlot>? slots = null)
         {
+            slots ??= ParagraphLayout.RunSlots(line);
+            AllSlots = slots;
             Line = line;
             Y = y;
             X = x;
             Height = height < 0 ? line.Height : height;
             _baselineInSlot = baselineInSlot;
             _offsets = offsets;
-            _runs = ParagraphLayout.RunOffsets(line, offsets, out var raise, out var lower);
+            _runs = ParagraphLayout.RunOffsets(line, offsets, out var raise, out var lower, slots);
             HasOffsets = _runs != null;
-            var slots = ParagraphLayout.RunSlots(line);
             // A line of several runs is read from the runs as they are drawn (see DistanceOf) when it is a right-to-left paragraph's or has a
             // right-to-left run in it, whatever the paragraph's direction.
             UsesRuns = slots.Count >= 2 && slots.All(slot => slot.HasGlyphs) && (rightToLeft || slots.Any(slot => slot.RightToLeft));
@@ -390,6 +391,12 @@ namespace SIL.TextEditing.Avalonia
             EmptyCaretX = caretX;
             _baselineInSlot = baselineInSlot;
         }
+
+        /// <summary>The runs of the line as they are drawn (<see cref="ParagraphLayout.RunSlots"/>), made once when the line was.</summary>
+        internal List<RunSlot> AllSlots { get; } = new List<RunSlot>();
+
+        /// <summary>The width of the line's text without the spaces it wraps on (<see cref="ParagraphLayout.NaturalWidth"/>), worked out once.</summary>
+        internal double? NaturalWidthCache;
 
         /// <summary>True for the empty last line a trailing hard line break makes: it holds no text, only a caret place.</summary>
         public bool IsEmpty { get; }
@@ -720,12 +727,16 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
+        /// <summary>How many times a line's run slots were worked out, for a test that counts the work a layout does.</summary>
+        internal static long RunSlotBuilds;
+
         /// <summary>Where each run of a line is drawn and which text it holds, in drawing order. Avalonia's own numbering of a line's runs (the
         /// text run bounds and the character hits) is wrong for a right-to-left paragraph's line with two or more left-to-right runs and a wrapped
         /// space: it takes the runs' visual order for their logical one. So a run's text is read from the run itself: the slice of the paragraph text
         /// it was shaped from.</summary>
         internal static List<RunSlot> RunSlots(TextLine line)
         {
+            RunSlotBuilds++;
             var result = new List<RunSlot>();
             double x = line.Start;
             foreach (var run in line.TextRuns)
@@ -748,14 +759,14 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The runs of a line with their baseline offsets, or null when the line has no shifted run (<paramref name="raise"/> and
         /// <paramref name="lower"/> are then 0). Otherwise they are how far the shifted runs reach above the line's top and below its bottom.
         /// Avalonia 11.3 hands back its own copy of each run's properties (Avalonia 12 the original), so on both a run is matched to its offset by the text it holds (<see cref="RunSlots"/>), not through its properties.</summary>
-        internal static List<KeyValuePair<DrawableTextRun, double>>? RunOffsets(TextLine line, OffsetMap? offsets, out double raise, out double lower)
+        internal static List<KeyValuePair<DrawableTextRun, double>>? RunOffsets(TextLine line, OffsetMap? offsets, out double raise, out double lower, List<RunSlot>? slots = null)
         {
             raise = 0;
             lower = 0;
             if (offsets == null || offsets.IsEmpty || line.Length <= 0) return null;
             var result = new List<KeyValuePair<DrawableTextRun, double>>();
             bool any = false;
-            foreach (var slot in RunSlots(line))
+            foreach (var slot in slots ?? RunSlots(line))
             {
                 var d = slot.Run;
                 double offset = offsets.At(slot.Start);
@@ -969,9 +980,10 @@ namespace SIL.TextEditing.Avalonia
                         }
                     }
                 }
-                double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
+                var slots = RunSlots(line);
+                double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets, slots));
                 if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = ExactFraction(line);
-                var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl);
+                var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl, slots);
                 if (index + line.Length < source.Text.Length && line.NewLineLength == 0) shown.Move(layout.HangingShift(shown, pf.Align, usedWidth));
                 layout.Lines.Add(shown);
                 if (pf.Align == 5 && index + line.Length < source.Text.Length) layout.Justify(shown, usedWidth);
@@ -1063,11 +1075,13 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The width of a line's text up to <paramref name="last"/> (the end of its last letter), without the spaces it wraps on.
         /// Avalonia 11.3 also leaves out a space at the end of one of the line's runs that is not the last, so the line's own width is
         /// not trusted when the runs' widths less those spaces come to more.</summary>
-        double NaturalWidth(LineInfo li, int last)
+        double NaturalWidth(LineInfo li, int last) => li.NaturalWidthCache ??= MeasureNaturalWidth(li, last);
+
+        double MeasureNaturalWidth(LineInfo li, int last)
         {
             double total = 0, trailing = 0;
             int to = TextEnd(li);
-            foreach (var slot in RunSlots(li.Line))
+            foreach (var slot in li.AllSlots)
             {
                 total += slot.Width;
                 int a = Math.Max(last, slot.Start), b = Math.Min(to, slot.Start + slot.Length);
@@ -1113,9 +1127,9 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>The room a line needs for its shifted runs, above and below its own height.</summary>
-        static double ExtentOf(TextLine line, OffsetMap offsets)
+        static double ExtentOf(TextLine line, OffsetMap offsets, List<RunSlot> slots)
         {
-            RunOffsets(line, offsets, out var raise, out var lower);
+            RunOffsets(line, offsets, out var raise, out var lower, slots);
             return raise + lower;
         }
 
