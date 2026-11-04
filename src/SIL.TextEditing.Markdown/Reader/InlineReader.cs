@@ -118,7 +118,7 @@ namespace SIL.TextEditing.Markdown.Reader
                         break;
                     }
                     case LineBreakInline lineBreak:
-                        Add(lineBreak.IsHard && lineBreak.IsBackslash ? Chars.LineSeparatorText : " ", fmt);
+                        Add(lineBreak.IsHard ? Chars.LineSeparatorText : " ", fmt);
                         break;
                     case SpanInline span:
                     {
