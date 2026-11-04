@@ -806,27 +806,29 @@ namespace SIL.TextEditing.Avalonia
             double lineHeightRule = pf.LineHeight;
             if (source.Text.Length == 0)
             {
-                // A line cannot be formatted from zero characters through the public API; use the font metrics.
+                // A line cannot be formatted from zero characters through the public API: a space in the same font gives the height a line
+                // of text has, so the paragraph and its caret are as tall as a one-line paragraph's. The font's own metrics are the fallback.
                 var glyphTypeface = defaultProperties.Typeface.GlyphTypeface;
                 double fontSize = defaultProperties.FontRenderingEmSize;
                 double lineHeight = glyphTypeface != null
-                    ? (-glyphTypeface.Metrics.Descent - glyphTypeface.Metrics.Ascent + glyphTypeface.Metrics.LineGap) / (double)glyphTypeface.Metrics.DesignEmHeight * fontSize
+                    ? (glyphTypeface.Metrics.Descent - glyphTypeface.Metrics.Ascent + glyphTypeface.Metrics.LineGap) / (double)glyphTypeface.Metrics.DesignEmHeight * fontSize
                     : fontSize * 1.3;
                 if (lineHeight <= 0) lineHeight = fontSize * 1.3;
-                double slot = layout.SlotHeight(lineHeight);
-                layout.EmptyLineTop = layout.TopInset + slot - lineHeight;
-                if (pf.ExactLineHeight && pf.LineHeight > 0)
+                var spaceSource = new ParagraphSource { Text = " " };
+                spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
+                double slot;
+                using (var metrics = TextFormatter.Current.FormatLine(spaceSource, 0, w, paragraphProperties, null))
                 {
-                    // An exact line height keeps the baseline at the same share of the slot as on a line with text: a space gives the metrics.
-                    var spaceSource = new ParagraphSource { Text = " " };
-                    spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
-                    using (var metrics = TextFormatter.Current.FormatLine(spaceSource, 0, w, paragraphProperties, null))
-                        if (metrics != null && metrics.Height > 0)
-                        {
-                            layout._exactAscentFraction = ExactFraction(metrics);
-                            layout.EmptyLineTop = layout.TopInset + layout.BaselineIn(slot) - metrics.Baseline;
-                            lineHeight = metrics.Height;
-                        }
+                    bool measured = metrics != null && metrics.Height > 0;
+                    if (measured) lineHeight = metrics!.Height;
+                    slot = layout.SlotHeight(lineHeight);
+                    layout.EmptyLineTop = layout.TopInset + slot - lineHeight;
+                    if (measured && pf.ExactLineHeight && pf.LineHeight > 0)
+                    {
+                        // An exact line height keeps the baseline at the same share of the slot as on a line with text.
+                        layout._exactAscentFraction = ExactFraction(metrics!);
+                        layout.EmptyLineTop = layout.TopInset + layout.BaselineIn(slot) - metrics!.Baseline;
+                    }
                 }
                 layout.EmptyLineHeight = lineHeight;
                 layout.Height = layout.TopInset + slot + layout.BottomInset;
