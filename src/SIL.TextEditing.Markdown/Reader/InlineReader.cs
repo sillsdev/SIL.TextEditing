@@ -238,6 +238,8 @@ namespace SIL.TextEditing.Markdown.Reader
                     case "tool" when !item.IsFlag: form.Tool = item.Value; form.IsInternal = true; break;
                     case "s6" when !item.IsFlag: if (s6Item != null) Duplicate(item); s6Item = s6Item ?? item; break;
                     case "s133" when !item.IsFlag: s133Item = item; handled = false; break;
+                    case "ws" or "cs" or "link" or "guid" or "tool" or "url" or "s6": Malformed(item, "'" + item.Key + "' needs a value"); break;
+                    case "v" or "broken": Malformed(item, "'" + item.Key + "' is a flag and takes no value"); break;
                     default: handled = false; break;
                 }
                 if (!handled) rest.Add(item);

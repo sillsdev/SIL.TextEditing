@@ -103,6 +103,17 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Equal(once, twice);
         }
 
+        [Theory]
+        [MemberData(nameof(HandWritten))]
+        public void WindowsLineEndingsReadTheSame(string markdown)
+        {
+            var options = Hosts.Project(new TestObjects());
+            var lf = MarkdownConverter.Parse(markdown, options);
+            var crlf = MarkdownConverter.Parse(markdown.Replace("\n", "\r\n"), options);
+            Assert.True(MarkdownConverter.AreEquivalent(lf.Document.Paragraphs, crlf.Document.Paragraphs), ModelDump.Of(lf.Document) + "\n--\n" + ModelDump.Of(crlf.Document));
+            Assert.Equal(lf.Diagnostics.Select(d => d.Id), crlf.Diagnostics.Select(d => d.Id));
+        }
+
         [Fact]
         public void TheCanonicalFormIsIdempotentOnItsOwn()
         {

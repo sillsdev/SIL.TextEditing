@@ -149,6 +149,9 @@ namespace SIL.TextEditing.Markdown.Writer
 
         /// <summary>Finds the first spelling of the inline text that <paramref name="accepts"/>. Within a spelling it tries no optional
         /// escape, then every one, then removes them one at a time, from the end back to the start, keeping each that is still needed.</summary>
+        /// <summary>The most optional escapes the writer tries to remove one by one; a paragraph with more keeps them all.</summary>
+        const int MaxSearched = 400;
+
         string? Search(InlineGenerator generator, IReadOnlyList<List<Run>> cells, Func<string, bool> accepts)
         {
             bool anyStar = false, anyParen = false;
@@ -168,6 +171,7 @@ namespace SIL.TextEditing.Markdown.Writer
                 for (int k = 0; k < count; k++) mask[k] = true;
                 string all = generator.Generate(cells, mode, mask, out _);
                 if (!accepts(all)) continue;
+                if (count > MaxSearched) return all; // a paragraph this full of marks is not worth a read per mark
                 for (int k = count - 1; k >= 0; k--)
                 {
                     mask[k] = false;

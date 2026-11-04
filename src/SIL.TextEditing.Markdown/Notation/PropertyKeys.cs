@@ -294,6 +294,11 @@ namespace SIL.TextEditing.Markdown.Notation
                 if (used.Contains(item)) continue;
                 // A unit or type key whose base key was used is consumed by that key.
                 if (IsCompanionOfUsed(item.Key, seen, used)) continue;
+                if (Companions.TryGetValue(item.Key, out var companionOf))
+                {
+                    Malformed(issues, item, item.Key + " goes with " + companionOf.Key + ", which is missing");
+                    continue;
+                }
                 unknown(item);
             }
         }
