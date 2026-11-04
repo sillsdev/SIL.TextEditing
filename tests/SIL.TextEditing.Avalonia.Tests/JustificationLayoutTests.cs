@@ -121,6 +121,140 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(ink.Right < 200, "a single line is the last line: " + ink.Right);
         });
 
+        static RichTextField Field(Paragraph p, double width = 320)
+        {
+            p.Props.SetInt(TextPropertyNumbers.Align, 5);
+            return Fixtures.Field(Doc(p), width);
+        }
+
+        static void AssertReachesBothEdges(ParagraphLayout pl, LineInfo li, string what)
+        {
+            var ink = Ink(pl, li);
+            double left = pl.ContentLeft, right = pl.ContentLeft + pl.ContentWidth;
+            Assert.True(System.Math.Abs(ink.Left - left) < 1.5, what + " starts at " + ink.Left + ", the area at " + left);
+            Assert.True(System.Math.Abs(ink.Right - right) < 1.5, what + " ends at " + ink.Right + ", the area at " + right);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_line_that_ends_at_a_hard_line_break_is_stretched_like_any_line_but_the_last(bool rtl) => Headless.Run(() =>
+        {
+            string text = rtl
+                ? "هذا سطر قصير\u2028" + Arabic + "\u2028سطر أخير"
+                : "boxer shot a quick\u2028jab to the jaw of his dizzy opponent while the five boxing wizards jump quickly and the lazy dog sleeps\u2028the last line";
+            var p = Para(rtl ? "ar" : "en", rtl ? "ar" : "en", text);
+            p.Rtl = rtl;
+            var pl = Field(p).ParagraphLayoutFor(0);
+            int first = text.IndexOf('\u2028'), second = text.LastIndexOf('\u2028');
+            Assert.True(pl.Lines.Count >= 4, "lines: " + pl.Lines.Count);
+            AssertReachesBothEdges(pl, pl.Lines[0], "the short line before the first break");
+            Assert.Equal(first, pl.TextEnd(pl.Lines[0]));
+            var lineBeforeSecond = pl.Lines[pl.LineIndexOf(second - 1)];
+            AssertReachesBothEdges(pl, lineBeforeSecond, "the last line before the second break");
+            var last = Ink(pl, pl.Lines[pl.Lines.Count - 1]);
+            double edge = rtl ? pl.ContentLeft : pl.ContentLeft + pl.ContentWidth;
+            Assert.True(System.Math.Abs((rtl ? last.Left : last.Right) - edge) > 20, "the paragraph's last line is not stretched: " + last);
+            // A click on each stop of the stretched line before a break finds the stop.
+            foreach (var stop in pl.VisualStops(pl.Lines[0]))
+            {
+                var hit = pl.HitTestDetailed(new Point(stop.X, pl.Lines[0].Y + 2));
+                Assert.True(System.Math.Abs(pl.CaretRect(hit.Offset, false, hit.CaretHit).X - stop.X) < 1);
+            }
+        });
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void With_a_line_limit_the_stretched_lines_reach_both_edges_and_the_ellipsis_follows_the_text_of_the_last_one(bool rtl) => Headless.Run(() =>
+        {
+            var p = Para(rtl ? "ar" : "en", rtl ? "ar" : "en", rtl ? Arabic : English);
+            p.Rtl = rtl;
+            p.Props.SetInt(TextPropertyNumbers.MaxLines, 3);
+            var pl = Field(p).ParagraphLayoutFor(0);
+            Assert.Equal(3, pl.Lines.Count);
+            Assert.True(pl.HasEllipsis);
+            AssertReachesBothEdges(pl, pl.Lines[0], "line 0");
+            AssertReachesBothEdges(pl, pl.Lines[1], "line 1");
+            // The last visible line is stretched to what is left once the ellipsis has its room, and the ellipsis follows it, so the two fill the area.
+            var dots = pl.EllipsisRect;
+            var ink = Ink(pl, pl.Lines[2]);
+            if (rtl)
+            {
+                Assert.True(System.Math.Abs(ink.Right - (pl.ContentLeft + pl.ContentWidth)) < 1.5, "the last line starts at the right edge: " + ink.Right);
+                Assert.True(System.Math.Abs(dots.X - pl.ContentLeft) < 2, "the ellipsis ends at the left edge: " + dots);
+                Assert.True(dots.Right <= ink.Left + 8, "and is left of the text: " + dots + " against " + ink.Left);
+            }
+            else
+            {
+                Assert.True(System.Math.Abs(ink.Left - pl.ContentLeft) < 1.5, "the last line starts at the left edge: " + ink.Left);
+                Assert.True(System.Math.Abs(dots.Right - (pl.ContentLeft + pl.ContentWidth)) < 2, "the ellipsis ends at the right edge: " + dots);
+                Assert.True(dots.X >= ink.Right - 8, "and is right of the text: " + dots + " against " + ink.Right);
+            }
+        });
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_bullet_or_number_stays_put_and_the_text_beside_it_is_stretched_to_the_edges(bool rtl) => Headless.Run(() =>
+        {
+            Paragraph Build(int align)
+            {
+                var p = Para(rtl ? "ar" : "en", rtl ? "ar" : "en", rtl ? Arabic : English);
+                p.Rtl = rtl;
+                p.Props.SetInt(TextPropertyNumbers.LeadingIndent, 36000, TextPropertyNumbers.VariationMilliPoint);
+                p.Props.SetInt(TextPropertyNumbers.FirstIndent, -24000, TextPropertyNumbers.VariationMilliPoint);
+                p.Props.SetInt(TextPropertyNumbers.BulNumScheme, 10);
+                p.Props.SetStr(TextPropertyNumbers.BulNumTxtBefore, "Chapter number ");
+                p.Props.SetStr(TextPropertyNumbers.BulNumTxtAfter, ".");
+                p.Props.SetInt(TextPropertyNumbers.Align, align);
+                return p;
+            }
+            var plain = Fixtures.Field(Doc(Build(0)), 330).ParagraphLayoutFor(0);
+            var pl = Fixtures.Field(Doc(Build(5)), 330).ParagraphLayoutFor(0);
+            Assert.True(pl.Lines.Count >= 4, "lines: " + pl.Lines.Count);
+            Assert.Equal(plain.LabelRect.X, pl.LabelRect.X, 2);
+            Assert.Equal(plain.LabelRect.Y, pl.LabelRect.Y, 2);
+            Assert.Equal(plain.LabelRect.Width, pl.LabelRect.Width, 2);
+            // The first line starts after the label (the label is wider than the hanging indent); every line ends at the trailing edge, and the
+            // lines after the first also start at the leading one.
+            var first = Ink(pl, pl.Lines[0]);
+            double left = pl.ContentLeft, right = pl.ContentLeft + pl.ContentWidth;
+            if (rtl)
+            {
+                Assert.True(System.Math.Abs(first.Left - left) < 1.5, "the first line ends at the left edge: " + first.Left);
+                Assert.True(first.Right < pl.LabelRect.X + 1, "and starts left of the label: " + first.Right + " against " + pl.LabelRect.X);
+            }
+            else
+            {
+                Assert.True(System.Math.Abs(first.Right - right) < 1.5, "the first line ends at the right edge: " + first.Right);
+                Assert.True(first.Left > pl.LabelRect.Right - 1, "and starts right of the label: " + first.Left + " against " + pl.LabelRect.Right);
+            }
+            for (int i = 1; i < pl.Lines.Count - 1; i++) AssertReachesBothEdges(pl, pl.Lines[i], "line " + i);
+        });
+
+        [Fact]
+        public void A_run_background_is_unbroken_across_the_stretched_spaces_of_a_justified_line() => Headless.Run(() =>
+        {
+            var p = Para("en", "en", "The quick brown ", "en", "fox jumps over the lazy dog while the five boxing wizards jump quickly and a mad boxer shot ", "en", "a quick, gloved jab to the jaw of his dizzy opponent.");
+            p.Runs[1].Props.SetInt(TextPropertyNumbers.BackColor, 0x80FFFF, 0);
+            var field = Field(p);
+            var pl = field.ParagraphLayoutFor(0);
+            var shot = Fixtures.Render(field);
+            int start = 16, end = 16 + p.Runs[1].Text.Length, wholeLines = 0;
+            for (int l = 0; l < pl.Lines.Count - 1; l++)
+            {
+                var li = pl.Lines[l];
+                if (li.Start < start || pl.TextEnd(li) > end) continue;
+                wholeLines++;
+                var ink = Ink(pl, li);
+                double y = field.ParagraphTop(0) + li.TextY + 1;
+                for (int x = (int)System.Math.Ceiling(ink.Left) + 1; x < (int)System.Math.Floor(ink.Right) - 1; x++)
+                    Assert.True(shot.HasColor(x, (int)y), "line " + l + ": no background at x " + x);
+            }
+            Assert.True(wholeLines >= 1, "a line inside the coloured run was checked");
+        });
+
         const string Overhang = "a fox jumps over a jolly jug, just a jiffy joke: jam, jazz, jets and jugs, a jab, a jig, jewels, a fjord, jaws, a jaunty jaguar, joyful jays";
 
         /// <summary>Counts the interior gaps of the justified lines (stretched spaces at least 8 pixels wide) and those with a smear in their

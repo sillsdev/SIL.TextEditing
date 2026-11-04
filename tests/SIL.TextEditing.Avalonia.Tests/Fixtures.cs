@@ -84,6 +84,9 @@ namespace SIL.TextEditing.Avalonia.Tests
                 return _buffer[o + 3] > 128 && _buffer[o] < threshold && _buffer[o + 1] < threshold && _buffer[o + 2] < threshold;
             }
 
+            /// <summary>True when the pixel was drawn on at all (it is not transparent).</summary>
+            public bool HasColor(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height && _buffer[y * _stride + x * 4 + 3] > 128;
+
             /// <summary>True when any pixel of the column between the rows is ink.</summary>
             public bool ColumnHasInk(int x, double top, double bottom, int threshold = 140)
             {
