@@ -99,6 +99,31 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void A_pause_timer_restart_from_another_thread_is_handed_to_the_UI_thread_which_decides_whether_the_field_is_on_screen() => Headless.Run(async () =>
+        {
+            var restart = typeof(RichTextField).GetMethod("RestartPauseTimer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var (window, field) = Fixtures.InWindow(OneParagraph("ab"));
+            field.Editor.TypingPause = System.TimeSpan.FromSeconds(30);   // typing here starts a timer that never fires in the test
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.Type("x");
+            Assert.True(field.Editor.HasOpenUndoGroup);
+            field.Editor.TypingPause = System.TimeSpan.FromMilliseconds(40);
+            await System.Threading.Tasks.Task.Run(() => restart.Invoke(field, null));   // the edit came from another thread
+            Headless.Pump();
+            await Wait(300);
+            Assert.False(field.Editor.HasOpenUndoGroup);   // the timer started on the UI thread and closed the step
+
+            field.Type("y");
+            field.Editor.TypingPause = System.TimeSpan.FromMilliseconds(40);
+            await System.Threading.Tasks.Task.Run(() => restart.Invoke(field, null));
+            window.Content = null;                          // the field leaves the screen before the posted callback runs
+            Headless.Pump();
+            await Wait(300);
+            Assert.False(field.Editor.HasOpenUndoGroup);   // leaving closed the step; the callback saw an off-screen field and started no timer
+            window.Close();
+        });
+
+        [Fact]
         public void Cut_on_text_that_may_not_be_edited_does_nothing_but_Copy_still_works() => Headless.Run(async () =>
         {
             var locked = new Run { Ws = "en", Text = "locked" };
