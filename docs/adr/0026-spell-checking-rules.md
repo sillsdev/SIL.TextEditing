@@ -64,7 +64,9 @@ owner decisions.
   system). Either overload is one undo step of its own, refused when the text can no longer be edited, is hidden by a line
   limit, or is not the word the menu was made for. The caret ends after the replacement.
 - **The menu is the host's.** The field offers `SpellingSuggestionsAt(position)` as the spelling part of the context
-  information ADR 0021 describes; building the menu and its wording are the host's.
+  information ADR 0021 describes, and a context request carries it: `ContextInfo.Spelling` is the `SpellingSuggestions` object (the host
+  needs it to apply, add or ignore) and `ContextInfo.SpellingSuggestions` its strings. The word the checker judged can differ from
+  `ContextInfo.Word`, which uses the double-click rule. Building the menu and its wording are the host's.
 - **Ignore is optional.** FieldWorks' dictionaries have no ignore operation and its menu has no "Ignore". A checker that
   can ignore a word also implements `ISpellIgnorer`; `SpellingSuggestions.CanIgnore` says so and the host offers the item
   only then.

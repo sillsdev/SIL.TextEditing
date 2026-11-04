@@ -13,8 +13,8 @@ namespace SIL.TextEditing.Avalonia
     public partial class RichTextField
     {
         /// <summary>A context menu was asked for: the host builds it from <see cref="ContextMenuRequestedEventArgs.Info"/> (the word
-        /// and its range, its writing system, the run's properties, any link or embedded object, the selection, and a list for
-        /// spelling suggestions that nothing fills yet) and shows it at <see cref="ContextMenuRequestedEventArgs.Position"/>. A
+        /// and its range, its writing system, the run's properties, any link or embedded object, the selection, and the spelling problem
+        /// with its suggestions when the field has a spell checker, <see cref="ContextInfo.Spelling"/>) and shows it at <see cref="ContextMenuRequestedEventArgs.Position"/>. A
         /// right click inside a selection has kept it and one outside has moved the caret there first, as in FieldWorks. A host
         /// builds its menu from this event or sets <c>ContextMenu</c> on the field; with both, this event wins.</summary>
         public event System.EventHandler<ContextMenuRequestedEventArgs>? ContextMenuRequested;
@@ -49,6 +49,17 @@ namespace SIL.TextEditing.Avalonia
             return false;
         }
 
+        /// <summary>Adds the spelling problem at the place, if the word there is marked (ADR 0020, 0021).</summary>
+        ContextInfo WithSpelling(ContextInfo info)
+        {
+            if (info.Word.Length == 0) return info;
+            var spelling = SpellingSuggestionsAt(info.Position);
+            if (spelling == null) return info;
+            info.Spelling = spelling;
+            info.SpellingSuggestions.AddRange(spelling.All);
+            return info;
+        }
+
         /// <summary>Raises <see cref="ContextMenuRequested"/>: for the character under the pointer, or for the caret.</summary>
         void RaiseContextMenuRequested(bool pointer, Point at)
         {
@@ -57,12 +68,12 @@ namespace SIL.TextEditing.Avalonia
             if (pointer)
                 {
                 var loc = Locate(at);
-                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Pointer, at, Editor.DescribeContext(loc.Character, false, PointerIsOverText(loc, at))));
+                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Pointer, at, WithSpelling(Editor.DescribeContext(loc.Character, false, PointerIsOverText(loc, at)))));
             }
             else
             {
                 var caret = CaretRect();
-                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Keyboard, new Point(caret.X, caret.Bottom), Editor.DescribeContext(Editor.Caret, true)));
+                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Keyboard, new Point(caret.X, caret.Bottom), WithSpelling(Editor.DescribeContext(Editor.Caret, true))));
             }
         }
     }

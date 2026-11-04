@@ -37,9 +37,15 @@ namespace SIL.TextEditing
         /// <summary>The selected text, paragraphs joined by a line feed; empty when nothing is selected.</summary>
         public string SelectedText { get; internal set; } = string.Empty;
 
-        /// <summary>Spelling suggestions for the word. Empty: nothing fills it yet. The host's spell checker (ADR 0020) will, and the
-        /// host that builds the menu lists what is here, so the hook is in place before the checker is.</summary>
+        /// <summary>Spelling suggestions for the word, best first, when the field has a spell checker (ADR 0020) and the word is marked; empty
+        /// otherwise. The same strings as <see cref="Spelling"/>.All, kept as a plain list for a host that only lists them.</summary>
         public List<string> SpellingSuggestions { get; } = new List<string>();
+
+        /// <summary>The spelling problem at the place, or null when the word is not marked or the field has no spell checker: the word
+        /// the checker judged (which can differ from <see cref="Word"/>, as the checker's word rules are the host's), its writing system,
+        /// why it is marked, all the suggestions, and what the menu's choices need (<c>RichTextField.ApplySpellingSuggestion</c>,
+        /// <c>AddToDictionary</c>, <c>IgnoreWord</c>, <see cref="SIL.TextEditing.SpellingSuggestions.WithMissingSpaces"/>).</summary>
+        public SIL.TextEditing.SpellingSuggestions? Spelling { get; set; }
     }
 
     /// <summary>An embedded object (an ORC) at a place: its one-character range and the host's data for it.</summary>

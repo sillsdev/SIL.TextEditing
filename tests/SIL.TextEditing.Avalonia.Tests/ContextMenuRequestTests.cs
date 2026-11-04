@@ -44,6 +44,40 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void A_context_request_on_a_misspelled_word_carries_the_spelling_problem_and_its_suggestions() => Headless.Run(() =>
+        {
+            var (window, field) = Fixtures.InWindow(OneParagraph("hello wrold"));
+            var host = new SIL.TextEditing.Tests.FakeSpellHost("hello");
+            host.Checkers["en"].Suggestions = new List<string> { "world", "wold" };
+            field.SpellIdlePost = a => { };
+            field.SpellChecking = host;
+            var seen = new List<ContextMenuRequestedEventArgs>();
+            field.ContextMenuRequested += (o, e) => seen.Add(e);
+            field.Editor.SetCaret(new TextPosition(0, 8));
+            field.Focus();
+            Headless.Pump();
+            field.Press(Key.Apps);
+            Assert.Single(seen);
+            var info = seen[0].Info;
+            Assert.Equal(new[] { "world", "wold" }, info.SpellingSuggestions);
+            Assert.NotNull(info.Spelling);
+            Assert.Equal("wrold", info.Spelling!.Word);
+            Assert.Equal(SpellingProblem.Misspelled, info.Spelling.Problem);
+            Assert.True(field.ApplySpellingSuggestion(info.Spelling, "world"));
+            Assert.Equal("hello world", field.Editor.Document.Paragraphs[0].Text);
+            // a correct word, and white space, carry none
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.Press(Key.Apps);
+            Assert.Null(seen[1].Info.Spelling);
+            Assert.Empty(seen[1].Info.SpellingSuggestions);
+            field.SpellChecking = null;
+            field.Editor.SetCaret(new TextPosition(0, 8));
+            field.Press(Key.Apps);
+            Assert.Null(seen[2].Info.Spelling);
+            window.Close();
+        });
+
+        [Fact]
         public void A_find_match_that_runs_over_several_lines_asks_the_host_to_show_all_of_it() => Headless.Run(() =>
         {
             var field = Fixtures.Field(OneParagraph(string.Join(" ", System.Linq.Enumerable.Repeat("word", 40))), 90);
