@@ -59,7 +59,7 @@ namespace SIL.TextEditing.Avalonia
 
         public RichTextField(Document document)
         {
-            Editor = new DocumentEditor(document);
+            Editor = new DocumentEditor(document) { AccessCheck = RequireUIThread };
             for (int i = 0; i < document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             Editor.DocumentChanged += OnDocumentChanged;
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
@@ -74,7 +74,15 @@ namespace SIL.TextEditing.Avalonia
             ActualThemeVariantChanged += (o, e) => InvalidateVisual();
         }
 
-        /// <summary>The editing session: caret, selection, active writing system and edit events.</summary>
+        static void RequireUIThread()
+        {
+            if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                throw new InvalidOperationException("A RichTextField's document must be edited on the UI thread: the field changes Avalonia state when the document changes. Marshal the edit with Dispatcher.UIThread.");
+        }
+
+        /// <summary>The editing session: caret, selection, active writing system and edit events. Like the control, it must be
+        /// used on the UI thread: a call that changes the document from another thread throws an
+        /// <see cref="InvalidOperationException"/> before anything changes (<see cref="DocumentEditor.AccessCheck"/>).</summary>
         public DocumentEditor Editor { get; }
         public WritingSystemRegistry WritingSystems { get; set; } = new WritingSystemRegistry();
         /// <summary>Resolves the object data of an object run to a picture, or null.</summary>
@@ -336,8 +344,9 @@ namespace SIL.TextEditing.Avalonia
         // ADR 0023: a pause of TypingPause ends the typing step even when nothing else follows.
         void RestartPauseTimer()
         {
-            // The editor has no thread affinity, but a DispatcherTimer does: an edit from another thread hands the timer to the
-            // UI thread. A field that is not on screen has no timer (it closes the step when it leaves the screen).
+            // Edits are refused off the UI thread (Editor.AccessCheck), so this is only reached from another thread when a host
+            // has removed that check; a DispatcherTimer has thread affinity, so the timer is handed to the UI thread then. A field
+            // that is not on screen has no timer (it closes the step when it leaves the screen).
             if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
             {
                 global::Avalonia.Threading.Dispatcher.UIThread.Post(RestartPauseTimer);
@@ -346,6 +355,8 @@ namespace SIL.TextEditing.Avalonia
             if (!_onScreen)
             {
                 _pauseTimer?.Stop();
+                _pauseHandle?.Dispose();
+                _pauseHandle = null;
                 return;
             }
             if (_pauseTimer == null)
@@ -354,10 +365,26 @@ namespace SIL.TextEditing.Avalonia
                 _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
             }
             _pauseTimer.Stop();
+            _pauseHandle?.Dispose();
+            _pauseHandle = null;
             if (!Editor.HasOpenUndoGroup) return;
+            var scheduler = PauseScheduler;
+            if (scheduler != null)
+            {
+                _pauseHandle = scheduler(Editor.TypingPause, () => Editor.CloseUndoGroup());
+                return;
+            }
             _pauseTimer.Interval = Editor.TypingPause;
             _pauseTimer.Start();
         }
+
+        IDisposable? _pauseHandle;
+
+        /// <summary>Starts the one-shot timer that ends a typing step when the pause passes (ADR 0023): it is given the pause
+        /// (<see cref="DocumentEditor.TypingPause"/>) and the action to run when it elapses, and returns something that cancels
+        /// it; the field cancels and asks again after every edit. Null, the default, uses a dispatcher timer. A host or a test
+        /// with its own clock sets it to drive the pause without waiting.</summary>
+        public Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
 
         bool _onScreen;
 

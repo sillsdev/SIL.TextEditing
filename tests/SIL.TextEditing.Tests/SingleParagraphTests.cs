@@ -187,6 +187,7 @@ namespace SIL.TextEditing.Tests
         [InlineData("a\tb", "Xab")]
         [InlineData("\ta\t\tb\t", "Xab")]
         [InlineData("a\t\nb", "Xa b")]
+        [InlineData("a\r\t\nb", "Xa  b")]
         [InlineData("a\n\t", "Xa")]
         [InlineData("\t", "X")]
         public void Tabs_are_removed(string pasted, string expected)
@@ -205,12 +206,23 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
-        public void Tabs_are_kept_when_the_field_takes_paragraphs()
+        public void Tabs_are_removed_when_the_field_takes_paragraphs_too()
         {
             var e = new DocumentEditor(OneParagraph("X"));
             e.SetCaret(new TextPosition(0, 1));
             e.Paste(new List<Paragraph> { Para("en", "en", "a\tb") });
-            Assert.Equal("Xa\tb", e.Document.Paragraphs[0].Text);
+            Assert.Equal("Xab", e.Document.Paragraphs[0].Text);
+
+            e = new DocumentEditor(OneParagraph("X"));
+            e.SetCaret(new TextPosition(0, 1));
+            e.Paste(new List<Paragraph> { Para("en", "en", "\ta\t"), Para("en", "en", "\tb\t\tc") });
+            Assert.Equal(new[] { "Xa", "bc" }, new[] { e.Document.Paragraphs[0].Text, e.Document.Paragraphs[1].Text });
+            Assert.Equal(new TextPosition(1, 2), e.Caret);
+
+            e = new DocumentEditor(OneParagraph("X"));
+            e.SetCaret(new TextPosition(0, 1));
+            e.PasteText("a\tb\n\tc");
+            Assert.Equal(new[] { "Xab", "c" }, new[] { e.Document.Paragraphs[0].Text, e.Document.Paragraphs[1].Text });
         }
 
         [Fact]
@@ -233,6 +245,20 @@ namespace SIL.TextEditing.Tests
             clock.Stop();
             Assert.Equal(text.Length - 1, e.Document.Paragraphs[0].Text.Length);
             Assert.True(clock.Elapsed < System.TimeSpan.FromSeconds(5), $"took {clock.Elapsed}");
+        }
+
+        [Fact]
+        public void Many_pasted_paragraphs_join_into_one_with_a_space_between_each()
+        {
+            // The cost of a large paste is counted in the field tests (the layout lookups); here the join is a plain result check.
+            var paragraphs = new List<Paragraph>();
+            for (int i = 0; i < 16000; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
+            var e = Single(string.Empty);
+            e.Paste(paragraphs);
+            Assert.Single(e.Document.Paragraphs);
+            Assert.StartsWith("line 0 line 1 line 2 ", e.Document.Paragraphs[0].Text);
+            Assert.EndsWith(" line 15999", e.Document.Paragraphs[0].Text);
+            Assert.Equal(16000, e.Document.Paragraphs[0].Runs.Count);
         }
 
         [Fact]

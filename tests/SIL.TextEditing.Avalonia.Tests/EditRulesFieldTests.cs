@@ -55,6 +55,56 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_takes_linear_time() => Headless.Run(() =>
+        {
+            // The joined paragraph has one run per paragraph (the writing system alternates), and the field lays it out as the
+            // caret lands in it, so the layout is part of what the paste costs. Counted, not timed, so a busy machine cannot
+            // fail it: the layout looks up the run for a character a few times per run (binary search), where a scan from the
+            // first run would make about runs times runs / 2 lookups.
+            const int paragraphsPasted = 8000;
+            var paragraphs = new List<Paragraph>();
+            for (int i = 0; i < paragraphsPasted; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
+            var field = Fixtures.Field(OneParagraph(string.Empty), 520, f => f.SingleParagraph = true);
+            long before = ParagraphSource.Probes;
+            field.Editor.Paste(paragraphs);
+            Fixtures.Layout(field, 520);
+            long probes = ParagraphSource.Probes - before;
+            Assert.Single(field.Editor.Document.Paragraphs);
+            Assert.True(probes > 0);   // the layout did go through the lookup
+            Assert.True(probes < 100L * paragraphsPasted, $"{probes} segment probes for {paragraphsPasted} runs");
+        });
+
+        [Fact]
+        public void Editing_from_a_background_thread_throws_a_clear_exception_before_anything_changes() => Headless.Run(async () =>
+        {
+            var field = Fixtures.Field(OneParagraph("ab"));
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            var raised = 0;
+            field.Editor.Committed += d => raised++;
+            var edits = new (string Name, System.Action Edit)[]
+            {
+                ("TypeText", () => field.Editor.TypeText("x")),
+                ("PasteText", () => field.Editor.PasteText("x")),
+                ("Paste", () => field.Editor.Paste(new List<Paragraph> { Para("en", "en", "x") })),
+                ("Backspace", () => field.Editor.Backspace()),
+                ("Enter", () => field.Editor.Enter()),
+                ("InsertLineBreak", () => field.Editor.InsertLineBreak()),
+                ("Apply", () => field.Editor.Apply(new EditDelta { Start = 0, Before = { Para("en", "en", "ab") }, After = { Para("en", "en", "x") } })),
+                ("ExternalReplaceParagraph", () => field.Editor.ExternalReplaceParagraph(0, Para("en", "en", "x"), 0, 2, 1)),
+            };
+            foreach (var (name, edit) in edits)
+            {
+                var ex = await System.Threading.Tasks.Task.Run(() => Record.Exception(edit));
+                var invalid = Assert.IsType<System.InvalidOperationException>(ex);
+                Assert.Contains("UI thread", invalid.Message);
+                Assert.Equal("ab", field.Editor.Document.Paragraphs[0].Text);   // it failed before it touched the document
+            }
+            Assert.Equal(0, raised);
+            field.Editor.TypeText("c");   // the UI thread is unaffected
+            Assert.Equal("abc", field.Editor.Document.Paragraphs[0].Text);
+        });
+
+        [Fact]
         public void Plain_Enter_still_splits_a_paragraph_or_goes_to_the_host() => Headless.Run(() =>
         {
             var field = Fixtures.Field(OneParagraph("abcd"));

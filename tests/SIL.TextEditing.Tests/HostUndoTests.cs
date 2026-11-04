@@ -80,5 +80,20 @@ namespace SIL.TextEditing.Tests
             Assert.Equal(new TextPosition(0, 2), e.Caret);
             Assert.Equal("two!!", e.Document.Paragraphs[1].Text);
         }
+
+        [Fact]
+        public void The_access_check_runs_before_any_change_and_its_exception_leaves_the_document_alone()
+        {
+            var e = new DocumentEditor(OneParagraph("ab"));
+            e.SetCaret(new TextPosition(0, 2));
+            e.AccessCheck = () => throw new System.InvalidOperationException("wrong thread");
+            Assert.Throws<System.InvalidOperationException>(() => e.TypeText("x"));
+            Assert.Throws<System.InvalidOperationException>(() => e.Enter());
+            Assert.Throws<System.InvalidOperationException>(() => e.Backspace());
+            Assert.Equal("ab", e.Document.Paragraphs[0].Text);
+            e.AccessCheck = null;
+            e.TypeText("c");
+            Assert.Equal("abc", e.Document.Paragraphs[0].Text);
+        }
     }
 }

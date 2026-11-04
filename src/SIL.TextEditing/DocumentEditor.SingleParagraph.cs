@@ -53,6 +53,16 @@ namespace SIL.TextEditing
             return new List<Paragraph> { joined };
         }
 
+        /// <summary>Removes the tab characters from the paragraph's text runs (the multi-paragraph paste rule; a single paragraph
+        /// does it in <see cref="SeparatorsToSpaces"/>, which must see them to pair CR LF as FieldWorks does).</summary>
+        static void RemoveTabs(Paragraph paragraph)
+        {
+            bool any = false;
+            foreach (var r in paragraph.Runs)
+                if (!r.IsObject && r.Text.IndexOf('\t') >= 0) { r.Text = r.Text.Replace("\t", ""); any = true; }
+            if (any) paragraph.Normalize();
+        }
+
         /// <summary>Removes tabs and turns every separator (CR LF counts as one), across run boundaries, into one space, and drops
         /// every separator that ends the paragraph. Nothing else is collapsed, and a separator at the start leaves a space. The hard
         /// line break and object runs count as content. The space takes the writing system of the text before it, else of the
@@ -62,8 +72,14 @@ namespace SIL.TextEditing
             if (!paragraph.Runs.Any(r => !r.IsObject && r.Text.Any(c => c == '\t' || IsParagraphSeparator(c)))) return;
             var chars = new List<char>();
             var owners = new List<Run>();
+            var afterTab = new List<bool>();   // a tab stood just before this character, so a CR before it is not paired with it
+            bool tab = false;
             foreach (var r in paragraph.Runs)
-                foreach (var c in r.Text) if (c != '\t') { chars.Add(c); owners.Add(r); }
+                foreach (var c in r.Text)
+                {
+                    if (c == '\t') { tab = true; continue; }
+                    chars.Add(c); owners.Add(r); afterTab.Add(tab); tab = false;
+                }
             var runs = new List<Run>();
             var sb = new System.Text.StringBuilder();
             Run? owner = null;        // the source run the pending text copies, null for a synthesised space
@@ -87,7 +103,7 @@ namespace SIL.TextEditing
             {
                 if (!IsParagraphSeparator(chars[i])) { Emit(chars[i], owners[i], false); i++; continue; }
                 int j = i + 1;
-                if (chars[i] == (char)13 && j < n && chars[j] == (char)10) j++;
+                if (chars[i] == (char)13 && j < n && chars[j] == (char)10 && !afterTab[j]) j++;
                 if (i < end) Emit(' ', i > 0 ? owners[i - 1] : owners[i], true);
                 i = j;
             }
