@@ -35,6 +35,16 @@ namespace SIL.TextEditing
         /// <summary>Raised on any change to the document: start paragraph, removed paragraphs, added paragraphs.</summary>
         public event Action<int, int, int>? DocumentChanged;
 
+        /// <summary>Called first by everything that changes the document (typing, paste, deletion, Enter, line breaks, and the
+        /// host's <see cref="Apply"/> and <see cref="ExternalReplaceParagraph"/>), before it touches anything. A host that has a
+        /// thread rule sets it to throw when the caller breaks the rule. <c>RichTextField</c> sets it to require the UI thread:
+        /// a document edit raises events its control answers by changing Avalonia state, which only the UI thread may do, and
+        /// FieldWorks makes its edits there too, so an edit from another thread throws an <see cref="InvalidOperationException"/>
+        /// at once and leaves the document as it was. Null (the default) allows any thread.</summary>
+        public Action? AccessCheck { get; set; }
+
+        void CheckAccess() => AccessCheck?.Invoke();
+
         public bool HasSelection => !Caret.Equals(Anchor);
 
         public void Ordered(out TextPosition start, out TextPosition end)
@@ -150,6 +160,7 @@ namespace SIL.TextEditing
 
         public void TypeText(string text)
         {
+            CheckAccess();
             if (string.IsNullOrEmpty(text)) return;
             text = Normalized(text);
             if (SingleParagraph) text = OneLine(text);
@@ -168,6 +179,7 @@ namespace SIL.TextEditing
         /// joins the typing before it nor the typing after it.</summary>
         public void PasteText(string text)
         {
+            CheckAccess();
             if (string.IsNullOrEmpty(text) || !CanEditSelectionOrCaret()) return;
             // Text that is only separators adds nothing in single-paragraph mode, but a paste still replaces the selection.
             if (SingleParagraph && HasSelection && OneLine(Normalized(text)).Length == 0) { InOneUndoStep(() => DeleteSelection("type")); return; }
@@ -183,6 +195,7 @@ namespace SIL.TextEditing
         /// that does not accept Return). It is one undo step of its own.</summary>
         public void InsertLineBreak()
         {
+            CheckAccess();
             if (!CanEditSelectionOrCaret()) return;
             InOneUndoStep(() => InsertOne(LineSeparator.ToString()));
         }
@@ -278,6 +291,7 @@ namespace SIL.TextEditing
         /// </summary>
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
+            CheckAccess();
             if (IsReadOnly || !CanEditRange(a, b)) return;
             if (fragment != null)
             {
@@ -372,6 +386,7 @@ namespace SIL.TextEditing
         /// stays on the right; anywhere else the left keeps the identity and the right is new.</summary>
         public void Enter()
         {
+            CheckAccess();
             if (SingleParagraph || !CanEditSelectionOrCaret()) return;
             if (HasSelection) DeleteSelection("enter-del");
             var d = Begin(Caret.Paragraph, Caret.Paragraph, "enter");
@@ -426,6 +441,7 @@ namespace SIL.TextEditing
         /// <summary>Applies a delta, for undo and redo driven by the host.</summary>
         public void Apply(EditDelta d)
         {
+            CheckAccess();
             Document.Paragraphs.RemoveRange(d.Start, d.Before.Count);
             Document.Paragraphs.InsertRange(d.Start, d.After.Select(p => p.Clone()));
             var c = d.CaretAfter;
@@ -443,6 +459,7 @@ namespace SIL.TextEditing
         /// the text: changeStart, removedLength and insertedLength describe the text difference.</summary>
         public void ExternalReplaceParagraph(int paragraphIndex, Paragraph replacement, int changeStart, int removedLength, int insertedLength)
         {
+            CheckAccess();
             Document.Paragraphs[paragraphIndex] = replacement;
             TextPosition Map(TextPosition p)
             {

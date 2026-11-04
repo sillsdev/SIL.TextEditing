@@ -71,6 +71,36 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void Editing_from_a_background_thread_throws_a_clear_exception_before_anything_changes() => Headless.Run(async () =>
+        {
+            var field = Fixtures.Field(OneParagraph("ab"));
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            var raised = 0;
+            field.Editor.Committed += d => raised++;
+            var edits = new (string Name, System.Action Edit)[]
+            {
+                ("TypeText", () => field.Editor.TypeText("x")),
+                ("PasteText", () => field.Editor.PasteText("x")),
+                ("Paste", () => field.Editor.Paste(new List<Paragraph> { Para("en", "en", "x") })),
+                ("Backspace", () => field.Editor.Backspace()),
+                ("Enter", () => field.Editor.Enter()),
+                ("InsertLineBreak", () => field.Editor.InsertLineBreak()),
+                ("Apply", () => field.Editor.Apply(new EditDelta { Start = 0, Before = { Para("en", "en", "ab") }, After = { Para("en", "en", "x") } })),
+                ("ExternalReplaceParagraph", () => field.Editor.ExternalReplaceParagraph(0, Para("en", "en", "x"), 0, 2, 1)),
+            };
+            foreach (var (name, edit) in edits)
+            {
+                var ex = await System.Threading.Tasks.Task.Run(() => Record.Exception(edit));
+                var invalid = Assert.IsType<System.InvalidOperationException>(ex);
+                Assert.Contains("UI thread", invalid.Message);
+                Assert.Equal("ab", field.Editor.Document.Paragraphs[0].Text);   // it failed before it touched the document
+            }
+            Assert.Equal(0, raised);
+            field.Editor.TypeText("c");   // the UI thread is unaffected
+            Assert.Equal("abc", field.Editor.Document.Paragraphs[0].Text);
+        });
+
+        [Fact]
         public void Plain_Enter_still_splits_a_paragraph_or_goes_to_the_host() => Headless.Run(() =>
         {
             var field = Fixtures.Field(OneParagraph("abcd"));
