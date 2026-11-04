@@ -100,8 +100,10 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
   Text a line limit hides stays in the model but cannot be reached: the caret, Right, End, Up/Down and mouse stop at the end of
   the last line shown, as FieldWorks puts an insertion point in truncated text at the last visible position. Typing, Delete, Enter, paste
   and composition are refused at that point, and Backspace at the start of the next paragraph does not join it onto the hidden end.
-  Select All and Copy still take the hidden text, because the selection model holds it. (FieldWorks also
-  draws an ellipsis on the last line; this field does not yet.)
+  Select All and Copy still take the hidden text, because the selection model holds it. As in FieldWorks, the last
+  visible line of a cut-off paragraph ends with "..." in the paragraph style's character format, on the trailing side of the text
+  (left of it in a right-to-left paragraph), with room kept for it when the text area is wide enough for one beside text; the
+  caret and hit testing stay on the text, and a hard line break that ends the paragraph is not cut-off text.
 - **Graphemes**: `GraphemeClusters` is `StringInfo` plus Indic conjuncts (GB9c, six scripts; .NET 10 lacks it). The
   netstandard2.0 build also fuses Extend, SpacingMark, emoji ZWJ sequences and flags per UAX #29, with approximated
   property tables; caret stops in the field come from the shaper, not from this class.

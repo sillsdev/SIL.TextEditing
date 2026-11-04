@@ -621,6 +621,39 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        const int ArabicTwoLines = 33;
+
+        [Fact]
+        public void Pixels_show_three_dots_after_the_last_visible_line_of_a_cut_off_paragraph_on_its_trailing_side() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 8000))
+            {
+                var shot = new Shot(s);
+                foreach (int p in new[] { TwoLines, ArabicTwoLines })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    Assert.True(pl.Truncated && pl.HasEllipsis, "paragraph " + p);
+                    var dots = pl.EllipsisRect;
+                    double top = s.Field.ParagraphTop(p);
+                    // The dots sit on the baseline: ink in their box, in the rows just above it, in three separate groups of columns.
+                    double baseline = top + pl.Lines[pl.Lines.Count - 1].TextY + pl.Lines[pl.Lines.Count - 1].Line.Baseline;
+                    var columns = new List<int>();
+                    for (int x = (int)dots.X; x < (int)System.Math.Ceiling(dots.Right); x++)
+                        for (int y = (int)(baseline - 4); y <= (int)(baseline + 1); y++)
+                            if (shot.IsInk(x, y, 215)) { columns.Add(x); break; }   // (a dot is small and blurred, so a paler threshold than for letters)
+                    Assert.NotEmpty(columns);
+                    int groups = 1 + columns.Zip(columns.Skip(1), (a, b) => b - a).Count(gap => gap > 1);
+                    Assert.Equal(3, groups);
+                    Assert.Empty(shot.InkColumns(dots.X, dots.Right, top + dots.Y, baseline - 6));   // nothing tall: they are dots
+                    // Nothing is drawn past the text area on the trailing side.
+                    if (pl.Rtl) Assert.Empty(shot.InkColumns(0, pl.ContentLeft - 1, top, top + pl.Height));
+                    else Assert.Empty(shot.InkColumns(pl.ContentLeft + pl.ContentWidth + 1, shot.Width, top, top + pl.Height));
+                }
+                // A paragraph that is not cut off has no dots.
+                Assert.False(s.Field.ParagraphLayoutFor(Plain).HasEllipsis);
+            }
+        });
+
         static double TextLeft(ParagraphLayout pl) => Left(pl.Lines[0]);
         static double TextRight(ParagraphLayout pl) => Left(pl.Lines[0]) + pl.Lines[0].Line.WidthIncludingTrailingWhitespace;
 

@@ -553,6 +553,27 @@ namespace SIL.TextEditing.Avalonia
                 double lineX = first ? layout._firstX : layout.ContentLeft;
                 var line = formatter.FormatLine(source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
+                if (pf.MaxLines > 0 && layout.Lines.Count == pf.MaxLines - 1 && index + line.Length < source.Text.Length)
+                {
+                    // Text follows the last line the limit allows, so it ends with an ellipsis. When the text area is wide enough for one
+                    // beside text, the line is made again narrower to keep room for it (on the left in a right-to-left paragraph).
+                    var dots = layout.EllipsisLine(defaultRun, baseWs, styles, foreground);
+                    if (dots != null)
+                    {
+                        layout._ellipsisLineIndex = layout.Lines.Count;
+                        double room = dots.WidthIncludingTrailingWhitespace;
+                        if (w > 3 * room)
+                        {
+                            var narrower = formatter.FormatLine(source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
+                            if (narrower != null && narrower.Length > 0)
+                            {
+                                line.Dispose();
+                                line = narrower;
+                                if (layout.Rtl) lineX += room;
+                            }
+                        }
+                    }
+                }
                 double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
                 if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = line.Baseline / line.Height;
                 layout.Lines.Add(new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets));
@@ -659,6 +680,49 @@ namespace SIL.TextEditing.Avalonia
                     }
                 }
             }
+        }
+
+        int _ellipsisLineIndex = -1;
+        TextLine? _ellipsis;
+
+        /// <summary>The "..." drawn after the last visible line of a paragraph the line limit cuts off, in the paragraph style's character format
+        /// (not the last run's own look).</summary>
+        TextLine? EllipsisLine(Run defaultRun, WritingSystemInfo baseWs, IStyleResolver? styles, IBrush foreground)
+        {
+            if (_ellipsis != null) return _ellipsis;
+            var format = FormatResolver.ResolveChar(Paragraph, new Run { Ws = defaultRun.Ws }, styles, baseWs.Size);
+            var props = MakeProperties(format, baseWs, defaultRun.Ws, foreground);
+            var source = new ParagraphSource { Text = "..." };
+            source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 3, Properties = props });
+            _ellipsis = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left), null);
+            return _ellipsis;
+        }
+
+        /// <summary>True when the last visible line ends with an ellipsis: the line limit cut the paragraph off with text still to come (a hard
+        /// line break that ends the paragraph is not text).</summary>
+        public bool HasEllipsis => _ellipsis != null && _ellipsisLineIndex >= 0 && _ellipsisLineIndex < Lines.Count;
+
+        /// <summary>The ellipsis' box in paragraph coordinates: after the text of the last visible line on the trailing side (right of it, or
+        /// left of it in a right-to-left paragraph), on its baseline; empty when there is none.</summary>
+        public Rect EllipsisRect
+        {
+            get
+            {
+                if (!HasEllipsis) return default;
+                var li = Lines[_ellipsisLineIndex];
+                double width = _ellipsis!.WidthIncludingTrailingWhitespace;
+                double inkLeft = li.X + li.Line.Start + (li.Line.WidthIncludingTrailingWhitespace - li.Line.Width);
+                double x = Rtl ? inkLeft - width : li.X + li.Line.Start + li.Line.Width;
+                return new Rect(x, li.TextY + li.Line.Baseline - _ellipsis.Baseline, width, _ellipsis.Height);
+            }
+        }
+
+        /// <summary>Draws the ellipsis, if the paragraph has one; <paramref name="top"/> is the paragraph's top in the control.</summary>
+        public void DrawEllipsis(DrawingContext context, double top)
+        {
+            if (!HasEllipsis) return;
+            var box = EllipsisRect;
+            _ellipsis!.Draw(context, new Point(box.X, top + box.Y));
         }
 
         /// <summary>The extra space a bullet or number needs after it: three points unless it ends with a space.</summary>
@@ -1095,6 +1159,7 @@ namespace SIL.TextEditing.Avalonia
         public void Dispose()
         {
             _label?.Dispose();
+            _ellipsis?.Dispose();
             foreach (var l in Lines) l.Line.Dispose();
             Lines.Clear();
         }

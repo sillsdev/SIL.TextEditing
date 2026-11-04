@@ -316,6 +316,7 @@ namespace SIL.TextEditing.Avalonia
                     foreach (var li in pl.Lines) if (!li.IsEmpty) li.Draw(context, y);
                     pl.DrawSquiggles(context, y);
                     pl.DrawLabel(context, y);
+                    pl.DrawEllipsis(context, y);
                     if (ObjectAsGlyph)
                     {
                         foreach (var o in pl.ObjectRects())

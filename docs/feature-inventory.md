@@ -87,7 +87,7 @@ Engine entry: `VwPropertyStore::put_IntProperty` (V/VwPropertyStore.cpp:1177, ca
 | ktptBulNumFontInfo (147) packed font props for the number | :1636; parsed :6700-6745 | NO | NO | M |
 | ktptKeepWithNext (148), ktptKeepTogether (149), ktptWidowOrphanControl (162) | :1514-1528; CARRY for on-screen; page layout and print only (V/VwLayoutStream.cpp:1252, VwSimpleBoxes.cpp:3016) | NO | NO (carry OK) | S |
 | ktptHyphenate (150) | :1529; stored, NOT implemented (V/VwTextBoxes.cpp:1368) | NO | NO (carry OK) | S |
-| ktptMaxLines (151) | :1534; DRAW truncates lines V/VwSimpleBoxes.cpp:2419,2495, V/VwInvertedViews.cpp:312; who sets it UNVERIFIED | NO | NO | S |
+| ktptMaxLines (151) | :1534; DRAW truncates lines V/VwSimpleBoxes.cpp:2419,2495, V/VwInvertedViews.cpp:312; who sets it UNVERIFIED | NO | YES: lines past the limit are left out and the last visible line ends with "..." (ParagraphLayout.EllipsisRect) | S |
 | ktptTabDef (23), ktptTabList (4) | NOT handled: int default throws E_NOTIMPL; no tab-stop drawing found; CARRY | NO | NO | S |
 
 Unit and variation note: lengths are mpt (ktpvMilliPoint); colours are ktpvDefault ints (BGR, kclrTransparent for none); toggles are Enum with kttvOff=0, kttvForceOn=1, kttvInvert=2 (KRN:588-590).
