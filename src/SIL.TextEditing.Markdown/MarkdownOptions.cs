@@ -8,17 +8,36 @@ namespace SIL.TextEditing.Markdown
     /// optional; the defaults need no project (ADR 0011).</summary>
     public sealed class MarkdownOptions
     {
-        /// <summary>The writing system of unmarked text and of <c>v</c>. Default: <see cref="FixedWritingSystems"/> with "en" for both.</summary>
-        public IWritingSystemMapper WritingSystems { get; set; } = new FixedWritingSystems("en", "en");
+        IWritingSystemMapper _writingSystems = new FixedWritingSystems("en", "en");
+        MarkdownStyleNames _styleNames = new MarkdownStyleNames();
+        IObjectMapper _objects = DefaultObjectMapper.Instance;
 
-        /// <summary>The paragraph and hyperlink style names the notation uses. Default: the spec's names.</summary>
-        public MarkdownStyleNames StyleNames { get; set; } = new MarkdownStyleNames();
+        /// <summary>The writing system of unmarked text and of <c>v</c>. Default: <see cref="FixedWritingSystems"/> with "en" for both. Never null.</summary>
+        /// <exception cref="ArgumentNullException">The value is null.</exception>
+        public IWritingSystemMapper WritingSystems
+        {
+            get => _writingSystems;
+            set => _writingSystems = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        /// <summary>The paragraph and hyperlink style names the notation uses. Default: the spec's names. Never null.</summary>
+        /// <exception cref="ArgumentNullException">The value is null.</exception>
+        public MarkdownStyleNames StyleNames
+        {
+            get => _styleNames;
+            set => _styleNames = value ?? throw new ArgumentNullException(nameof(value));
+        }
 
         /// <summary>Whether a style name exists in the project; null accepts every name.</summary>
         public IStyleCatalog? Styles { get; set; }
 
-        /// <summary>What an object run's data means. Default: <see cref="DefaultObjectMapper"/>.</summary>
-        public IObjectMapper Objects { get; set; } = DefaultObjectMapper.Instance;
+        /// <summary>What an object run's data means. Default: <see cref="DefaultObjectMapper"/>. Never null.</summary>
+        /// <exception cref="ArgumentNullException">The value is null.</exception>
+        public IObjectMapper Objects
+        {
+            get => _objects;
+            set => _objects = value ?? throw new ArgumentNullException(nameof(value));
+        }
 
     }
 
@@ -62,17 +81,24 @@ namespace SIL.TextEditing.Markdown
     /// The defaults are the names a new FieldWorks project already has, plus the two GDR table styles.</summary>
     public sealed class MarkdownStyleNames
     {
-        public string Normal { get; set; } = "Normal";
-        public string Heading1 { get; set; } = "Heading 1";
-        public string Heading2 { get; set; } = "Heading 2";
-        public string Heading3 { get; set; } = "Heading 3";
-        public string BulletedList { get; set; } = "Bulleted List";
-        public string NumberedList { get; set; } = "Numbered List";
-        public string BlockQuote { get; set; } = "Block Quote";
-        public string TableHeader { get; set; } = "GDR Table Header";
-        public string TableRow { get; set; } = "GDR Table Row";
+        string _normal = "Normal", _heading1 = "Heading 1", _heading2 = "Heading 2", _heading3 = "Heading 3", _bulletedList = "Bulleted List",
+            _numberedList = "Numbered List", _blockQuote = "Block Quote", _tableHeader = "GDR Table Header", _tableRow = "GDR Table Row", _hyperlink = "Hyperlink";
+
+        // No name is null: a null would only show as a NullReferenceException deep in the reader.
+        static string Name(string? value) => value ?? throw new ArgumentNullException(nameof(value));
+
+        /// <exception cref="ArgumentNullException">A style name is set to null.</exception>
+        public string Normal { get => _normal; set => _normal = Name(value); }
+        public string Heading1 { get => _heading1; set => _heading1 = Name(value); }
+        public string Heading2 { get => _heading2; set => _heading2 = Name(value); }
+        public string Heading3 { get => _heading3; set => _heading3 = Name(value); }
+        public string BulletedList { get => _bulletedList; set => _bulletedList = Name(value); }
+        public string NumberedList { get => _numberedList; set => _numberedList = Name(value); }
+        public string BlockQuote { get => _blockQuote; set => _blockQuote = Name(value); }
+        public string TableHeader { get => _tableHeader; set => _tableHeader = Name(value); }
+        public string TableRow { get => _tableRow; set => _tableRow = Name(value); }
         /// <summary>The character style a link run has unless the notation says otherwise.</summary>
-        public string Hyperlink { get; set; } = "Hyperlink";
+        public string Hyperlink { get => _hyperlink; set => _hyperlink = Name(value); }
 
         internal string? Heading(int level) => level == 1 ? Heading1 : level == 2 ? Heading2 : level == 3 ? Heading3 : null;
     }

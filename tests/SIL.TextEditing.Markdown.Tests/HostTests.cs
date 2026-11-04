@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
@@ -113,6 +114,39 @@ namespace SIL.TextEditing.Markdown.Tests
                 problem = null;
                 return true;
             }
+        }
+
+        [Fact]
+        public void AnOptionThatMustBeThereRefusesNull()
+        {
+            var options = new MarkdownOptions();
+            Assert.Throws<ArgumentNullException>(() => options.WritingSystems = null!);
+            Assert.Throws<ArgumentNullException>(() => options.StyleNames = null!);
+            Assert.Throws<ArgumentNullException>(() => options.Objects = null!);
+            // The catalog is optional: null accepts every style name.
+            options.Styles = null;
+            Assert.Null(options.Styles);
+            // The options keep what they had when a null is refused.
+            Assert.Equal("en", options.WritingSystems.DefaultAnalysis);
+            Assert.Equal("Normal", options.StyleNames.Normal);
+            Assert.Same(DefaultObjectMapper.Instance, options.Objects);
+        }
+
+        [Fact]
+        public void AStyleNameThatMustBeThereRefusesNull()
+        {
+            var names = new MarkdownStyleNames();
+            Assert.Throws<ArgumentNullException>(() => names.Normal = null!);
+            Assert.Throws<ArgumentNullException>(() => names.Heading1 = null!);
+            Assert.Throws<ArgumentNullException>(() => names.Heading2 = null!);
+            Assert.Throws<ArgumentNullException>(() => names.Heading3 = null!);
+            Assert.Throws<ArgumentNullException>(() => names.BulletedList = null!);
+            Assert.Throws<ArgumentNullException>(() => names.NumberedList = null!);
+            Assert.Throws<ArgumentNullException>(() => names.BlockQuote = null!);
+            Assert.Throws<ArgumentNullException>(() => names.TableHeader = null!);
+            Assert.Throws<ArgumentNullException>(() => names.TableRow = null!);
+            Assert.Throws<ArgumentNullException>(() => names.Hyperlink = null!);
+            Assert.Equal("Heading 3", names.Heading3);
         }
 
         [Fact]
