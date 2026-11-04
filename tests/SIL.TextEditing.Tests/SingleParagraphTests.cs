@@ -72,12 +72,16 @@ namespace SIL.TextEditing.Tests
 
         [Theory]
         [InlineData("foo\r\n", "Xfoo")]
-        [InlineData("foo\n\n\n", "Xfoo  ")]
+        [InlineData("foo\n\n\n", "Xfoo")]
+        [InlineData("a\n\n", "Xa")]
+        [InlineData("a\r\n\r\n", "Xa")]
+        [InlineData("a\n\r", "Xa")]
+        [InlineData("a\n\t", "Xa")]
         [InlineData("\r\nfoo", "X foo")]
         [InlineData("a\r\n\r\n\u2029\rb", "Xa    b")]
-        [InlineData("\n\n", "X ")]
+        [InlineData("\n\n", "X")]
         [InlineData("\n", "X")]
-        public void Each_separator_is_one_space_and_a_trailing_one_is_dropped(string pasted, string expected)
+        public void Each_separator_is_one_space_and_trailing_ones_are_dropped(string pasted, string expected)
         {
             var e = Single("X");
             e.TypeText(pasted);
@@ -86,11 +90,14 @@ namespace SIL.TextEditing.Tests
 
         [Theory]
         [InlineData("foo\nbar\n", "Xfoo bar")]
+        [InlineData("a\n\n", "Xa")]
+        [InlineData("a\r\n\r\n", "Xa")]
+        [InlineData("a\r\n\n", "Xa")]
         [InlineData("foo\n\nbar", "Xfoo  bar")]
         [InlineData("\nfoo", "X foo")]
-        [InlineData("\n\n", "X ")]
+        [InlineData("\n\n", "X")]
         [InlineData("a\u2028\nb", "Xa\u2028 b")]
-        public void Separators_inside_one_pasted_run_are_one_space_each_and_a_trailing_one_is_dropped(string pasted, string expected)
+        public void Separators_inside_one_pasted_run_are_one_space_each_and_trailing_ones_are_dropped(string pasted, string expected)
         {
             var e = Single("X");
             e.Paste(new List<Paragraph> { Para("en", "en", pasted) });
@@ -104,8 +111,8 @@ namespace SIL.TextEditing.Tests
             var two = Para("en", "en", "foo\n");
             two.Runs.Add(new Run { Text = "\nbar\n", Ws = "fr" });
             e.Paste(new List<Paragraph> { two, Para("en", "en", "baz\n"), Para("en", "en", "\n") });
-            Assert.Equal("Xfoo  bar  baz  ", e.Document.Paragraphs[0].Text);
-            Assert.Equal(new TextPosition(0, 16), e.Caret);
+            Assert.Equal("Xfoo  bar  baz", e.Document.Paragraphs[0].Text);
+            Assert.Equal(new TextPosition(0, 14), e.Caret);
         }
 
         [Fact]

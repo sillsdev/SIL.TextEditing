@@ -18,11 +18,13 @@ namespace SIL.TextEditing
         internal static bool IsParagraphSeparator(char c) => c == (char)13 || c == (char)10 || c == (char)0x85 || c == (char)0x2029;
 
         /// <summary>Text for a single paragraph: tabs removed, each separator (CR LF counts as one) turned into one space, and a
-        /// separator that ends the text dropped. Nothing else is collapsed, so "a", two newlines, "b" gives "a" and two spaces
+        /// run of separators that ends the text dropped. Nothing else is collapsed, so "a", two newlines, "b" gives "a" and two spaces
         /// and "b", a leading newline gives a space even at the start of the text, and a no-break space is kept.</summary>
         internal static string OneLine(string text)
         {
             var sb = new System.Text.StringBuilder(text.Length);
+            int end = text.Length;   // separators (and tabs) after the last other character end the text and are dropped
+            while (end > 0 && (text[end - 1] == '\t' || IsParagraphSeparator(text[end - 1]))) end--;
             for (int i = 0; i < text.Length; i++)
             {
                 char c = text[i];
@@ -30,9 +32,7 @@ namespace SIL.TextEditing
                 if (!IsParagraphSeparator(c)) { sb.Append(c); continue; }
                 int j = i + 1;
                 if (c == (char)13 && j < text.Length && text[j] == (char)10) j++;
-                int k = j;
-                while (k < text.Length && text[k] == '\t') k++;   // tabs go, so a separator followed only by tabs ends the text
-                if (k < text.Length) sb.Append(' ');
+                if (i < end) sb.Append(' ');
                 i = j - 1;
             }
             return sb.ToString();
@@ -54,7 +54,7 @@ namespace SIL.TextEditing
         }
 
         /// <summary>Removes tabs and turns every separator (CR LF counts as one), across run boundaries, into one space, and drops
-        /// a separator that ends the paragraph. Nothing else is collapsed, and a separator at the start leaves a space. The hard
+        /// every separator that ends the paragraph. Nothing else is collapsed, and a separator at the start leaves a space. The hard
         /// line break and object runs count as content. The space takes the writing system of the text before it, else of the
         /// separator's own run. Output runs are built with a string builder so a long run stays linear.</summary>
         static void SeparatorsToSpaces(Paragraph paragraph)
@@ -81,12 +81,14 @@ namespace SIL.TextEditing
                 sb.Append(c);
             }
             int i = 0, n = chars.Count;
+            int end = n;              // separators after the last other character end the text and are dropped
+            while (end > 0 && IsParagraphSeparator(chars[end - 1])) end--;
             while (i < n)
             {
                 if (!IsParagraphSeparator(chars[i])) { Emit(chars[i], owners[i], false); i++; continue; }
                 int j = i + 1;
                 if (chars[i] == (char)13 && j < n && chars[j] == (char)10) j++;
-                if (j < n) Emit(' ', i > 0 ? owners[i - 1] : owners[i], true);
+                if (i < end) Emit(' ', i > 0 ? owners[i - 1] : owners[i], true);
                 i = j;
             }
             Flush();

@@ -40,8 +40,8 @@ one, and can change without superseding anything.
   and per paste, but whether LCModel merges consecutive units was not confirmed (feature inventory, group 4).
 - **Paste in single-paragraph mode turns each separator into one space and removes tabs.** This is FieldWorks' rule for
   a view that cannot hold paragraphs, and nothing more: each separator (CR, LF, NEL, U+2029; CR LF counts as one)
-  becomes one space, across run and paragraph boundaries, and a pasted paragraph break is one too. A separator that ends
-  the pasted text is dropped. One at the start still gives a space, even at the start of the paragraph. Nothing else is
+  becomes one space, across run and paragraph boundaries, and a pasted paragraph break is one too. Separators that end
+  the pasted text are dropped. One at the start still gives a space, even at the start of the paragraph. Nothing else is
   collapsed: pasting "a", two newlines and "b" gives "a" and two spaces and "b", white space beside a separator stays, and
   a no-break space is kept. Tab characters are removed (FieldWorks does the same; the field used to keep them, issue #35).
   U+2028 is kept as a hard line break and is not a separator for this. Typed text gets the same treatment. Pasting only
