@@ -48,6 +48,9 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             Assert.True(PandocRunner.Available, "Pandoc is not on the PATH, and this run says it must be (CI)");
             // The workflow pins 3.x; the AST of an older Pandoc differs (table cells, attributes), so say which one this run used.
             Assert.StartsWith("pandoc 3.", PandocRunner.Version);
+            // CI says which version it installed (PANDOC_VERSION), and the run must have used exactly that one.
+            string? pinned = Environment.GetEnvironmentVariable("PANDOC_VERSION");
+            if (!string.IsNullOrEmpty(pinned)) Assert.Equal("pandoc " + pinned, PandocRunner.Version);
         }
     }
 }

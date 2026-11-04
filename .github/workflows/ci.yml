@@ -18,11 +18,28 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # FieldWorks Markdown is a profile of Pandoc Markdown (ADR 0028). The Markdown tests read every conformance fixture and every generated document with
+      # Pandoc and compare what it sees with what the library reads, so Pandoc is installed here, pinned: its tree differs between versions. A missing Pandoc
+      # fails those tests in CI (the tests skip only on a machine that does not set CI).
+      - name: Install Pandoc
+        shell: pwsh
+        env:
+          PANDOC_VERSION: 3.9.0.2
+        run: |
+          Invoke-WebRequest "https://github.com/jgm/pandoc/releases/download/$env:PANDOC_VERSION/pandoc-$env:PANDOC_VERSION-windows-x86_64.zip" -OutFile "$env:RUNNER_TEMP/pandoc.zip"
+          Expand-Archive "$env:RUNNER_TEMP/pandoc.zip" -DestinationPath "$env:RUNNER_TEMP/pandoc"
+          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP/pandoc/pandoc-$env:PANDOC_VERSION"
+
+      - name: Show the Pandoc version
+        run: pandoc --version
+
       - name: Build everything (libraries, tests, samples)
         run: dotnet build SIL.TextEditing.sln -c Release
 
       # Each test project targets net48 (Avalonia 11.3.17 through netstandard2.0) and net10.0 (Avalonia 12), except the second-dispatcher tests, which are net10.0 only.
       - name: Test both target frameworks
+        env:
+          PANDOC_VERSION: 3.9.0.2
         run: dotnet test SIL.TextEditing.sln -c Release --no-build --logger trx --results-directory TestResults
 
       - name: Upload test results
