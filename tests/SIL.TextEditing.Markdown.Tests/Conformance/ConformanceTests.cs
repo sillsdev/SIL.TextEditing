@@ -156,3 +156,68 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         }
     }
 }
+namespace SIL.TextEditing.Markdown.Tests.Conformance
+{
+    /// <summary>Spec 4.4: one link, five spellings. The reader takes every spelling in any context and the writer writes the one asked for, so a link converts from
+    /// any form to any other without loss.</summary>
+    public class LinkFormConversionTests
+    {
+        static readonly MarkdownLinkForm[] Forms =
+            { MarkdownLinkForm.RootPath, MarkdownLinkForm.FileRelative, MarkdownLinkForm.SilfwUrl, MarkdownLinkForm.MotifUrl, MarkdownLinkForm.ObjectAlias };
+
+        static MarkdownOptions Options(MarkdownLinkForm form)
+        {
+            var c = new ConformanceCase { Project = (Dictionary<string, object?>)Json.Obj(Json.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(ConformanceLoader.Directory, "projects.json"))))["standard"]! };
+            var options = ConformanceTests.OptionsFor(c, out _);
+            options.WriteFrontMatter = false;
+            options.LinkForm = form;
+            options.LinkBase = "/lists/GDR/GDR-47.fw.md";
+            options.ProjectName = "Sena3";
+            return options;
+        }
+
+        const string Text =
+            "See [palit](/lexicon/palit(2)){.name guid=7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d}, [this rule](</grammar/phonological-rules/Nasal assimilation>){guid=0b1e2f3a-4c5d-4e6f-8a9b-0c1d2e3f4a5b}, "
+            + "[(1)](/texts/Kuwento/3.2){.example guid=5b6c0e2a-1d3f-4c8e-9a71-0f2b3c4d5e6f}, [x](/lexicon/palit(2)#definition.en){guid=7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d}, "
+            + "[gone](/objects/deadbeef-0000-4000-8000-000000000005){.name .broken}, [there](/objects/9c9c9c9c-1111-4111-8111-9c9c9c9c9c9c){url=\"silfw://localhost/link?database%3dOther%26tool%3dlexiconEdit%26guid%3d9c9c9c9c-1111-4111-8111-9c9c9c9c9c9c%26tag%3d\"} "
+            + "and ![A hut](/files/pictures/hut.jpg){guid=1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9} and [web](https://example.org/a)\n";
+
+        [Fact]
+        public void ALinkConvertsFromAnyFormToAnyOther()
+        {
+            var model = MarkdownConverter.Parse(Text, Options(MarkdownLinkForm.RootPath));
+            Assert.DoesNotContain(model.Diagnostics, d => d.Severity == MarkdownSeverity.Error);
+            Assert.Equal(8, model.Objects.Count); // palit, the rule, the example, the field link, the deleted one, the other project's, the picture and the web address
+            foreach (var from in Forms)
+            {
+                string a = MarkdownConverter.ToMarkdown(model.Document, Options(from));
+                var pa = MarkdownConverter.Parse(a, Options(from));
+                Assert.True(!pa.HasErrors, from + ":\n" + a + "\n" + string.Join("\n", pa.Diagnostics));
+                ConformanceTests.AssertParagraphs(model.Document.Paragraphs, pa.Document.Paragraphs, "Reading form " + from + ":\n" + a);
+                foreach (var to in Forms)
+                {
+                    string b = MarkdownConverter.ToMarkdown(pa.Document, Options(to));
+                    var pb = MarkdownConverter.Parse(b, Options(to));
+                    Assert.True(!pb.HasErrors, from + " to " + to + ":\n" + b + "\n" + string.Join("\n", pb.Diagnostics));
+                    ConformanceTests.AssertParagraphs(model.Document.Paragraphs, pb.Document.Paragraphs, from + " to " + to + ":\n" + b);
+                }
+            }
+        }
+
+        [PandocTheory]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(2)]
+        [InlineData(3)]
+        [InlineData(4)]
+        public void PandocReadsEveryFormAsWeDo(int index)
+        {
+            var form = Forms[index];
+            var options = Options(form);
+            var model = MarkdownConverter.Parse(Text, Options(MarkdownLinkForm.RootPath));
+            string written = MarkdownConverter.ToMarkdown(model.Document, options);
+            var actual = PandocModel.Convert(PandocRunner.ToJson(written), options);
+            ConformanceTests.AssertParagraphs(model.Document.Paragraphs, actual, "Pandoc, reading form " + form + ":\n" + written);
+        }
+    }
+}

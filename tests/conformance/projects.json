@@ -21,7 +21,14 @@
       { "guid": "5b6c0e2a-1d3f-4c8e-9a71-0f2b3c4d5e6f", "path": "/texts/Kuwento/3.2", "tool": "interlinearEdit", "name": "3.2", "example": true },
       { "guid": "c0ffee00-0000-4000-8000-000000000004", "path": "/lists/GDR/GDR-47", "tool": "GDREdit", "name": "GDR-47" },
       { "guid": "deadbeef-0000-4000-8000-000000000005", "path": "/lexicon/gone", "tool": "lexiconEdit", "name": "gone", "deleted": true },
-      { "guid": "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", "kind": "picture", "file": "/files/pictures/hut.jpg", "caption": "A hut" }
+      { "guid": "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", "kind": "picture", "file": "/files/pictures/hut.jpg", "caption": "A hut" },
+      { "guid": "00000006-0000-4000-8000-000000000006", "path": "/lexicon/AC%2FDC", "tool": "lexiconEdit", "name": "AC/DC" },
+      { "guid": "00000007-0000-4000-8000-000000000007", "path": "/lexicon/café", "tool": "lexiconEdit", "name": "café" },
+      { "guid": "00000008-0000-4000-8000-000000000008", "path": "/lexicon/x%282%29", "tool": "lexiconEdit", "name": "x(2)" },
+      { "guid": "00000009-0000-4000-8000-000000000009", "path": "/lexicon/Noun (common)", "tool": "lexiconEdit", "name": "Noun (common)" },
+      { "guid": "0000000a-0000-4000-8000-00000000000a", "path": "/lexicon/a%28b", "tool": "lexiconEdit", "name": "a(b" },
+      { "guid": "0000000b-0000-4000-8000-00000000000b", "path": "/lexicon/50%25", "tool": "lexiconEdit", "name": "50%" },
+      { "guid": "0000000c-0000-4000-8000-00000000000c", "path": "/lexicon/q%3F%23%5C", "tool": "lexiconEdit", "name": "q?#\\" }
     ]
   }
 }
