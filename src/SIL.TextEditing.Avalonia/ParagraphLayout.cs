@@ -240,7 +240,16 @@ namespace SIL.TextEditing.Avalonia
             Start = start;
             Length = length;
             Exact = exact;
+            // A glyph run numbers its characters from where its own text began, which is not always where the paragraph's text did: the
+            // first of the run's characters is the lowest cluster number it has.
+            Glyphs = (run as ShapedTextRun)?.GlyphRun;
+            _firstCluster = int.MaxValue;
+            if (Glyphs != null)
+                foreach (var info in Glyphs.GlyphInfos) _firstCluster = Math.Min(_firstCluster, (int)info.GlyphCluster);
         }
+
+        readonly int _firstCluster;
+        GlyphRun? Glyphs { get; }
 
         public DrawableTextRun Run { get; }
         public double X { get; }
@@ -248,6 +257,14 @@ namespace SIL.TextEditing.Avalonia
         public int Length { get; }
         public bool Exact { get; }
         public double Width => Run.Size.Width;
+
+        /// <summary>The distance from the run's origin to the leading edge of the character at the paragraph text <paramref name="index"/>
+        /// (the run's whole width at its end), or null when the run cannot say.</summary>
+        public double? Distance(int index)
+        {
+            if (!Exact || Glyphs == null || _firstCluster == int.MaxValue || index < Start || index > Start + Length) return null;
+            return Glyphs.GetDistanceFromCharacterHit(new CharacterHit(_firstCluster + index - Start));
+        }
     }
     public sealed class LineInfo
     {
@@ -397,11 +414,14 @@ namespace SIL.TextEditing.Avalonia
                     if (!slot.Exact) { a = slot.Start; b = slot.Start + 1; if (from > a || to < b) continue; }
                     else if (b <= a) continue;
                     double left = 0, right = slot.Width;
-                    if (slot.Exact && (a > slot.Start || b < slot.Start + slot.Length) && (slot.Run as ShapedTextRun)?.GlyphRun is GlyphRun glyphs)
+                    if (a > slot.Start || b < slot.Start + slot.Length)
                     {
-                        double p = glyphs.GetDistanceFromCharacterHit(new CharacterHit(a)), q = glyphs.GetDistanceFromCharacterHit(new CharacterHit(b));
-                        left = Math.Min(p, q);
-                        right = Math.Max(p, q);
+                        double? p = slot.Distance(a), q = slot.Distance(b);
+                        if (p.HasValue && q.HasValue)
+                        {
+                            left = Math.Min(p.Value, q.Value);
+                            right = Math.Max(p.Value, q.Value);
+                        }
                     }
                     result.Add(new KeyValuePair<Rect, double>(Shown(new Rect(slot.X + left, 0, right - left, Line.Height)), _offsets.At(slot.Start)));
                 }
@@ -817,6 +837,25 @@ namespace SIL.TextEditing.Avalonia
 
         readonly OffsetMap _offsets = new OffsetMap();
 
+        /// <summary>The width of a line's text up to <paramref name="last"/> (the end of its last letter), without the spaces it wraps on.
+        /// Avalonia 11.3 also leaves out a space at the end of one of the line's runs that is not the last, so the line's own width is
+        /// not trusted when the runs' widths less those spaces come to more.</summary>
+        double NaturalWidth(LineInfo li, int last)
+        {
+            double total = 0, trailing = 0;
+            int to = TextEnd(li);
+            foreach (var slot in RunSlots(li.Line))
+            {
+                total += slot.Width;
+                int a = Math.Max(last, slot.Start), b = Math.Min(to, slot.Start + slot.Length);
+                if (b <= a) continue;
+                if (a == slot.Start && b == slot.Start + slot.Length) trailing += slot.Width;
+                else if (slot.Distance(a) is double p && slot.Distance(b) is double q)
+                    trailing += Math.Abs(q - p);
+            }
+            return Math.Max(li.Line.Width, total - trailing);
+        }
+
         /// <summary>Stretches a line of a justified paragraph (one that more text follows) to <paramref name="width"/>: the slack is shared equally
         /// by the spaces between its first and last letters. A line with no such space, or no slack, stays as Avalonia laid it out.</summary>
         void Justify(LineInfo li, double width)
@@ -824,7 +863,7 @@ namespace SIL.TextEditing.Avalonia
             int first = li.Start, last = TextEnd(li);
             while (first < last && EffectiveText[first] == ' ') first++;
             while (last > first && EffectiveText[last - 1] == ' ') last--;
-            double slack = width - li.Line.Width;
+            double slack = width - NaturalWidth(li, last);
             if (slack < 0.5) return;
             var spaces = new List<KeyValuePair<double, double>>();
             for (int i = first; i < last; i++)

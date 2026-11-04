@@ -233,6 +233,21 @@ namespace SIL.TextEditing.Avalonia.Tests
             for (int i = 1; i < pl.Lines.Count - 1; i++) AssertReachesBothEdges(pl, pl.Lines[i], "line " + i);
         });
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_change_of_formatting_right_after_a_space_does_not_make_the_stretched_line_overshoot_the_edge(bool rtl) => Headless.Run(() =>
+        {
+            var p = rtl
+                ? Para("ar", "ar", "هذه فقرة عربية طويلة بما يكفي لتلتف على ", "ar", "عدة أسطر عندما تكون النافذة ضيقة وتبين أين ", "ar", "تقع الهوامش والمسافات البادئة في الاتجاه من اليمين إلى اليسار وهي تنتهي هنا")
+                : Para("en", "en", "The quick brown fox ", "en", "jumps over the lazy dog while the five boxing wizards ", "en", "jump quickly and a mad boxer shot a quick, gloved jab to the jaw of his dizzy opponent.");
+            p.Rtl = rtl;
+            p.Runs[1].Props.SetInt(TextPropertyNumbers.Italic, TextPropertyNumbers.ToggleOn, 0);
+            var pl = Field(p).ParagraphLayoutFor(0);
+            Assert.True(pl.Lines.Count >= 3, "lines: " + pl.Lines.Count);
+            for (int i = 0; i < pl.Lines.Count - 1; i++) AssertReachesBothEdges(pl, pl.Lines[i], "line " + i);
+        });
+
         [Fact]
         public void A_run_background_is_unbroken_across_the_stretched_spaces_of_a_justified_line() => Headless.Run(() =>
         {
@@ -253,6 +268,29 @@ namespace SIL.TextEditing.Avalonia.Tests
                     Assert.True(shot.HasColor(x, (int)y), "line " + l + ": no background at x " + x);
             }
             Assert.True(wholeLines >= 1, "a line inside the coloured run was checked");
+        });
+
+        [Fact]
+        public void A_run_with_a_baseline_offset_is_raised_on_a_stretched_line_with_its_text_and_selection_in_step() => Headless.Run(() =>
+        {
+            var p = Para("en", "en", "The quick brown fox ", "en", "jumps over the lazy dog while the five boxing wizards jump", "en", " quickly and a mad boxer shot a quick, gloved jab to the jaw.");
+            p.Runs[1].Props.SetInt(TextPropertyNumbers.Offset, 6000, TextPropertyNumbers.VariationMilliPoint);
+            var field = Field(p);
+            var pl = field.ParagraphLayoutFor(0);
+            var shot = Fixtures.Render(field);
+            int start = p.Runs[0].Text.Length, end = start + p.Runs[1].Text.Length;
+            var li = pl.Lines[0];
+            Assert.True(li.IsJustified && li.Raise > 5.9, "the first line is stretched and makes room for the raised run");
+            // Each selection box is where its text is drawn, raised or not.
+            var plain = Assert.Single(pl.SelectionRects(0, start - 1));
+            var raised = pl.SelectionRects(start, System.Math.Min(end, pl.TextEnd(li)));
+            Assert.All(raised, r => Assert.Equal(li.TextY - 6, r.Y, 2));
+            Assert.Equal(li.TextY, plain.Y, 2);
+            double top = field.ParagraphTop(0) + li.Y;
+            int plainTop = shot.InkTop(plain.X, plain.Right, top, top + li.Height);
+            int raisedTop = shot.InkTop(raised.Min(r => r.X), raised.Max(r => r.Right), top, top + li.Height);
+            Assert.InRange(plainTop - raisedTop, 5, 7);   // six pixels higher
+            AssertReachesBothEdges(pl, li, "the line with the raised run");
         });
 
         const string Overhang = "a fox jumps over a jolly jug, just a jiffy joke: jam, jazz, jets and jugs, a jab, a jig, jewels, a fjord, jaws, a jaunty jaguar, joyful jays";
