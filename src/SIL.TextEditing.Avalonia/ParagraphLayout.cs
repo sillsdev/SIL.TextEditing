@@ -614,7 +614,7 @@ namespace SIL.TextEditing.Avalonia
         {
             var ws = writingSystems.Get(run.Ws);
             var f = FormatResolver.ResolveChar(paragraph, run, styles, ws.Size);
-            return MakeProperties(f, ws, run.Ws, foreground, preedit, ownDecorations);
+            return MakeProperties(f, ws, run.Ws, foreground, preedit, true);
         }
 
         /// <param name="ownDecorations">True when the paragraph draws the run's underline or strikethrough itself (<see cref="DrawDecorations"/>), so Avalonia is not given it.</param>
@@ -753,9 +753,8 @@ namespace SIL.TextEditing.Avalonia
         {
             var layout = new ParagraphLayout(paragraph, width);
             var pf = ResolveFormat(paragraph, writingSystems, styles);
-            // A justified paragraph is drawn in pieces, so it draws its own underlines and strikethrough across them (DrawDecorations).
-            bool ownDecorations = pf.Align == 5;
-            layout._ownDecorations = ownDecorations;
+            // Every paragraph draws its own underlines and strikethrough (DrawDecorations): Avalonia's leave a gap at each descender, and in a justified
+            // paragraph, which is drawn in pieces, they would restart their pattern in each.
             layout.PreviousSpaceAfter = previousSpaceAfter;
             layout.LabelText = label ?? string.Empty;
             var source = new ParagraphSource { ObjectImage = objectImage, ObjectAsGlyph = objectAsGlyph };
@@ -771,14 +770,14 @@ namespace SIL.TextEditing.Avalonia
                 if (t.Length == 0) return;
                 int a = sb.Length;
                 sb.Append(t);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, ownDecorations) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, true) });
             }
 
             void AddPreedit()
             {
                 int a = sb.Length;
                 sb.Append(preedit);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, preeditRun, writingSystems, foreground, styles, true, ownDecorations) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, preeditRun, writingSystems, foreground, styles, true, true) });
                 preeditDone = true;
             }
 
@@ -796,7 +795,7 @@ namespace SIL.TextEditing.Avalonia
                 {
                     int s0 = sb.Length;
                     sb.Append(objectAsGlyph ? " " : r.Text);
-                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, ownDecorations), IsObject = true, Data = r.ObjData });
+                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, true), IsObject = true, Data = r.ObjData });
                 }
                 else AddSegment(r.Text, r);
                 pos += r.Text.Length;
@@ -816,7 +815,7 @@ namespace SIL.TextEditing.Avalonia
             }
 
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
-            var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles, false, ownDecorations);
+            var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles, false, true);
             var baseWs = writingSystems.Get(defaultRun.Ws);
             layout.Format = pf;
             layout.ApplyBox(pf, width, paragraph.Rtl, foreground);
@@ -1054,7 +1053,15 @@ namespace SIL.TextEditing.Avalonia
         }
 
         readonly List<DecorationRange> _decorations = new List<DecorationRange>();
-        bool _ownDecorations;
+
+        /// <summary>How the paragraph draws the underline or strikethrough of the text at an effective offset (<see cref="RunTextProperties.LineKind"/>
+        /// and its colour), or null when there is none there.</summary>
+        internal RunTextProperties? DecorationAt(int effective)
+        {
+            foreach (var d in _decorations)
+                if (effective >= d.Start && effective < d.End) return d.Properties;
+            return null;
+        }
 
         /// <summary>Where a run's baseline is from the top of its line: the line's, unless the run is a superscript (top aligned) or subscript (bottom
         /// aligned), whose own font decides.</summary>
@@ -1067,13 +1074,14 @@ namespace SIL.TextEditing.Avalonia
             return run.BaselineAlignment == BaselineAlignment.Superscript ? ascent : line.Height - height + ascent;
         }
 
-        /// <summary>Draws the underlines and strikethrough of a justified paragraph (its decorations are not given to Avalonia, which would draw them in
-        /// the pieces a stretched line is drawn in, restarting a dotted or dashed pattern at each and scaling it in the stretched spaces). Each is a line
-        /// (two for a double underline) across the whole stretched extent of its run on the line, in the position and pattern Avalonia draws on a line that
+        /// <summary>Draws the underlines and strikethrough of the paragraph's text (they are not given to Avalonia, whose underline leaves a gap at each
+        /// descender and which would draw them in
+        /// the pieces a justified line is drawn in, restarting a dotted or dashed pattern at each and scaling it in the stretched spaces). Each is a line
+        /// (two for a double underline) across the whole extent of its run on the line, unbroken by the letters' descenders, in the position and pattern Avalonia would draw it in on a line that
         /// is not stretched; it stops before the spaces a wrapped line ends with. <paramref name="top"/> is the paragraph's top in the control.</summary>
         public void DrawDecorations(DrawingContext context, double top)
         {
-            if (!_ownDecorations || _decorations.Count == 0) return;
+            if (_decorations.Count == 0) return;
             for (int i = 0; i < Lines.Count; i++)
             {
                 var li = Lines[i];

@@ -209,23 +209,21 @@ namespace SIL.TextEditing.Playground.Tests
         {
             using (var s = new Session(Scenarios.Drawing))
             {
-                var dotted = RunWith(s, 4, "dotted").TextDecorations!.Single();
-                Assert.Equal(TextDecorationLocation.Underline, dotted.Location);
-                Assert.NotNull(dotted.StrokeDashArray);
-                Assert.Equal(new double[] { 2, 2 }, dotted.StrokeDashArray!.ToArray());
-                Assert.Equal(new double[] { 6, 3 }, RunWith(s, 4, "dashed").TextDecorations!.Single().StrokeDashArray!.ToArray());
-                var single = RunWith(s, 4, "single").TextDecorations!.Single();
-                Assert.Equal(TextDecorationLocation.Underline, single.Location);
-                Assert.Null(single.StrokeDashArray);
-                var dbl = RunWith(s, 4, "double").TextDecorations!;
-                Assert.Equal(2, dbl.Count);
-                Assert.NotEqual(dbl[0].StrokeOffset, dbl[1].StrokeOffset);
-                Assert.Equal(TextDecorationLocation.Strikethrough, RunWith(s, 4, "strikethrough").TextDecorations!.Single().Location);
-                Assert.Equal(Color.FromRgb(0, 0, 255), ColorOf(RunWith(s, 4, "blue single").TextDecorations!.Single().Stroke));
-                var styled = RunWith(s, 4, "Misspelled").TextDecorations!;
-                Assert.Equal(2, styled.Count);
-                Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(styled[0].Stroke));
-                Assert.Null(RunWith(s, 4, "Lines: ").TextDecorations);
+                // The field draws underlines and strikethrough itself (a gap at each descender is Avalonia's): Avalonia is given none, and the run says
+                // what to draw. UnderlineDescenderTests and the pixel tests above look at the picture.
+                var layout = s.Field.ParagraphLayoutFor(4);
+                int Kind(string token) => layout.DecorationAt(layout.EffectiveText.IndexOf(token, System.StringComparison.Ordinal))?.LineKind ?? 0;
+                IBrush? Colour(string token) => layout.DecorationAt(layout.EffectiveText.IndexOf(token, System.StringComparison.Ordinal))?.LineBrush;
+                Assert.Equal(1, Kind("dotted"));
+                Assert.Equal(2, Kind("dashed"));
+                Assert.Equal(3, Kind("single"));
+                Assert.Equal(4, Kind("double"));
+                Assert.Equal(5, Kind("strikethrough"));
+                Assert.Equal(Color.FromRgb(0, 0, 255), ColorOf(Colour("blue single")));
+                Assert.Equal(4, Kind("Misspelled"));
+                Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(Colour("Misspelled")));
+                Assert.Equal(0, Kind("Lines: "));
+                foreach (var token in new[] { "dotted", "dashed", "single", "double", "strikethrough", "blue single", "Misspelled", "Lines: " }) Assert.Null(RunWith(s, 4, token).TextDecorations);
             }
         });
 
