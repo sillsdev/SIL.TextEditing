@@ -656,8 +656,7 @@ namespace SIL.TextEditing.Markdown.Reader
             {
                 style = styleItem.Value!;
                 var catalog = _options.Styles;
-                if (catalog != null && style.Length > 0 && !catalog.IsParagraphStyle(style))
-                    _context.ReportUnknownStyle(style, "paragraph", styleItem.Start, styleItem.End);
+                if (catalog != null && style.Length > 0) _context.CheckStyle(style, true, styleItem.Start, styleItem.End);
             }
             if (props.StrProps.TryGetValue(TextPropertyNumbers.NamedStyle, out var s133))
             {
@@ -671,8 +670,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 if (wsItem != null)
                 {
                     defaultWs = wsItem.Value;
-                    if (!_options.WritingSystems.IsKnown(defaultWs!))
-                        _context.ReportUnknownWritingSystem(defaultWs!, wsItem.Start, wsItem.End);
+                    _context.CheckWritingSystem(defaultWs!, wsItem.Start, wsItem.End);
                 }
                 else if (vItem != null) defaultWs = _options.WritingSystems.DefaultVernacular;
             }

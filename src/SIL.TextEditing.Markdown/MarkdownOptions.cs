@@ -63,6 +63,17 @@ namespace SIL.TextEditing.Markdown
         IReadOnlyList<string> KnownTags { get; }
     }
 
+    /// <summary>Optional: a writing-system mapper that can say more than yes or no about a tag. When <see cref="MarkdownOptions.WritingSystems"/>
+    /// implements it, the parser calls <see cref="CheckWritingSystem"/> instead of <see cref="IWritingSystemMapper.IsKnown"/>.</summary>
+    public interface IWritingSystemChecker
+    {
+        /// <summary>Null when the tag is fine. Otherwise the problem to report on the tag: an error with the default id <c>gdr.ws.unknown</c>, or a
+        /// warning or suggestion for a tag that is accepted but worth a word (a legacy system); the text keeps the tag either way. The host's
+        /// <see cref="MarkdownProblem.Choices"/> and <see cref="MarkdownProblem.Nearest"/> are reported; when it leaves them empty and also
+        /// implements <see cref="IKnownWritingSystems"/>, its list and the closest tags fill them.</summary>
+        MarkdownProblem? CheckWritingSystem(string tag);
+    }
+
     /// <summary>A mapper with two fixed defaults that knows every tag.</summary>
     public sealed class FixedWritingSystems : IWritingSystemMapper
     {
@@ -116,6 +127,16 @@ namespace SIL.TextEditing.Markdown
     {
         IReadOnlyList<string> ParagraphStyleNames { get; }
         IReadOnlyList<string> CharacterStyleNames { get; }
+    }
+
+    /// <summary>Optional: a style catalog that can say more than yes or no about a style name. When <see cref="MarkdownOptions.Styles"/> implements it,
+    /// the parser calls <see cref="CheckStyle"/> instead of <see cref="IStyleCatalog.IsParagraphStyle"/> and <see cref="IStyleCatalog.IsCharacterStyle"/>.</summary>
+    public interface IStyleChecker
+    {
+        /// <summary>Null when the style is fine. Otherwise the problem to report on the name: an error with the default id <c>gdr.style.unknown</c>, or a
+        /// warning or suggestion for a style that is accepted but worth a word. The host's <see cref="MarkdownProblem.Nearest"/> is reported; when it
+        /// leaves it empty and also implements <see cref="IKnownStyles"/>, the closest names fill it.</summary>
+        MarkdownProblem? CheckStyle(string name, bool paragraph);
     }
 
     /// <summary>Where a piece of notation is in the text that was read: UTF-16 offsets (the end is exclusive) and the 1-based line and

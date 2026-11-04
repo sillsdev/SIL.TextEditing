@@ -273,8 +273,7 @@ namespace SIL.TextEditing.Markdown.Reader
             {
                 fmt.Ws = wsItem.Value!;
                 fmt.Vernacular = false;
-                if (!_options.WritingSystems.IsKnown(fmt.Ws))
-                    _context.ReportUnknownWritingSystem(fmt.Ws, Abs(wsItem.Start), Abs(wsItem.End));
+                _context.CheckWritingSystem(fmt.Ws, Abs(wsItem.Start), Abs(wsItem.End));
             }
             else if (vItem != null) { fmt.Ws = null; fmt.Vernacular = true; }
             if (csItem != null)
@@ -286,8 +285,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     fmt.Cs = CsState.Explicit;
                     fmt.CsName = csItem.Value;
                     var catalog = _options.Styles;
-                    if (catalog != null && !catalog.IsCharacterStyle(csItem.Value!))
-                        _context.ReportUnknownStyle(csItem.Value!, "character", Abs(csItem.Start), Abs(csItem.End));
+                    if (catalog != null) _context.CheckStyle(csItem.Value!, false, Abs(csItem.Start), Abs(csItem.End));
                 }
                 fmt.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
             }

@@ -342,6 +342,141 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.DoesNotContain("Nearest", d.Message);
         }
 
+        // ------------------------------------------------------------ the host's own problems for writing systems and styles
+
+        /// <summary>A host that judges tags itself. The yes/no method must not be used when the checker is there.</summary>
+        sealed class CheckedWritingSystems : IWritingSystemMapper, IWritingSystemChecker
+        {
+            public string DefaultAnalysis => "en";
+            public string DefaultVernacular => "ceb";
+            public bool IsKnown(string tag) => throw new InvalidOperationException("CheckWritingSystem is the way in when the host implements IWritingSystemChecker.");
+            public readonly List<string> Asked = new List<string>();
+
+            public MarkdownProblem? CheckWritingSystem(string tag)
+            {
+                Asked.Add(tag);
+                if (tag == "ceb-x-old")
+                    return new MarkdownProblem("ws.legacy", MarkdownSeverity.Warning, "ceb-x-old is a legacy writing system of this project; it is kept.");
+                if (tag == "qaa-zzz")
+                    return new MarkdownProblem(null, MarkdownSeverity.Error, "qaa-zzz is not in this project. Its systems are en and ceb.") { Choices = new[] { "en", "ceb" }, Nearest = new[] { "ceb" } };
+                if (tag == "xx")
+                    return new MarkdownProblem("This tag was removed in 2025.") { Replacement = "ceb" };
+                return null;
+            }
+        }
+
+        sealed class CheckedStyles : IStyleCatalog, IStyleChecker
+        {
+            public bool IsParagraphStyle(string name) => throw new InvalidOperationException("CheckStyle is the way in when the host implements IStyleChecker.");
+            public bool IsCharacterStyle(string name) => throw new InvalidOperationException("CheckStyle is the way in when the host implements IStyleChecker.");
+
+            public MarkdownProblem? CheckStyle(string name, bool paragraph)
+            {
+                if (name == "Exampel") return new MarkdownProblem("'Exampel' is not a " + (paragraph ? "paragraph" : "character") + " style. Nearest: Example.") { Nearest = new[] { "Example" } };
+                if (name == "Old Style") return new MarkdownProblem("style.deprecated", MarkdownSeverity.Suggestion, "Old Style is deprecated; use New Style.");
+                return null;
+            }
+        }
+
+        [Fact]
+        public void AHostsProblemForAWritingSystemIsReportedWithItsChoicesAndNearest()
+        {
+            var options = new MarkdownOptions { WritingSystems = new CheckedWritingSystems() };
+            var result = MarkdownConverter.Parse("a\n\nsee [kaon]{ws=qaa-zzz} here", options);
+            var d = Assert.Single(result.Diagnostics);
+            Assert.Equal("gdr.ws.unknown", d.Id);
+            Assert.Equal(MarkdownSeverity.Error, d.Severity);
+            Assert.Equal("qaa-zzz is not in this project. Its systems are en and ceb.", d.Message);
+            Assert.Equal(new[] { "en", "ceb" }, d.Choices);
+            Assert.Equal(new[] { "ceb" }, d.Nearest);
+            Assert.Equal((3, 12, "ws=qaa-zzz"), (d.Line, d.Column, d.Observed));
+        }
+
+        [Fact]
+        public void AKnownButWarnedWritingSystemStillReadsWithNoError()
+        {
+            var options = new MarkdownOptions { WritingSystems = new CheckedWritingSystems() };
+            var result = MarkdownConverter.Parse("see [kaon]{ws=ceb-x-old}", options);
+            var d = Assert.Single(result.Diagnostics);
+            Assert.Equal("ws.legacy", d.Id);
+            Assert.Equal(MarkdownSeverity.Warning, d.Severity);
+            Assert.False(result.HasErrors);
+            Assert.Equal("ceb-x-old", result.Document.Paragraphs[0].Runs.Single(r => r.Text == "kaon").Ws);
+        }
+
+        [Fact]
+        public void AWritingSystemTheHostLikesIsNotReportedAndIsAskedAboutOnce()
+        {
+            var host = new CheckedWritingSystems();
+            var result = MarkdownConverter.Parse("[a]{ws=ceb} [b]{ws=ar} [c]{v}", new MarkdownOptions { WritingSystems = host });
+            Assert.Empty(result.Diagnostics);
+            Assert.Equal(new[] { "ceb", "ar" }, host.Asked);
+        }
+
+        [Fact]
+        public void AHostsProblemForTheWritingSystemOfAnEmptyMarkerIsReportedToo()
+        {
+            var options = new MarkdownOptions { WritingSystems = new CheckedWritingSystems() };
+            var d = Assert.Single(MarkdownConverter.Parse("a\n\n{empty ws=qaa-zzz}", options).Diagnostics);
+            Assert.Equal("gdr.ws.unknown", d.Id);
+            Assert.Equal(new[] { "en", "ceb" }, d.Choices);
+            Assert.Equal((3, 8, "ws=qaa-zzz"), (d.Line, d.Column, d.Observed));
+            var warned = Assert.Single(MarkdownConverter.Parse("{empty ws=ceb-x-old}", options).Diagnostics);
+            Assert.Equal((MarkdownSeverity.Warning, "ws.legacy"), (warned.Severity, warned.Id));
+        }
+
+        [Fact]
+        public void AReplacementFromTheHostsWritingSystemCheckerIsTheFixAndItsIdIsOptional()
+        {
+            var options = new MarkdownOptions { WritingSystems = new CheckedWritingSystems() };
+            var d = Assert.Single(MarkdownConverter.Parse("[x]{ws=xx}", options).Diagnostics);
+            Assert.Equal("gdr.ws.unknown", d.Id);
+            Assert.Equal("ceb", d.Replacement);
+        }
+
+        [Fact]
+        public void AHostsProblemForAStyleCarriesItsNearestNamesForParagraphsAndCharacters()
+        {
+            var options = new MarkdownOptions { Styles = new CheckedStyles() };
+            var paragraph = Assert.Single(MarkdownConverter.Parse("a\n\n::: {style=Exampel}\nx\n:::", options).Diagnostics);
+            Assert.Equal("gdr.style.unknown", paragraph.Id);
+            Assert.Equal(new[] { "Example" }, paragraph.Nearest);
+            Assert.Contains("paragraph style", paragraph.Message);
+            Assert.Equal((3, 6, "style=Exampel"), (paragraph.Line, paragraph.Column, paragraph.Observed));
+            var character = Assert.Single(MarkdownConverter.Parse("see [x]{cs=Exampel}", options).Diagnostics);
+            Assert.Contains("character style", character.Message);
+            Assert.Equal("cs=Exampel", character.Observed);
+        }
+
+        [Fact]
+        public void AStyleThatIsAcceptedWithASuggestionStillReadsWithNoError()
+        {
+            var options = new MarkdownOptions { Styles = new CheckedStyles() };
+            var result = MarkdownConverter.Parse("::: {style=\"Old Style\"}\nx\n:::\n\n[y]{cs=\"Old Style\"} and [z]{cs=Strong}", options);
+            Assert.False(result.HasErrors);
+            Assert.Equal(new[] { "style.deprecated", "style.deprecated" }, result.Diagnostics.Select(d => d.Id).ToArray());
+            Assert.All(result.Diagnostics, d => Assert.Equal(MarkdownSeverity.Suggestion, d.Severity));
+            Assert.Equal("Old Style", result.Document.Paragraphs[0].Style);
+        }
+
+        [Fact]
+        public void TheListsFillWhatTheHostsCheckerLeavesEmpty()
+        {
+            var options = new MarkdownOptions { WritingSystems = new ListedAndChecked() };
+            var d = Assert.Single(MarkdownConverter.Parse("[x]{ws=cbe}", options).Diagnostics);
+            Assert.Equal(new[] { "en", "ceb" }, d.Choices);
+            Assert.Equal(new[] { "ceb" }, d.Nearest);
+        }
+
+        sealed class ListedAndChecked : IWritingSystemMapper, IWritingSystemChecker, IKnownWritingSystems
+        {
+            public string DefaultAnalysis => "en";
+            public string DefaultVernacular => "ceb";
+            public IReadOnlyList<string> KnownTags { get; } = new[] { "en", "ceb" };
+            public bool IsKnown(string tag) => KnownTags.Contains(tag);
+            public MarkdownProblem? CheckWritingSystem(string tag) => IsKnown(tag) ? null : new MarkdownProblem("'" + tag + "' is not here.");
+        }
+
         [Fact]
         public void ADiagnosticsPropertiesAreSettableForTheHost()
         {

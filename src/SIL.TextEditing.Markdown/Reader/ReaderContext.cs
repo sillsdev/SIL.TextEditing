@@ -146,24 +146,56 @@ namespace SIL.TextEditing.Markdown.Reader
             Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, message, Base + item.Start, Base + item.End, null, choices);
         }
 
-        /// <summary>Reports a writing system the host does not know, with the host's list as the choices and the closest tags as the nearest.</summary>
-        public void ReportUnknownWritingSystem(string tag, int start, int end)
+        /// <summary>Asks the host about a writing system tag and reports what it says: <c>gdr.ws.unknown</c> when it does not know the tag (the
+        /// host's list, when it has one, as the choices and the closest tags as the nearest), or the host's own problem when it can give one.</summary>
+        public void CheckWritingSystem(string tag, int start, int end)
         {
-            var known = (Options.WritingSystems as IKnownWritingSystems)?.KnownTags;
+            var mapper = Options.WritingSystems;
+            var known = (mapper as IKnownWritingSystems)?.KnownTags;
             var nearest = known == null ? null : NearestNames(tag, known);
-            string message = "'" + tag + "' is not a writing system of this project." + (nearest == null ? string.Empty : " Nearest: " + string.Join(", ", nearest) + ".");
-            Report(MarkdownDiagnosticIds.WsUnknown, MarkdownSeverity.Error, message, start, end, null, known != null && known.Count > 0 ? known : null, nearest);
+            IReadOnlyList<string>? choices = known != null && known.Count > 0 ? known : null;
+            MarkdownProblem? problem;
+            if (mapper is IWritingSystemChecker checker)
+            {
+                problem = checker.CheckWritingSystem(tag);
+                if (problem == null) return;
+            }
+            else
+            {
+                if (mapper.IsKnown(tag)) return;
+                problem = new MarkdownProblem("'" + tag + "' is not a writing system of this project." + (nearest == null ? string.Empty : " Nearest: " + string.Join(", ", nearest) + "."));
+            }
+            ReportHostProblem(problem, MarkdownDiagnosticIds.WsUnknown, start, end, choices, nearest);
         }
 
-        /// <summary>Reports a style the host does not know; <paramref name="kind"/> is "paragraph" or "character".</summary>
-        public void ReportUnknownStyle(string name, string kind, int start, int end)
+        /// <summary>Asks the host about a style name (a paragraph style or a character style) and reports what it says: <c>gdr.style.unknown</c>
+        /// with the closest names as the nearest when it does not know the style, or the host's own problem when it can give one.</summary>
+        public void CheckStyle(string name, bool paragraph, int start, int end)
         {
-            var listed = Options.Styles as IKnownStyles;
-            var known = listed == null ? null : kind == "paragraph" ? listed.ParagraphStyleNames : listed.CharacterStyleNames;
+            var catalog = Options.Styles;
+            if (catalog == null) return;
+            var listed = catalog as IKnownStyles;
+            var known = listed == null ? null : paragraph ? listed.ParagraphStyleNames : listed.CharacterStyleNames;
             var nearest = known == null ? null : NearestNames(name, known);
-            string message = "'" + name + "' is not a " + kind + " style of this project." + (nearest == null ? string.Empty : " Nearest: " + string.Join(", ", nearest) + ".");
-            Report(MarkdownDiagnosticIds.StyleUnknown, MarkdownSeverity.Error, message, start, end, null, null, nearest);
+            MarkdownProblem? problem;
+            if (catalog is IStyleChecker checker)
+            {
+                problem = checker.CheckStyle(name, paragraph);
+                if (problem == null) return;
+            }
+            else
+            {
+                if (paragraph ? catalog.IsParagraphStyle(name) : catalog.IsCharacterStyle(name)) return;
+                problem = new MarkdownProblem("'" + name + "' is not a " + (paragraph ? "paragraph" : "character") + " style of this project."
+                    + (nearest == null ? string.Empty : " Nearest: " + string.Join(", ", nearest) + "."));
+            }
+            ReportHostProblem(problem, MarkdownDiagnosticIds.StyleUnknown, start, end, null, nearest);
         }
+
+        /// <summary>Reports a host's problem on a range. What the host left out (choices, nearest names) is filled from its lists when it has them.</summary>
+        void ReportHostProblem(MarkdownProblem problem, string defaultId, int start, int end, IReadOnlyList<string>? choices, IReadOnlyList<string>? nearest)
+            => Report(problem.Id ?? defaultId, problem.Severity, problem.Message, start, end, problem.Replacement,
+                problem.Choices.Count > 0 ? problem.Choices : choices, problem.Nearest.Count > 0 ? problem.Nearest : nearest);
 
         /// <summary>The names of <paramref name="known"/> closest to <paramref name="name"/>, nearest first (at most three), or null when none is
         /// close: within a third of the length, at least one edit, a swap of two neighbours counting as one.</summary>
