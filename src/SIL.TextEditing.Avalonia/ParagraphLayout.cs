@@ -1581,7 +1581,7 @@ namespace SIL.TextEditing.Avalonia
             }
             if (!last && e == max && max > li.Start) caretHit = TrailingHit(max);
             if (e <= max && PreeditAt < 0) HangingCaretAt(li, point.X, last, max, h.FirstCharacterIndex, ref e, ref caretHit);
-            int ch =Math.Max(0, Math.Min(Math.Max(0, EffectiveText.Length - 1), h.FirstCharacterIndex));
+            int ch = Math.Max(0, Math.Min(Math.Max(0, EffectiveText.Length - 1), h.FirstCharacterIndex));
             var result = new HitResult
             {
                 Offset = Math.Max(0, Math.Min(Paragraph.Length, ToModel(e))),

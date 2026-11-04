@@ -110,8 +110,8 @@ namespace SIL.TextEditing.SecondDispatcher.Tests
         {
             // The platform raises ColorValuesChanged on any thread; the field's colours may only be touched on its own.
             var ranOn = new List<int>();
-            var isOn = SystemColours.IsHighContrast;
-            SystemColours.IsHighContrast = () => { lock (ranOn) ranOn.Add(Environment.CurrentManagedThreadId); return false; };
+            var isOn = SystemColours.Probe;
+            SystemColours.Probe = () => { lock (ranOn) ranOn.Add(Environment.CurrentManagedThreadId); return false; };
             RichTextField? field = null;
             using var ready = new ManualResetEventSlim();
             using var raised = new ManualResetEventSlim();
@@ -145,7 +145,7 @@ namespace SIL.TextEditing.SecondDispatcher.Tests
             {
                 raised.Set();
                 Assert.True(thread.Join(TimeSpan.FromSeconds(30)));
-                SystemColours.IsHighContrast = isOn;
+                SystemColours.Probe = isOn;
             }
             if (failure != null) throw new Exception("on the second dispatcher: " + failure.Message, failure);
             lock (ranOn) Assert.Equal(new[] { secondThread }, ranOn.Distinct().ToArray());

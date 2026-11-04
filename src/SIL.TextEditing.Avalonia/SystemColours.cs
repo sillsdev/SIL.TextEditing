@@ -21,7 +21,21 @@ namespace SIL.TextEditing.Avalonia
     static class SystemColours
     {
         /// <summary>Whether the system is in a high contrast theme. Internal and settable so a test can say it is.</summary>
-        internal static Func<bool> IsHighContrast = DefaultIsHighContrast;
+        internal static Func<bool> Probe
+        {
+            get => _probe;
+            set { _probe = value; _cached = null; }
+        }
+
+        static Func<bool> _probe = DefaultIsHighContrast;
+        static bool? _cached;
+
+        /// <summary>Whether the system is in a high contrast theme, asked once and kept until <see cref="Refresh"/> (the system call is not free, and
+        /// the colours are asked for several times in a paint).</summary>
+        internal static bool IsHighContrast() => _cached ??= _probe();
+
+        /// <summary>Forgets the answer, so the next one is asked of the system again.</summary>
+        internal static void Refresh() => _cached = null;
 
         /// <summary>The system's colour of a kind, or null when this system has none to give (anything but Windows). Internal and settable like
         /// <see cref="IsHighContrast"/>.</summary>

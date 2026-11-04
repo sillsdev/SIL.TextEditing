@@ -117,12 +117,12 @@ namespace SIL.TextEditing.Avalonia.Tests
         /// <summary>Runs a body with the system saying it is in a high contrast theme with yellow text on a black page and a blue highlight.</summary>
         static void InHighContrast(System.Action body)
         {
-            var isOn = SystemColours.IsHighContrast;
+            var isOn = SystemColours.Probe;
             var get = SystemColours.Get;
-            SystemColours.IsHighContrast = () => true;
+            SystemColours.Probe = () => true;
             SystemColours.Get = kind => kind == SystemColour.WindowText ? Color.Parse("#FFFF00") : kind == SystemColour.Window ? Color.Parse("#000000") : Color.Parse("#1AEBFF");
             try { body(); }
-            finally { SystemColours.IsHighContrast = isOn; SystemColours.Get = get; }
+            finally { SystemColours.Probe = isOn; SystemColours.Get = get; }
         }
 
         [Fact]
@@ -175,6 +175,20 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(border.G > 100 && border.R < 60 && border.B < 60, "the border stays green: " + border);
             window.Close();
         }));
+
+        [Fact]
+        public void Reading_the_foreground_gives_a_copy_that_a_theme_change_does_not_alter() => Headless.Run(() =>
+        {
+            var (window, field) = Themed();
+            var read = field.Foreground;
+            Assert.IsNotType<SolidColorBrush>(read);   // not the field's own, mutable brush
+            var before = ((ISolidColorBrush)read).Color;
+            window.RequestedThemeVariant = ThemeVariant.Dark;
+            Headless.Pump();
+            Assert.Equal(before, ((ISolidColorBrush)read).Color);
+            Assert.NotEqual(before, ((ISolidColorBrush)field.Foreground).Color);
+            window.Close();
+        });
 
         [Fact]
         public void Resetting_the_foreground_or_the_background_goes_back_to_following_the_theme() => Headless.Run(() =>

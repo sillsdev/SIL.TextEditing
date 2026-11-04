@@ -94,7 +94,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(RunWith(s, 3, "red text").ForegroundBrush));
                 var green = RunWith(s, 3, "green on pale yellow");
                 Assert.Equal(Color.FromRgb(0, 128, 0), ColorOf(green.ForegroundBrush));
-                Assert.Same(s.Field.Foreground, RunWith(s, 3, "transparent colour").ForegroundBrush);
+                Assert.Equal(ColorOf(s.Field.Foreground), ColorOf(RunWith(s, 3, "transparent colour").ForegroundBrush));
                 var warning = RunWith(s, 3, "Warning (a style)");
                 Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(warning.ForegroundBrush));
             }

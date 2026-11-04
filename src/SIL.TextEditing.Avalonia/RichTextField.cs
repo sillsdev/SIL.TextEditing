@@ -153,10 +153,10 @@ namespace SIL.TextEditing.Avalonia
         /// same resource as the caret), or in a high contrast theme the system's window text colour, and it follows a change of either without
         /// the text being laid out again. A colour the host sets is kept as it is, under any theme: a host that sets only this on a dark theme
         /// draws it on the theme's dark page, so it sets <see cref="Background"/> as well (or not either). <see cref="ResetForeground"/> goes
-        /// back to following the theme. Read, it is the brush the text is drawn with.</summary>
+        /// back to following the theme. Read, it is the colour the text is drawn in now (a copy: the field's own default brush changes with the theme and is not handed out).</summary>
         public IBrush Foreground
         {
-            get => LayoutForeground;
+            get => _foreground ?? new global::Avalonia.Media.Immutable.ImmutableSolidColorBrush(DefaultForeground().Color, DefaultForeground().Opacity);
             set
             {
                 _foreground = value;
@@ -195,6 +195,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Takes the system's colours and high contrast setting again. The field does this by itself when the platform says they changed.</summary>
         internal void RefreshSystemColours()
         {
+            SystemColours.Refresh();
             _themeForegroundStale = true;
             DefaultForeground();
             InvalidateVisual();
@@ -335,7 +336,7 @@ namespace SIL.TextEditing.Avalonia
                 preedit = _preedit;
                 template = Editor.TypingRun();
             }
-            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
+            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, LayoutForeground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
             _layouts[index] = layout;
             LayoutCount++;
             ApplySpelling(index, layout);
@@ -825,7 +826,7 @@ namespace SIL.TextEditing.Avalonia
             var result = Editor.PreviewLineBreak(out int kept);
             if (result == null) return false;
             double above = kept > 0 ? FormatOf(kept - 1).SpaceAfter : 0;
-            using var layout = ParagraphLayout.Build(result, _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, -1, null, null, _styles, LabelOf(kept), above);
+            using var layout = ParagraphLayout.Build(result, _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, LayoutForeground, ObjectAsGlyph, -1, null, null, _styles, LabelOf(kept), above);
             return layout.Truncated || layout.HiddenTrailingBreak;
         }
 
