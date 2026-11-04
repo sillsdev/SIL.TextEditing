@@ -334,6 +334,53 @@ namespace SIL.TextEditing.Tests
             Assert.True(checkedPoints > 1000);
         }
 
+        // ---- Slice looks at the runs the range touches
+
+        static List<Run> OldSlice(Paragraph p, int start, int end)
+        {
+            var c = p.Clone();
+            var result = new List<Run>();
+            int a = c.SplitRunAt(start);
+            int b = c.SplitRunAt(end);
+            for (int i = a; i < b; i++) result.Add(c.Runs[i].Clone());
+            return result;
+        }
+
+        [Fact]
+        public void Slice_gives_the_runs_a_clone_and_split_gave_for_every_range_of_random_paragraphs()
+        {
+            var rng = new Random(79);
+            for (int round = 0; round < 120; round++)
+            {
+                var p = Random(rng, rng.Next(0, 9));
+                int len = OldLength(p);
+                for (int start = 0; start <= len; start++)
+                    for (int end = start; end <= len + 1; end++)
+                    {
+                        var want = OldSlice(p, start, end);
+                        var got = p.Slice(start, end);
+                        Assert.True(want.Count == got.Count, "round " + round + " [" + start + "," + end + ") expected " + want.Count + " runs, got " + got.Count);
+                        for (int k = 0; k < want.Count; k++)
+                        {
+                            Assert.Equal(want[k].Text, got[k].Text);
+                            Assert.Equal(want[k].Ws, got[k].Ws);
+                            Assert.Equal(want[k].ObjData, got[k].ObjData);
+                            Assert.True(want[k].Props.ContentEquals(got[k].Props));
+                        }
+                    }
+            }
+        }
+
+        [Fact]
+        public void Slicing_a_long_paragraph_reads_the_runs_the_range_touches()
+        {
+            var p = Many(4000);
+            _ = p.Length;
+            long before = p.Runs.ElementReads;
+            for (int i = 0; i < 500; i++) p.Slice(i * 7, i * 7 + 9);
+            Assert.True(p.Runs.ElementReads - before <= 500 * 8, (p.Runs.ElementReads - before) + " runs read for 500 slices");
+        }
+
         // ---- a run is held by the paragraph that holds it and by no other
 
         static void AssertEveryRunHasOneOwner(Document d)

@@ -42,10 +42,13 @@ owner decisions.
   stamp it was made for, so a direct change to the model is noticed without the host saying so, and the marks of that paragraph are
   dropped. A property bag changed in place and a changed paragraph list are not seen: the host calls `RefreshFromDocument()`, which
   restarts checking. A change of `DocumentEditor.IsReadOnly` raises `IsReadOnlyChanged`, which restarts checking whoever changed it.
-- **Results are dropped with their paragraph on an edit.** An edit replaces the paragraph's results with none until the
-  next idle step, so a squiggle is never drawn on text it was not made for. They are not shifted: FieldWorks also
-  checks a changed paragraph again from scratch. A result also stores the text it was made for and is ignored if the
-  paragraph text no longer matches.
+- **An edit keeps the marks it leaves alone.** A mark outside the edit moves with the text, and only the words around the edit are checked
+  again: the stretch the edit touched, widened to whole words and past an apostrophe or joiner next to it (a mark that ends one
+  character before the edit stays unless that character joins words). The word being typed has no squiggle until the next idle step; no other
+  squiggle blinks. This is ours: FieldWorks checks a changed paragraph again from scratch. An undo, a redo, an external replacement, an edit the
+  field was not told the range of (the host's `Apply`) and any edit to a paragraph with a line limit (the edit moves where the limit cuts
+  it) check the paragraphs they replace again from scratch. A result is for one state of its paragraph
+  (`Paragraph.ChangeStamp`) and is never used for another.
 - **Apostrophes and joiners inside a word, switchable.** An apostrophe (U+0027, U+2019) or a zero-width joiner or
   non-joiner (U+200D, U+200C) with word-forming characters on both sides stays in the word, so "don't" is one word.
   FieldWorks has no such rule: there "don't" splits into "don" and "t" unless the writing system's valid characters make
@@ -81,13 +84,18 @@ owner decisions.
 - **The host announces dictionary changes.** `ISpellCheckHost.DictionariesChanged` is raised by the host (any thread) when an
   add, the undo of an add, or a dictionary change alters what its checkers answer; every field using the host checks
   again. A field listens only while it is in the visual tree. The field that asked for an add also checks again itself.
-- **When, and where.** One paragraph per idle step, in document order, only paragraphs in view and only while the field is in
-  the visual tree: the paragraph's top and bottom against the scroll viewer the field is in, else against its window, else
-  against a fixed span (2000 device-independent pixels) below its top. FieldWorks checks the whole view, including
-  paragraphs out of sight; the field's choice is ADR 0020's, and it is bounded so a long document in a host that scrolls
-  some other way is not checked whole. Scrolling, an edit to a paragraph, a new host, `RestartSpelling` and a change of the
-  read-only state make paragraphs due again. Idle means the dispatcher's background priority, one request pending at a
-  time; a test replaces the post (`SpellIdlePost`).
+- **When, and where.** Idle steps are bounded by words: a step checks at most 25 words of the first paragraph in view that is not
+  checked (the rest of a long paragraph, or what an edit left to check, in later steps), so a slow checker holds up input for at most that many
+  words, and a step looks at the text around those words, not the whole paragraph. Only paragraphs in view are checked, and only while the field
+  is in the visual tree: the paragraph's top and bottom against the scroll viewer the field is in, else against its window, else against a fixed
+  span (2000 device-independent pixels) below its top. FieldWorks checks the whole view, including paragraphs out of sight; the field's choice
+  is ADR 0020's, and it is bounded so a long document in a host that scrolls some other way is not checked whole. Scrolling, an edit to a
+  paragraph, a new host, `RestartSpelling` and a change of the read-only state make paragraphs due again. Idle means the dispatcher's
+  background priority, one request pending at a time; a test replaces the post (`SpellIdlePost`). The host's checker is still called on the
+  UI thread; a host that cannot answer quickly answers from a cache and raises `DictionariesChanged` when it has more.
+- **Menu answers are remembered.** `SpellingSuggestionsAt` looks at the word at the position only, however long the paragraph is, and remembers its
+  last answer for the paragraph state, the checkers (until a restart) and the read-only state, so a hover over one word asks the host nothing
+  the second time; the checker's suggestions for a word are remembered until a restart too.
 - **Hidden text is not checked.** Text a line limit hides is not checked, no menu is offered for it and no replacement is
   applied to it. A word that crosses the limit is checked whole. FieldWorks checks it. A narrower or wider field makes a
   limited paragraph due again.

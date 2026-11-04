@@ -33,9 +33,8 @@ namespace SIL.TextEditing.Avalonia
             public int Number = NoNumber;
             /// <summary>The bullet or number text, or null until worked out.</summary>
             public string? Label;
-            /// <summary>The spelling marks of the paragraph as it was when checked (null until checked), and its change stamp then.</summary>
-            public List<SpellingMark>? Marks;
-            public long CheckedStamp;
+            /// <summary>What has been checked of the paragraph's spelling (null until looked at), for the paragraph as it was (see <see cref="SpellState"/>).</summary>
+            public SpellState? Spell;
         }
         readonly InputMethodClient _ime;
         IStyleResolver? _styles;
@@ -66,6 +65,7 @@ namespace SIL.TextEditing.Avalonia
             for (int i = 0; i < document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             Editor.DocumentChanged += OnDocumentChanged;
             Editor.IsReadOnlyChanged += OnEditorReadOnlyChanged;
+            Editor.TextEdited += OnTextEdited;
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => { if (IsFocused) ActiveWsChanged?.Invoke(o, n); };   // a view without focus does not set the keyboard (#59)
             Editor.CaretMoved += OnCaretMoved;
@@ -214,6 +214,7 @@ namespace SIL.TextEditing.Avalonia
 
         void OnDocumentChanged(int start, int removed, int added)
         {
+            var spelling = SpellBeforeChange(start, removed);
             for (int i = 0; i < removed && start < _layouts.Count; i++)
             {
                 _layouts[start]?.Dispose();
@@ -221,6 +222,7 @@ namespace SIL.TextEditing.Avalonia
                 _info.RemoveAt(start);
             }
             for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
+            SpellAfterChange(start, added, spelling);
             ForgetNumbersFrom(start);
             RequestSpellingIdle();
             FindDocumentChanged();

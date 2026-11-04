@@ -174,6 +174,10 @@ namespace SIL.TextEditing
 
         ISpellChecker? Checker { get; }
 
+        /// <summary>The same answer for the same word in the same paragraph, with fresh copies of the parts (a host may change the ones it was given).</summary>
+        internal SpellingSuggestions Again(int paragraphIndex, Paragraph paragraph)
+            => new SpellingSuggestions(new TextPosition(paragraphIndex, Start.Offset), new TextPosition(paragraphIndex, End.Offset), Word, Ws, Problem, All, Checker, paragraph.Slice(Start.Offset, End.Offset));
+
         /// <summary>Hands the word to the checker's <see cref="ISpellChecker.Add"/>; false, and nothing handed over, when
         /// <see cref="CanAddToDictionary"/> is false. The field then checks again (<c>RichTextField.AddToDictionary</c> does both).</summary>
         public bool AddToDictionary()
@@ -287,12 +291,23 @@ namespace SIL.TextEditing
             return c == UnicodeCategory.DecimalDigitNumber || c == UnicodeCategory.LetterNumber || c == UnicodeCategory.OtherNumber;
         }
 
-        sealed class Scan
+        /// <summary>One word the scanner found and judged: its range, why it is marked, the text the dictionary saw and its checker (null for a mixed word).</summary>
+        internal readonly struct Judged
         {
-            public string Text = string.Empty;
-            public int[] RunOf = new int[0];
-            public List<RunSpan> Spans = new List<RunSpan>();
-            public bool[] Checked = new bool[0];
+            public Judged(int start, int end, SpellingProblem problem, string word, ISpellChecker? checker)
+            {
+                Start = start;
+                End = end;
+                Problem = problem;
+                Word = word;
+                Checker = checker;
+            }
+
+            public int Start { get; }
+            public int End { get; }
+            public SpellingProblem Problem { get; }
+            public string Word { get; }
+            public ISpellChecker? Checker { get; }
         }
 
         /// <summary>The marks of a paragraph, in order. <paramref name="readOnly"/> is the field-wide read-only flag: text in a
@@ -301,78 +316,209 @@ namespace SIL.TextEditing
         public static List<SpellingMark> Check(Paragraph paragraph, ISpellCheckHost host, IStyleResolver? styles = null, bool readOnly = false, int limit = int.MaxValue)
         {
             var marks = new List<SpellingMark>();
-            ScanWords(paragraph, host, styles, readOnly, limit, -1, (a, b, scan, problem, word, checker) => { marks.Add(new SpellingMark(a, b - a, problem)); return false; });
+            var scan = new Window(paragraph, host, styles, readOnly);
+            int pos = 0;
+            while (scan.NextWord(pos, out int a, out int b) && a < limit)
+            {
+                var judged = scan.Judge(a, b);
+                if (judged != null) marks.Add(new SpellingMark(judged.Value.Start, judged.Value.End - judged.Value.Start, judged.Value.Problem));
+                pos = b;
+            }
             return marks;
         }
 
         /// <summary>The mark at an offset (the word the offset is in or at the end of), with the suggestions for the menu, or null when the
-        /// offset is not in a marked word. Only the word at the offset is checked.</summary>
+        /// offset is not in a marked word. Only the word at the offset is looked at: the work is that of one word however long the paragraph is.</summary>
         public static SpellingSuggestions? SuggestionsAt(Paragraph paragraph, int paragraphIndex, int offset, ISpellCheckHost host, IStyleResolver? styles = null, bool readOnly = false, int limit = int.MaxValue)
+            => SuggestionsAt(paragraph, paragraphIndex, offset, host, styles, readOnly, limit, null);
+
+        internal static SpellingSuggestions? SuggestionsAt(Paragraph paragraph, int paragraphIndex, int offset, ISpellCheckHost host, IStyleResolver? styles, bool readOnly, int limit, Func<Judged, IReadOnlyList<string>?>? cachedSuggestions)
         {
-            SpellingSuggestions? found = null;
-            ScanWords(paragraph, host, styles, readOnly, limit, offset, (a, b, scan, problem, word, checker) =>
-            {
-                if (offset < a || offset > b) return false;
-                var list = problem == SpellingProblem.Misspelled && checker != null ? checker.Suggest(word) : new string[0];
-                found = new SpellingSuggestions(new TextPosition(paragraphIndex, a), new TextPosition(paragraphIndex, b), word, scan.Spans[scan.RunOf[b - 1]].Ws, problem, list ?? new string[0], checker, paragraph.Slice(a, b));
-                return true;
-            });
-            return found;
+            if (offset < 0 || offset > paragraph.Length) return null;
+            var scan = new Window(paragraph, host, styles, readOnly);
+            if (!scan.NextWord(scan.WordStart(offset), out int a, out int b) || a >= limit || offset < a || offset > b) return null;
+            var judged = scan.Judge(a, b);
+            if (judged == null) return null;
+            var j = judged.Value;
+            if (offset < j.Start || offset > j.End) return null;   // the ends that are not checked are cut off, and the offset may be in them
+            IReadOnlyList<string>? list = null;
+            if (j.Problem == SpellingProblem.Misspelled && j.Checker != null)
+                list = cachedSuggestions?.Invoke(j) ?? j.Checker.Suggest(j.Word);
+            return new SpellingSuggestions(new TextPosition(paragraphIndex, j.Start), new TextPosition(paragraphIndex, j.End), j.Word, scan.WsAt(j.End - 1), j.Problem, list ?? new string[0], j.Checker, paragraph.Slice(j.Start, j.End));
         }
 
-        // Called for each marked word: its range, why, the text to show, and the checker (null for a mixed word). True stops the scan.
-        delegate bool Report(int start, int end, Scan scan, SpellingProblem problem, string word, ISpellChecker? checker);
-
-        static void ScanWords(Paragraph paragraph, ISpellCheckHost host, IStyleResolver? styles, bool readOnly, int limit, int focus, Report report)
+        /// <summary>A window onto one paragraph for finding and judging words: nothing is worked out for the whole paragraph, only for the text a call
+        /// walks over, so checking a few words or one word costs that and not the length of the paragraph.</summary>
+        internal sealed class Window
         {
-            var scan = new Scan { Text = paragraph.Text, Spans = paragraph.Spans() };
-            int n = scan.Text.Length;
-            if (n == 0) return;
-            scan.RunOf = new int[n];
-            scan.Checked = new bool[n];
-            for (int i = 0; i < scan.Spans.Count; i++)
+            readonly Paragraph _paragraph;
+            readonly ISpellCheckHost _host;
+            readonly IStyleResolver? _styles;
+            readonly bool _readOnly;
+            readonly string _text;
+            readonly Dictionary<int, bool> _checkedRuns = new Dictionary<int, bool>();
+            // The run the last character asked about is in, so the next one rarely needs a search.
+            int _runIndex = -1, _runStart, _runEnd;
+
+            public Window(Paragraph paragraph, ISpellCheckHost host, IStyleResolver? styles, bool readOnly)
             {
-                var span = scan.Spans[i];
-                var mode = ModeOf(paragraph, span.Run, styles);
-                bool isChecked = mode == SpellCheckMode.ForceCheck || (mode == SpellCheckMode.Normal && !readOnly && DocumentEditor.AllowsEditing(span.Run));
-                for (int k = span.Start; k < span.Start + span.Length; k++)
-                {
-                    scan.RunOf[k] = i;
-                    scan.Checked[k] = isChecked;
-                }
+                _paragraph = paragraph;
+                _host = host;
+                _styles = styles;
+                _readOnly = readOnly;
+                _text = paragraph.Text;
             }
 
-            string WsAt(int index) => scan.Spans[scan.RunOf[index]].Ws;
+            public int Length => _text.Length;
+
+            void Locate(int index)
+            {
+                if (_runIndex >= 0 && index >= _runStart && index < _runEnd) return;
+                _runIndex = _paragraph.RunIndexAt(index, out _runStart);
+                _runEnd = _runStart + _paragraph.Runs[_runIndex].Text.Length;
+            }
+
+            public string WsAt(int index)
+            {
+                Locate(index);
+                return _paragraph.Runs[_runIndex].Ws;
+            }
+
+            bool IsChecked(int index)
+            {
+                Locate(index);
+                if (_checkedRuns.TryGetValue(_runIndex, out var known)) return known;
+                var run = _paragraph.Runs[_runIndex];
+                var mode = ModeOf(_paragraph, run, _styles);
+                bool isChecked = mode == SpellCheckMode.ForceCheck || (mode == SpellCheckMode.Normal && !_readOnly && DocumentEditor.AllowsEditing(run));
+                _checkedRuns[_runIndex] = isChecked;
+                return isChecked;
+            }
+
+            int RunEndOf(int index)
+            {
+                Locate(index);
+                return _runEnd;
+            }
+
+            int RunStartOf(int index)
+            {
+                Locate(index);
+                return _runStart;
+            }
 
             bool WordForming(int index, int cp)
             {
                 if (cp == Run.ObjectReplacement) return true;
-                return IsNumber(cp) || host.IsWordForming(WsAt(index), cp);
+                return IsNumber(cp) || _host.IsWordForming(WsAt(index), cp);
             }
 
-            int pos = 0;
-            while (pos < n && pos < limit)
+            int CodePointBefore(int index, out int width)
             {
-                int cp = CodePointAt(scan.Text, pos, out int width);
-                if (!WordForming(pos, cp)) { pos += width; continue; }
-                int start = pos;
-                int end = pos + width;
-                while (end < n)
+                char c = _text[index - 1];
+                if (char.IsLowSurrogate(c) && index >= 2 && char.IsHighSurrogate(_text[index - 2]))
                 {
-                    int c2 = CodePointAt(scan.Text, end, out int w2);
-                    if (WordForming(end, c2)) { end += w2; continue; }
-                    // A joining character between two word characters stays in the word.
-                    if (end + w2 < n && host.JoinsWords(WsAt(end), c2))
+                    width = 2;
+                    return char.ConvertToUtf32(_text[index - 2], c);
+                }
+                width = 1;
+                return char.IsSurrogate(c) ? 0xFFFD : c;
+            }
+
+            /// <summary>Where the word that contains or ends at <paramref name="pos"/> starts, so that scanning forward from there finds the same words a
+            /// scan from the start of the paragraph would: back over word-forming characters and over a joiner between two of them.</summary>
+            public int WordStart(int pos)
+            {
+                int p = Math.Min(pos, _text.Length);
+                if (p > 0 && p < _text.Length && char.IsLowSurrogate(_text[p]) && char.IsHighSurrogate(_text[p - 1])) p--;   // an offset between the halves of a pair is in the pair
+                while (p > 0)
+                {
+                    int cp = CodePointBefore(p, out int w);
+                    if (WordForming(p - w, cp)) { p -= w; continue; }
+                    if (p - w > 0 && p < _text.Length && _host.JoinsWords(WsAt(p - w), cp))
                     {
-                        int c3 = CodePointAt(scan.Text, end + w2, out _);
-                        if (WordForming(end + w2, c3)) { end += w2; continue; }
+                        int before = CodePointBefore(p - w, out int w2);
+                        if (WordForming(p - w - w2, before) && WordForming(p, CodePointAt(_text, p, out _))) { p -= w; continue; }
                     }
                     break;
                 }
-                // Only the word at the asked offset matters when a menu is being made.
-                if ((focus < 0 || (focus >= start && focus <= end)) && CheckWord(scan, host, start, end, report)) return;
-                if (focus >= 0 && end >= focus) return;
-                pos = end;
+                return p;
+            }
+
+            /// <summary>Where checking again must start for text changed from <paramref name="pos"/> on: <see cref="WordStart"/>, and one word further back
+            /// when a joiner (an apostrophe) stands just before it, because the word before the joiner may have been one word with what was edited.</summary>
+            public int WordStartForRecheck(int pos)
+            {
+                int p = WordStart(pos);
+                if (p > 0)
+                {
+                    int cp = CodePointBefore(p, out int w);
+                    if (p - w > 0 && _host.JoinsWords(WsAt(p - w), cp)) p = WordStart(p - w);
+                }
+                return p;
+            }
+
+            /// <summary>The first word that starts at or after <paramref name="from"/>: its range, or false when none does.</summary>
+            public bool NextWord(int from, out int start, out int end)
+            {
+                int n = _text.Length;
+                int pos = Math.Max(0, from);
+                start = end = n;
+                while (pos < n)
+                {
+                    int cp = CodePointAt(_text, pos, out int width);
+                    if (!WordForming(pos, cp)) { pos += width; continue; }
+                    start = pos;
+                    end = pos + width;
+                    while (end < n)
+                    {
+                        int c2 = CodePointAt(_text, end, out int w2);
+                        if (WordForming(end, c2)) { end += w2; continue; }
+                        // A joining character between two word characters stays in the word.
+                        if (end + w2 < n && _host.JoinsWords(WsAt(end), c2))
+                        {
+                            int c3 = CodePointAt(_text, end + w2, out _);
+                            if (WordForming(end + w2, c3)) { end += w2; continue; }
+                        }
+                        break;
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            /// <summary>Judges the word [a, b): null when nothing is to be marked (its text is not checked, it is a lone object, the dictionary has it or
+            /// there is none), else the problem, with the ends that are not checked cut off.</summary>
+            public Judged? Judge(int a, int b)
+            {
+                // Cut the ends back to text that is checked.
+                while (b > a && !IsChecked(a)) a = RunEndOf(a);
+                while (b > a && !IsChecked(b - 1)) b = RunStartOf(b - 1);
+                if (b <= a) return null;
+                // Objects and the no-break space that precedes a footnote marker are not words: nothing to mark when nothing else is there.
+                bool onlyObjects = true;
+                for (int i = a; i < b && onlyObjects; i++)
+                    if (_text[i] != Run.ObjectReplacement && _text[i] != '﻿') onlyObjects = false;
+                if (onlyObjects) return null;
+                string lastWs = WsAt(b - 1);
+                for (int i = a; i < b; i++)
+                {
+                    if (_text[i] == Run.ObjectReplacement) continue;
+                    if (!IsChecked(i) || WsAt(i) != lastWs)
+                    {
+                        string raw = _text.Substring(a, b - a);
+                        return new Judged(a, b, SpellingProblem.Mixed, Nfc(raw) ?? raw, null);
+                    }
+                }
+                var checker = _host.GetChecker(lastWs);
+                if (checker == null) return null;
+                string word = _text.Substring(a, b - a);
+                if (word.IndexOf(Run.ObjectReplacement) >= 0) return new Judged(a, b, SpellingProblem.Embedded, word, checker);
+                var normal = Nfc(word);
+                if (normal == null) return null;
+                // Numbers alone are not words; no dictionary has them, and FieldWorks' dictionaries accept them.
+                if (IsAllNumbers(normal) || checker.Check(normal)) return null;
+                return new Judged(a, b, SpellingProblem.Misspelled, normal, checker);
             }
         }
 
@@ -388,47 +534,10 @@ namespace SIL.TextEditing
             return char.IsSurrogate(c) ? 0xFFFD : c;
         }
 
-        // True when the report asked to stop.
-        static bool CheckWord(Scan scan, ISpellCheckHost host, int a, int b, Report report)
-        {
-            // Cut the ends back to text that is checked.
-            while (b > a && !scan.Checked[a]) a = RunEnd(scan, a);
-            while (b > a && !scan.Checked[b - 1]) b = scan.Spans[scan.RunOf[b - 1]].Start;
-            if (b <= a) return false;
-            // Objects and the no-break space that precedes a footnote marker are not words: nothing to mark when nothing else is there.
-            bool onlyObjects = true;
-            for (int i = a; i < b && onlyObjects; i++)
-                if (scan.Text[i] != Run.ObjectReplacement && scan.Text[i] != '﻿') onlyObjects = false;
-            if (onlyObjects) return false;
-            string lastWs = scan.Spans[scan.RunOf[b - 1]].Ws;
-            for (int i = a; i < b; i++)
-            {
-                if (scan.Text[i] == Run.ObjectReplacement) continue;
-                if (!scan.Checked[i] || scan.Spans[scan.RunOf[i]].Ws != lastWs)
-                    return report(a, b, scan, SpellingProblem.Mixed, Nfc(scan.Text.Substring(a, b - a)) ?? scan.Text.Substring(a, b - a), null);
-            }
-            var checker = host.GetChecker(lastWs);
-            if (checker == null) return false;
-            string word = scan.Text.Substring(a, b - a);
-            if (word.IndexOf(Run.ObjectReplacement) >= 0)
-                return report(a, b, scan, SpellingProblem.Embedded, word, checker);
-            var normal = Nfc(word);
-            if (normal == null) return false;
-            // Numbers alone are not words; no dictionary has them, and FieldWorks' dictionaries accept them.
-            if (IsAllNumbers(normal) || checker.Check(normal)) return false;
-            return report(a, b, scan, SpellingProblem.Misspelled, normal, checker);
-        }
-
         static string? Nfc(string text)
         {
             try { return text.Normalize(NormalizationForm.FormC); }
             catch (ArgumentException) { return null; }
-        }
-
-        static int RunEnd(Scan scan, int index)
-        {
-            var span = scan.Spans[scan.RunOf[index]];
-            return span.Start + span.Length;
         }
 
         static bool IsAllNumbers(string word)

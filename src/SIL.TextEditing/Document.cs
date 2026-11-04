@@ -42,6 +42,34 @@ namespace SIL.TextEditing
         public string PlainText() => string.Join("\n", Paragraphs.Select(p => p.Text));
     }
 
+    /// <summary>What an edit replaced: the text from <see cref="Start"/> to <see cref="OldEnd"/> (positions before the edit) became the text from
+    /// <see cref="Start"/> to <see cref="NewEnd"/> (positions after it). Paragraphs <c>Start.Paragraph</c> to <c>OldEnd.Paragraph</c> became
+    /// paragraphs <c>Start.Paragraph</c> to <c>NewEnd.Paragraph</c>. Text before Start is unchanged and text after OldEnd is unchanged, moved to
+    /// follow NewEnd. <see cref="FirstOldStamp"/> and <see cref="LastOldStamp"/> are the <see cref="Paragraph.ChangeStamp"/> of the first and last
+    /// paragraph before the edit, so a listener can tell whether what it remembered was about that text.</summary>
+    public readonly struct TextEdit
+    {
+        public TextEdit(TextPosition start, TextPosition oldEnd, TextPosition newEnd, long firstOldStamp, long lastOldStamp, bool propertiesKept = true)
+        {
+            Start = start;
+            OldEnd = oldEnd;
+            NewEnd = newEnd;
+            FirstOldStamp = firstOldStamp;
+            LastOldStamp = lastOldStamp;
+            PropertiesKept = propertiesKept;
+        }
+
+        public TextPosition Start { get; }
+        public TextPosition OldEnd { get; }
+        public TextPosition NewEnd { get; }
+        public long FirstOldStamp { get; }
+        public long LastOldStamp { get; }
+
+        /// <summary>True when the text after <see cref="OldEnd"/> keeps the style and properties of the paragraph it was in, so what was
+        /// remembered about it (spelling marks, which depend on the style) still holds; false when a join or paste gave it another paragraph's.</summary>
+        public bool PropertiesKept { get; }
+    }
+
     /// <summary>A reversible change: paragraphs [Start, Start + Before.Count) were replaced by After.</summary>
     public sealed class EditDelta
     {

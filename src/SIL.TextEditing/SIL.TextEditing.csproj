@@ -12,5 +12,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SIL.TextEditing.Tests" />
+    <InternalsVisibleTo Include="SIL.TextEditing.Avalonia" />
   </ItemGroup>
 </Project>

@@ -84,4 +84,22 @@ namespace SIL.TextEditing.Tests
         public readonly List<string> Ignored = new List<string>();
         public void Ignore(string word) { Ignored.Add(word); Known.Add(word); }
     }
+
+    /// <summary>A host that counts what it is asked, with a word list for English and French.</summary>
+    public sealed class CountingSpellHost : SpellCheckHostBase
+    {
+        public int WordFormingCalls, JoinsCalls, GetCheckerCalls;
+        public readonly FakeChecker English = new FakeChecker();
+        public readonly FakeChecker French = new FakeChecker();
+
+        public CountingSpellHost(params string[] words)
+        {
+            foreach (var w in words) English.Known.Add(w);
+        }
+
+        public override ISpellChecker? GetChecker(string ws) { GetCheckerCalls++; return ws == "en" ? English : ws == "fr" ? French : null; }
+        public override bool IsWordForming(string ws, int codePoint) { WordFormingCalls++; return base.IsWordForming(ws, codePoint); }
+        public override bool JoinsWords(string ws, int codePoint) { JoinsCalls++; return base.JoinsWords(ws, codePoint); }
+        public void ResetCounts() { WordFormingCalls = JoinsCalls = GetCheckerCalls = 0; English.Asked.Clear(); French.Asked.Clear(); }
+    }
 }

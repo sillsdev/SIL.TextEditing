@@ -134,7 +134,7 @@ The host gives the field its dictionaries: set `RichTextField.SpellChecking` to 
 `ISpellChecker` (`Check`, `Suggest`, `Add`; `ISpellIgnorer` adds `Ignore` when a dictionary has it) for each writing system, says which
 characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. Derive from
 `SpellCheckHostBase` to write only `GetChecker`: it has the default word rules and `RaiseDictionariesChanged()` (any thread). The
-field checks the paragraphs in view when idle and draws red squiggles (misspelled, or a word with an object in it) and blue
+field checks the paragraphs in view when idle, a few words at a time, and draws red squiggles (misspelled, or a word with an object in it) and blue
 ones (a word that mixes writing systems or has unchecked text inside). The rules are in `SpellScanner` (UI-free): words
 break at characters that are not word-forming, and do-not-check text and text that may not be edited (unless forced) are
 skipped. `SpellingSuggestionsAt`, `ApplySpellingSuggestion`, `AddToDictionary`, `IgnoreWord` and `RestartSpelling` are

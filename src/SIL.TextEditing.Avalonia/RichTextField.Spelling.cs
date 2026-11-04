@@ -82,9 +82,12 @@ namespace SIL.TextEditing.Avalonia
             SpellRestarts++;
             _spellFailed.Clear();
             (_spellGuard as GuardedHost)?.Forget();
+            _spellEpoch++;
+            _lastAnswer = null;
+            _pendingEdit = null;
             for (int i = 0; i < _info.Count; i++)
             {
-                _info[i].Marks = null;
+                _info[i].Spell = null;
                 _layouts[i]?.SetSpellingMarks(null);
             }
             InvalidateVisual();
@@ -95,21 +98,78 @@ namespace SIL.TextEditing.Avalonia
         /// view only.</summary>
         public bool IsSpellingComplete => NextUncheckedVisible() < 0;
 
-        /// <summary>Checks one paragraph in view that has not been checked, in document order (FieldWorks checks a step at a time during
-        /// idle time), and returns true when nothing in view is left to check. The idle work calls it; a host or test may too. A checker that
-        /// throws is reported through <see cref="SpellCheckerFailed"/>, not thrown.</summary>
+        /// <summary>For a test: how many words one idle step checks at most. A step looks at the words of one paragraph in view that is not
+        /// checked, and goes on from where it stopped the next time, so a slow checker holds up input for at most this many words.</summary>
+        internal int SpellStepWords { get; set; } = 25;
+
+        /// <summary>Checks the next few words of the first paragraph in view that is not checked, in document order (FieldWorks checks a step at a
+        /// time during idle time), and returns true when nothing in view is left to check. A step is bounded by words, not by paragraphs: a long
+        /// paragraph takes many steps and a short one, or what an edit left to check, one. The idle work calls it; a host or test may too. A
+        /// checker that throws is reported through <see cref="SpellCheckerFailed"/>, not thrown.</summary>
         public bool CheckSpellingStep()
         {
             if (_spellHost == null) return true;
             int i = NextUncheckedVisible();
             if (i < 0) return true;
-            var paragraph = Editor.Document.Paragraphs[i];
-            var marks = SpellScanner.Check(paragraph, _spellGuard!, _styles, Editor.IsReadOnly, SpellLimit(i));
-            _info[i].Marks = marks;
-            _info[i].CheckedStamp = paragraph.ChangeStamp;
-            _layouts[i]?.SetSpellingMarks(marks);
+            CheckSomeWords(i);
             InvalidateVisual();
             return NextUncheckedVisible() < 0;
+        }
+
+        /// <summary>What has been checked of a paragraph: the marks found so far and the stretches of text still to check, both for the paragraph as it was
+        /// when <see cref="Stamp"/> was taken. An edit moves the marks outside it with the text and leaves only the words around the edit to check.</summary>
+        sealed class SpellState
+        {
+            public readonly List<SpellingMark> Marks = new List<SpellingMark>();
+            /// <summary>Stretches [Start, End) still to check, in order, apart; a word that starts inside one is checked whole.</summary>
+            public readonly List<(int Start, int End)> Pending = new List<(int, int)>();
+            public long Stamp;
+            /// <summary>Where the last step stopped at its word budget, or -1: the next step goes on from there (the end of a word) instead of
+            /// looking back at the word before it, which only text that was changed needs.</summary>
+            public int ResumeAt = -1;
+        }
+
+        void CheckSomeWords(int index)
+        {
+            var paragraph = Editor.Document.Paragraphs[index];
+            var state = LiveState(index);
+            int length = paragraph.Length;
+            if (state == null)
+            {
+                state = new SpellState { Stamp = paragraph.ChangeStamp };
+                if (length > 0) state.Pending.Add((0, length));
+                _info[index].Spell = state;
+            }
+            if (state.Pending.Count > 0)
+            {
+                int limit = SpellLimit(index);
+                var (rangeStart, rangeEnd) = state.Pending[0];
+                var scan = new SpellScanner.Window(paragraph, _spellGuard!, _styles, Editor.IsReadOnly);
+                int pos = rangeStart == state.ResumeAt ? Math.Min(rangeStart, length) : scan.WordStartForRecheck(Math.Min(rangeStart, length));
+                int zoneStart = pos, words = 0;
+                bool done = false;
+                var fresh = new List<SpellingMark>();
+                while (true)
+                {
+                    if (words >= SpellStepWords) break;
+                    // A word that starts one character after the stretch (past a joiner) may have been one word with what was edited, so it is looked at too.
+                    if (!scan.NextWord(pos, out int a, out int b) || a > rangeEnd + 1 || a >= limit) { done = true; break; }
+                    var judged = scan.Judge(a, b);
+                    if (judged != null) fresh.Add(new SpellingMark(judged.Value.Start, judged.Value.End - judged.Value.Start, judged.Value.Problem));
+                    words++;
+                    pos = b;
+                }
+                // The words just looked at replace whatever marks lay over them.
+                state.Marks.RemoveAll(m => m.End > zoneStart && m.Start < pos);
+                if (fresh.Count > 0)
+                {
+                    state.Marks.AddRange(fresh);
+                    state.Marks.Sort((x, y) => x.Start.CompareTo(y.Start));
+                }
+                if (done) { state.Pending.RemoveAt(0); state.ResumeAt = -1; }
+                else { state.Pending[0] = (pos, rangeEnd); state.ResumeAt = pos; }
+            }
+            _layouts[index]?.SetSpellingMarks(state.Marks);
         }
 
         /// <summary>The marks of a paragraph as last checked, in order; empty when it is not checked yet or its text has changed since.</summary>
@@ -124,8 +184,31 @@ namespace SIL.TextEditing.Avalonia
             if (_spellHost == null || position.Paragraph < 0 || position.Paragraph >= Editor.Document.Paragraphs.Count) return null;
             int limit = SpellLimit(position.Paragraph);
             if (position.Offset >= limit && limit < int.MaxValue) return null;
-            return SpellScanner.SuggestionsAt(Editor.Document.Paragraphs[position.Paragraph], position.Paragraph, position.Offset, _spellGuard!, _styles, Editor.IsReadOnly, limit);
+            var paragraph = Editor.Document.Paragraphs[position.Paragraph];
+            // The last answer holds while the paragraph, the checkers and the read-only state are as they were: moving the pointer about a
+            // word asks nobody anything.
+            var last = _lastAnswer;
+            if (last != null && ReferenceEquals(last.Paragraph, paragraph) && last.Stamp == paragraph.ChangeStamp && last.Epoch == _spellEpoch
+                && last.ReadOnly == Editor.IsReadOnly && last.Limit == limit && position.Offset >= last.Answer.Start.Offset && position.Offset <= last.Answer.End.Offset)
+                return last.Answer.Again(position.Paragraph, paragraph);
+            var answer = SpellScanner.SuggestionsAt(paragraph, position.Paragraph, position.Offset, _spellGuard!, _styles, Editor.IsReadOnly, limit, null);
+            if (answer != null)
+                _lastAnswer = new LastAnswer { Paragraph = paragraph, Stamp = paragraph.ChangeStamp, Epoch = _spellEpoch, ReadOnly = Editor.IsReadOnly, Limit = limit, Answer = answer };
+            return answer;
         }
+
+        sealed class LastAnswer
+        {
+            public Paragraph Paragraph = null!;
+            public long Stamp;
+            public int Epoch;
+            public bool ReadOnly;
+            public int Limit;
+            public SpellingSuggestions Answer = null!;
+        }
+
+        LastAnswer? _lastAnswer;
+        int _spellEpoch;
 
         /// <summary>Replaces the marked word with text in the word's writing system: one run with the properties of the word's first run, as
         /// one undo step. For a misspelling, a suggestion; for a <see cref="SpellingProblem.Mixed"/> word it makes the whole word one writing
@@ -315,9 +398,23 @@ namespace SIL.TextEditing.Avalonia
                 }
             }
 
+            // The suggestions for a word do not change until the field restarts (it makes new wrappers then), so asking again is free.
+            readonly Dictionary<string, IReadOnlyList<string>> _suggestions = new Dictionary<string, IReadOnlyList<string>>();
+            const int MaxCachedSuggestions = 256;
+
             public IReadOnlyList<string> Suggest(string word)
             {
-                try { return Inner.Suggest(word); }
+                if (_suggestions.TryGetValue(word, out var known)) return known;
+                try
+                {
+                    var list = Inner.Suggest(word);
+                    if (list != null)
+                    {
+                        if (_suggestions.Count >= MaxCachedSuggestions) _suggestions.Clear();
+                        _suggestions[word] = list;
+                    }
+                    return list ?? new string[0];
+                }
                 catch (Exception e)
                 {
                     _field.SpellFailure(_ws, e);
@@ -335,28 +432,136 @@ namespace SIL.TextEditing.Avalonia
             public void Ignore(string word) => ((ISpellIgnorer)Inner).Ignore(word);
         }
 
+        // ------------------------------------------------ an edit moves the marks it leaves alone
+
+        TextEdit? _pendingEdit;
+
+        void OnTextEdited(TextEdit edit) => _pendingEdit = edit;
+
+        /// <summary>Before the paragraphs [start, start + removed) are replaced: what was known of them.</summary>
+        List<ParaInfo> SpellBeforeChange(int start, int removed)
+        {
+            var old = new List<ParaInfo>();
+            if (_spellHost == null) return old;
+            for (int i = 0; i < removed && start + i < _info.Count; i++) old.Add(_info[start + i]);
+            return old;
+        }
+
+        /// <summary>After the paragraphs were replaced (the new <see cref="ParaInfo"/> are in place): the marks the edit left alone are kept, moved with
+        /// the text, and only the words around the edit are left to check, so the other squiggles of the paragraph stay while a person types.
+        /// A change whose range is not known, or whose first and last paragraph were not as the field last saw them, starts the paragraph over.</summary>
+        void SpellAfterChange(int start, int added, List<ParaInfo> old)
+        {
+            var edit = _pendingEdit;
+            _pendingEdit = null;
+            if (_spellHost == null || edit == null || old.Count == 0 || added == 0) return;
+            var e = edit.Value;
+            if (e.Start.Paragraph != start || e.OldEnd.Paragraph - start + 1 != old.Count || e.NewEnd.Paragraph - start + 1 != added || start + added > _info.Count) return;
+            var head = old[0].Spell != null && old[0].Spell!.Stamp == e.FirstOldStamp ? old[0].Spell : null;
+            var tail = old[old.Count - 1].Spell != null && old[old.Count - 1].Spell!.Stamp == e.LastOldStamp ? old[old.Count - 1].Spell : null;
+            int a = e.Start.Offset, b = e.OldEnd.Offset, ne = e.NewEnd.Offset, shift = ne - b;
+            var paragraphs = Editor.Document.Paragraphs;
+            // A paragraph with a line limit is left to be checked afresh: an edit moves where the limit cuts it, which brings text into view that
+            // nothing was pending for (and pushes text out), and such paragraphs are short by design.
+            bool Limited(int index) => FormatOf(index).MaxLines > 0;
+            if (added == 1)
+            {
+                if (Limited(start)) return;
+                if (!e.PropertiesKept) tail = null;   // the text after the edit came from a paragraph with other properties: what was known of it may not hold
+                var p = paragraphs[start];
+                _info[start].Spell = Compose(head, a, true, tail, b, shift, true, a, ne, p.Length, p.ChangeStamp, i => JoinerAt(p, i));
+                return;
+            }
+            var first = paragraphs[start];
+            if (!Limited(start)) _info[start].Spell = Compose(head, a, true, null, 0, 0, false, a, first.Length, first.Length, first.ChangeStamp, i => JoinerAt(first, i));
+            if (!e.PropertiesKept || Limited(start + added - 1)) return;
+            var last = paragraphs[start + added - 1];
+            _info[start + added - 1].Spell = Compose(null, 0, false, tail, b, shift, true, 0, ne, last.Length, last.ChangeStamp, i => JoinerAt(last, i));
+        }
+
+        /// <summary>True when the character at the index of the paragraph joins the words on each side of it (an apostrophe), as the host says.</summary>
+        bool JoinerAt(Paragraph paragraph, int index)
+        {
+            var text = paragraph.Text;
+            if (index < 0 || index >= text.Length || _spellGuard == null || char.IsSurrogate(text[index])) return false;   // the joiners are all in the basic plane
+            var run = paragraph.RunAfter(index, out _);
+            return _spellGuard.JoinsWords(run?.Ws ?? paragraph.DefaultWs, text[index]);
+        }
+
+        /// <summary>The state of a paragraph made of the start of an old one (marks and stretches left to check before <paramref name="headEnd"/>) and the end of
+        /// another (after <paramref name="tailStart"/>, moved by <paramref name="shift"/>), with the stretch [dirtyStart, dirtyEnd] between them to check. An
+        /// old state of null is not known, so the part it would have kept is all to check.</summary>
+        static SpellState Compose(SpellState? head, int headEnd, bool hasHead, SpellState? tail, int tailStart, int shift, bool hasTail, int dirtyStart, int dirtyEnd, int length, long stamp, Func<int, bool> joinerAt)
+        {
+            var state = new SpellState { Stamp = stamp };
+            var pending = new List<(int Start, int End)>();
+            if (hasHead)
+            {
+                if (head == null) pending.Add((0, headEnd));
+                else
+                {
+                    // A mark that ends one character before the edit is safe unless that character joins words: then the edit may have made one word of it and
+                    // what follows.
+                    foreach (var m in head.Marks) if (m.End < headEnd && !(m.End == headEnd - 1 && joinerAt(m.End))) state.Marks.Add(m);
+                    foreach (var (s, en) in head.Pending) if (s < headEnd) pending.Add((s, Math.Min(en, headEnd)));
+                }
+            }
+            pending.Add((dirtyStart, dirtyEnd));
+            if (hasTail)
+            {
+                if (tail == null) pending.Add((tailStart + shift, length));
+                else
+                {
+                    foreach (var m in tail.Marks)
+                        if (m.Start > tailStart && !(m.Start + shift == dirtyEnd + 1 && joinerAt(m.Start + shift - 1))) state.Marks.Add(new SpellingMark(m.Start + shift, m.Length, m.Problem));
+                    foreach (var (s, en) in tail.Pending) if (en > tailStart) pending.Add((Math.Max(s, tailStart) + shift, en + shift));
+                }
+            }
+            // Marks the text no longer holds, and stretches past its end, go; the rest are put in order and joined where they touch.
+            state.Marks.RemoveAll(m => m.End > length);
+            pending.Sort((x, y) => x.Start != y.Start ? x.Start.CompareTo(y.Start) : x.End.CompareTo(y.End));
+            foreach (var (s0, e0) in pending)
+            {
+                int s = Math.Max(0, Math.Min(s0, length)), en = Math.Max(s, Math.Min(e0, length));
+                if (state.Pending.Count > 0 && s <= state.Pending[state.Pending.Count - 1].End)
+                    state.Pending[state.Pending.Count - 1] = (state.Pending[state.Pending.Count - 1].Start, Math.Max(state.Pending[state.Pending.Count - 1].End, en));
+                else state.Pending.Add((s, en));
+            }
+            return state;
+        }
+
         // ------------------------------------------------ results and idle work
 
-        /// <summary>The marks of a paragraph, or null when it is not checked or has changed since (a result for other text is never used).</summary>
-        List<SpellingMark>? LiveMarks(int index)
+        /// <summary>What is known of a paragraph's spelling, or null when nothing is or the paragraph has changed since in a way the field was not
+        /// told of (<see cref="Paragraph.ChangeStamp"/>: a change made behind the editor's back): a result for other text is never used. Comparing a
+        /// number is cheap, so the render path asks every time.</summary>
+        SpellState? LiveState(int index)
         {
-            if (index < 0 || index >= _info.Count) return null;
-            var info = _info[index];
-            if (info.Marks == null) return null;
-            // A result is for the paragraph as it was when checked: any change the paragraph noticed, made through the editor or behind its back
-            // (Paragraph.ChangeStamp), makes it stale. Comparing a number is cheap, so the render path asks every time.
-            if (index >= Editor.Document.Paragraphs.Count || info.CheckedStamp != Editor.Document.Paragraphs[index].ChangeStamp)
+            if (index < 0 || index >= _info.Count || index >= Editor.Document.Paragraphs.Count) return null;
+            var state = _info[index].Spell;
+            if (state == null) return null;
+            if (state.Stamp != Editor.Document.Paragraphs[index].ChangeStamp)
             {
-                info.Marks = null;
+                _info[index].Spell = null;
                 return null;
             }
-            return info.Marks;
+            return state;
+        }
+
+        /// <summary>The marks found so far in a paragraph (all of them once it is checked), or null when it has not been looked at or has changed since.</summary>
+        List<SpellingMark>? LiveMarks(int index) => LiveState(index)?.Marks;
+
+        /// <summary>True when part of the paragraph still has to be checked.</summary>
+        bool NeedsSpelling(int index)
+        {
+            var state = LiveState(index);
+            return state == null || state.Pending.Count > 0;
         }
 
         /// <summary>Called as a paragraph is drawn: a mark the layout still draws for a paragraph that has changed since (behind the editor's back) goes.</summary>
         void DropStaleSpelling(int index, ParagraphLayout layout)
         {
-            if (_spellHost != null && _info[index].Marks != null && LiveMarks(index) == null) layout.SetSpellingMarks(null);
+            if (_spellHost != null && _info[index].Spell != null && LiveState(index) == null) layout.SetSpellingMarks(null);
         }
 
         void ApplySpelling(int index, ParagraphLayout layout)
@@ -373,7 +578,7 @@ namespace SIL.TextEditing.Avalonia
         {
             if (_spellHost == null) return;
             for (int i = 0; i < _info.Count && i < Editor.Document.Paragraphs.Count; i++)
-                if (_info[i].Marks != null && FormatOf(i).MaxLines > 0) _info[i].Marks = null;
+                if (_info[i].Spell != null && FormatOf(i).MaxLines > 0) _info[i].Spell = null;
         }
 
         (double Top, double Bottom) VisibleSpan()
@@ -405,7 +610,7 @@ namespace SIL.TextEditing.Avalonia
             for (int i = 0; i < _layouts.Count && i < Editor.Document.Paragraphs.Count; i++)
             {
                 double height = ParagraphLayoutFor(i).Height;
-                if (y + height >= top && y <= bottom && LiveMarks(i) == null) return i;
+                if (y + height >= top && y <= bottom && NeedsSpelling(i)) return i;
                 y += height;
                 if (y > bottom) break;
             }

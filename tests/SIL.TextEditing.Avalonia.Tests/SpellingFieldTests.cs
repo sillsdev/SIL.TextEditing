@@ -87,17 +87,19 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
-        public void An_edit_drops_the_marks_of_the_edited_paragraph_at_once_and_keeps_the_others() => Headless.Run(() =>
+        public void An_edit_keeps_the_marks_outside_the_edited_word_moved_with_the_text_and_checks_only_around_the_edit() => Headless.Run(() =>
         {
             var f = Field(Doc3());
             while (!f.CheckSpellingStep()) { }
             f.Editor.SetCaret(new TextPosition(0, 0));
             f.Editor.TypeText("X");
-            Assert.Empty(f.SpellingMarks(0));
+            // The marks outside the edit stay and move with the text; only the word the edit touched is left to check.
+            Assert.Equal(new[] { "saat" }, Words(f, 0));
+            Assert.Equal(new SpellingMark(9, 4, SpellingProblem.Misspelled), f.SpellingMarks(0)[0]);
             Assert.Equal(new[] { "teh" }, Words(f, 2));
             Assert.False(f.IsSpellingComplete);
             Assert.True(f.CheckSpellingStep());
-            // "XThe" is not in the list; "saat" is found again at its new place (the old mark was dropped, not carried).
+            // "XThe" is not in the list, and "saat" is still marked where it moved to.
             Assert.Equal(new[] { "XThe", "saat" }, Words(f, 0));
             Assert.Equal(new SpellingMark(9, 4, SpellingProblem.Misspelled), f.SpellingMarks(0)[1]);
         });

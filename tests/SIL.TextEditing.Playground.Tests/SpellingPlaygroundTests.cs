@@ -55,7 +55,7 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
-        public void Typing_drops_the_squiggles_of_that_paragraph_and_idle_time_brings_back_the_right_ones() => Headless.Run(() =>
+        public void Typing_keeps_the_squiggles_outside_the_edit_and_idle_time_brings_back_the_right_ones() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Spelling))
             {

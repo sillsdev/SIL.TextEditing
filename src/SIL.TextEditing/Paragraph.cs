@@ -142,14 +142,21 @@ namespace SIL.TextEditing
             }
         }
 
+        string? _text;
+        long _textStamp;
+
+        /// <summary>The paragraph's text. One run's text is that run's string; several are joined once and the result kept until the paragraph changes
+        /// (<see cref="ChangeStamp"/>), so asking again is free.</summary>
         public string Text
         {
             get
             {
                 if (Runs.Count == 1) return Runs[0].Text;
+                if (_text != null && _textStamp == _stamp) return _text;
                 var sb = new StringBuilder();
                 foreach (var r in Runs) sb.Append(r.Text);
-                return sb.ToString();
+                _textStamp = _stamp;
+                return _text = sb.ToString();
             }
         }
 
@@ -257,15 +264,42 @@ namespace SIL.TextEditing
             Normalize();
         }
 
-        /// <summary>Clones of the runs in [start, end), properties kept.</summary>
+        /// <summary>Clones of the runs in [start, end), properties kept. It looks at the runs the range touches, found by a binary search, not
+        /// at every run of the paragraph.</summary>
         public List<Run> Slice(int start, int end)
         {
-            var c = Clone();
+            if (start < 0) throw new ArgumentOutOfRangeException(nameof(start));
             var result = new List<Run>();
-            int a = c.SplitRunAt(start);
-            int b = c.SplitRunAt(end);
-            for (int i = a; i < b; i++) result.Add(c.Runs[i].Clone());
+            var starts = Starts();
+            int n = _runs.Count;
+            int total = starts[n];
+            if (end <= start || start > total) return result;
+            bool pastEnd = end > total;               // an end past the text takes the empty runs that close the paragraph too
+            end = Math.Min(end, total);
+            // The first run that starts at or after the offset (a run boundary at the offset), else the run that holds it.
+            int first = FirstStartingAtOrAfter(starts, start);
+            if (starts[first] != start) first--;
+            int last = pastEnd ? n : FirstStartingAtOrAfter(starts, end);
+            for (int k = first; k < last; k++)
+            {
+                var run = _runs[k];
+                int runStart = starts[k], runEnd = starts[k + 1];
+                int from = Math.Max(start, runStart) - runStart, to = Math.Min(end, runEnd) - runStart;
+                result.Add(from == 0 && to == runEnd - runStart ? run.Clone() : run.CloneWithText(run.Text.Substring(from, to - from)));
+            }
             return result;
+        }
+
+        /// <summary>The smallest index in [0, Count] whose start is at or after the offset (Count is the end of the text).</summary>
+        static int FirstStartingAtOrAfter(int[] starts, int offset)
+        {
+            int lo = 0, hi = starts.Length - 1;
+            while (lo < hi)
+            {
+                int mid = lo + (hi - lo) / 2;
+                if (starts[mid] >= offset) hi = mid; else lo = mid + 1;
+            }
+            return lo;
         }
 
         /// <summary>The runs with their start and length, as a TsString would report them.</summary>
