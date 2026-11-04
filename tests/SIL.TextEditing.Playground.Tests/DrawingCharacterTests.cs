@@ -263,18 +263,73 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        static bool IsRed(DrawingParagraphTests.Shot shot, int x, int y) { var c = shot.At(x, y); return c.R > 200 && c.G < 90 && c.B < 90; }
+
+        /// <summary>For each column of the box that has red ink in the rows below the baseline, the topmost such row; and the number of red
+        /// pixels in the rows above the baseline.</summary>
+        static (List<int> Tops, int Above, int Columns) Squiggle(DrawingParagraphTests.Shot shot, Session s, int paragraph, int at, int length)
+        {
+            var pl = s.Field.ParagraphLayoutFor(paragraph);
+            var li = pl.Lines[pl.LineIndexOf(at)];
+            var bounds = li.Line.GetTextBounds(at, System.Math.Min(length, li.End - at));
+            double x0 = bounds.Min(b => b.Rectangle.X) + li.X, x1 = bounds.Max(b => b.Rectangle.Right) + li.X;
+            int baseline = (int)System.Math.Round(s.Field.ParagraphTop(paragraph) + li.TextY + li.Line.Baseline);
+            var tops = new List<int>();
+            int above = 0;
+            for (int x = (int)x0 + 1; x < (int)x1 - 1; x++)
+            {
+                for (int y = baseline - 14; y < baseline; y++) if (IsRed(shot, x, y)) above++;   // (the line above has its own squiggle further up)
+                for (int y = baseline; y < baseline + 12; y++) if (IsRed(shot, x, y)) { tops.Add(y - baseline); break; }
+            }
+            return (tops, above, System.Math.Max(0, (int)x1 - 1 - ((int)x0 + 1)));
+        }
+
         [Fact]
-        public void Squiggle_is_not_drawn_yet_so_the_run_has_no_underline() => Headless.Run(() =>
+        public void The_squiggle_underline_is_a_zigzag_below_the_baseline_in_the_under_colour_and_none_above_it() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Drawing))
             {
-                Assert.Null(RunWith(s, 4, "scribble").TextDecorations);
                 var shot = new DrawingParagraphTests.Shot(s);
-                // None of the letters of "scribble" go below the baseline, so any ink lower than the plain "Lines" before it would be a line.
-                Assert.InRange(Below(shot, BoxOf(s, 4, "scribble")) - Below(shot, BoxOf(s, 4, "Lines", 0, 5)), -1, 1);
+                int at = s.ParagraphText(4).IndexOf("scribble", System.StringComparison.Ordinal);
+                var (tops, above, _) = Squiggle(shot, s, 4, at, "scribble".Length);
+                Assert.Equal(0, above);
+                Assert.True(tops.Count >= 25, "red ink under most columns of the word: " + tops.Count);
+                Assert.True(tops.Min() >= 0, "below the baseline");
+                Assert.True(tops.Max() - tops.Min() >= 2, "it rises and falls: rows " + string.Join(",", tops));
+                Assert.True(tops.Max() <= 8, "close under the text: " + tops.Max());
+                // The letters of the word are still the text colour, and the run before it (a plain one) has no red below it.
+                var before = Squiggle(shot, s, 4, s.ParagraphText(4).IndexOf("Lines", System.StringComparison.Ordinal), 5);
+                Assert.Empty(before.Tops);
             }
         });
 
+        [Fact]
+        public void A_squiggled_run_that_wraps_over_lines_is_squiggled_on_each_of_them() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing, 330, 700))
+            {
+                var pl = s.Field.ParagraphLayoutFor(4);
+                const string Token = "a squiggled run that is long enough to wrap onto a second line";
+                int at = s.ParagraphText(4).IndexOf(Token, System.StringComparison.Ordinal);
+                Assert.True(at >= 0, "the run is in the paragraph");
+                int end = at + Token.Length;
+                int first = pl.LineIndexOf(at), last = pl.LineIndexOf(end - 1);
+                Assert.True(last > first, "the run is on more than one line");
+                var shot = new DrawingParagraphTests.Shot(s);
+                int checkedParts = 0;
+                for (int i = first; i <= last; i++)
+                {
+                    int from = System.Math.Max(at, pl.Lines[i].Start), to = System.Math.Min(end, pl.Lines[i].End);
+                    var part = Squiggle(shot, s, 4, from, to - from);
+                    Assert.Equal(0, part.Above);
+                    if (part.Columns < 8) continue;   // a word or two left over at the end of a line
+                    checkedParts++;
+                    Assert.True(part.Tops.Count >= part.Columns * 0.75, "line " + i + ": red ink under " + part.Tops.Count + " of " + part.Columns + " columns");
+                    Assert.True(part.Tops.Max() - part.Tops.Min() >= 2, "line " + i + " rows " + string.Join(",", part.Tops));
+                }
+                Assert.True(checkedParts >= 2, "at least two lines of the run were checked");
+            }
+        });
         [Fact]
         public void The_character_style_box_sets_the_named_style_on_the_selection_and_none_clears_it() => Headless.Run(() =>
         {

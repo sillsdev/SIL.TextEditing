@@ -19,9 +19,11 @@ namespace SIL.TextEditing.Avalonia
         readonly FontFeatureCollection? _features;
         readonly IBrush? _background;
         readonly BaselineAlignment _baseline;
+        readonly IBrush? _squiggle;
 
-        public RunTextProperties(Typeface typeface, double size, IBrush foreground, TextDecorationCollection? decorations, CultureInfo culture, FontFeatureCollection? features, IBrush? background = null, BaselineAlignment baseline = BaselineAlignment.Baseline)
+        public RunTextProperties(Typeface typeface, double size, IBrush foreground, TextDecorationCollection? decorations, CultureInfo culture, FontFeatureCollection? features, IBrush? background = null, BaselineAlignment baseline = BaselineAlignment.Baseline, IBrush? squiggle = null)
         {
+            _squiggle = squiggle;
             _background = background;
             _baseline = baseline;
             _typeface = typeface;
@@ -38,6 +40,8 @@ namespace SIL.TextEditing.Avalonia
         public override IBrush? ForegroundBrush => _foreground;
         /// <summary>The run's background colour. Avalonia is not given it (it would paint over the selection): the layout paints it itself, below the selection.</summary>
         public IBrush? Back => _background;
+        /// <summary>The colour of the run's squiggle underline, or null for none. Avalonia has no wavy decoration: the layout draws it itself, after the text.</summary>
+        public IBrush? Squiggle => _squiggle;
         public override IBrush? BackgroundBrush => null;
         public override BaselineAlignment BaselineAlignment => _baseline;
         public override CultureInfo? CultureInfo => _culture;
@@ -261,7 +265,7 @@ namespace SIL.TextEditing.Avalonia
             IBrush text = ColorBrush(f.ForeColor) ?? foreground;
             var decorations = preedit ? Decorations(3, null, text) : Decorations(f.Underline, f.UnderColor, text);
             var baseline = f.Superscript == 1 ? BaselineAlignment.Superscript : f.Superscript == 2 ? BaselineAlignment.Subscript : BaselineAlignment.Baseline;
-            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline);
+            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null);
         }
 
         /// <summary>The paragraph's resolved formatting, sized from the writing system of its first run.</summary>
@@ -279,7 +283,7 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>The decorations of a FieldWorks underline type (1 dotted, 2 dashed, 3 single, 4 double, 5 strikethrough);
-        /// 0 and the squiggle (6), which Avalonia cannot draw, give none.</summary>
+        /// 0 and the squiggle (6), which Avalonia cannot draw and the layout draws itself (<see cref="DrawSquiggles"/>), give none.</summary>
         static TextDecorationCollection? Decorations(int type, int? color, IBrush text)
         {
             if (type < 1 || type > 5) return null;
@@ -363,7 +367,11 @@ namespace SIL.TextEditing.Avalonia
             source.Text = sb.ToString();
             layout.EffectiveText = source.Text;
             foreach (var seg in source.Segments)
-                if (!seg.IsObject && seg.Properties is RunTextProperties rp && rp.Back != null) layout._backgrounds.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(seg.Start, new KeyValuePair<int, IBrush>(seg.End, rp.Back)));
+            {
+                if (seg.IsObject || !(seg.Properties is RunTextProperties rp)) continue;
+                if (rp.Back != null) layout._backgrounds.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(seg.Start, new KeyValuePair<int, IBrush>(seg.End, rp.Back)));
+                if (rp.Squiggle != null) layout._squiggles.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(seg.Start, new KeyValuePair<int, IBrush>(seg.End, rp.Squiggle)));
+            }
 
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
             var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles);
@@ -485,6 +493,48 @@ namespace SIL.TextEditing.Avalonia
                     foreach (var tb in li.Line.GetTextBounds(a, b - a))
                         context.DrawRectangle(bg.Value.Value, null, new Rect(li.X + tb.Rectangle.X, top + li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height));
                 }
+        }
+
+        // Runs with a squiggle underline: start, then end and brush (effective offsets).
+        readonly List<KeyValuePair<int, KeyValuePair<int, IBrush>>> _squiggles = new List<KeyValuePair<int, KeyValuePair<int, IBrush>>>();
+
+        /// <summary>Draws the squiggle underlines (underline type 6, spelling marks): a zigzag a little below the baseline under each
+        /// run's text on every line it is on, in its under colour. Drawn after the text; <paramref name="top"/> is the paragraph's top in the control.</summary>
+        public void DrawSquiggles(DrawingContext context, double top)
+        {
+            if (_squiggles.Count == 0) return;
+            foreach (var li in Lines)
+            {
+                if (li.IsEmpty) continue;
+                foreach (var sq in _squiggles)
+                {
+                    int a = Math.Max(sq.Key, li.Start), b = Math.Min(sq.Value.Key, TextEnd(li));
+                    if (b <= a) continue;
+                    double descent = Math.Max(li.Line.Height - li.Line.Baseline, 3);
+                    double amplitude = Math.Min(2, Math.Max(1, descent / 2));
+                    double middle = top + li.TextY + li.Line.Baseline + 1 + amplitude;
+                    var pen = new Pen(sq.Value.Value, 1);
+                    foreach (var tb in li.Line.GetTextBounds(a, b - a))
+                    {
+                        double x0 = li.X + tb.Rectangle.X, x1 = li.X + tb.Rectangle.Right;
+                        if (x1 - x0 < 1) continue;
+                        var wave = new StreamGeometry();
+                        using (var c = wave.Open())
+                        {
+                            bool down = false;
+                            c.BeginFigure(new Point(x0, middle - amplitude), false);
+                            for (double x = x0 + 2; x < x1; x += 2)
+                            {
+                                c.LineTo(new Point(x, middle + (down ? -amplitude : amplitude)));
+                                down = !down;
+                            }
+                            c.LineTo(new Point(x1, middle + (down ? -amplitude : amplitude)));
+                            c.EndFigure(false);
+                        }
+                        context.DrawGeometry(null, pen, wave);
+                    }
+                }
+            }
         }
 
         /// <summary>The extra space a bullet or number needs after it: three points unless it ends with a space.</summary>

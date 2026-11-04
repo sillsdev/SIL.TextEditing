@@ -208,8 +208,10 @@ namespace SIL.TextEditing.Playground
                 new Run { Ws = "en", Text = ", " },
                 NamedStyle("en", "Misspelled (a style: red double)", "Misspelled"),
                 new Run { Ws = "en", Text = ", " },
-                Styled("en", "scribble", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSquiggle, 0),
-                new Run { Ws = "en", Text = " (squiggle, not drawn yet)." });
+                Styled("en", "scribble", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSquiggle, 0, TextPropertyNumbers.UnderColor, SampleStyles.Red, 0),
+                new Run { Ws = "en", Text = " (squiggle), and " },
+                Styled("en", "a squiggled run that is long enough to wrap onto a second line", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSquiggle, 0, TextPropertyNumbers.UnderColor, SampleStyles.Red, 0),
+                new Run { Ws = "en", Text = "." });
             var shifts = Runs("en", "",
                 new Run { Ws = "en", Text = "Position: H" },
                 Styled("en", "2", TextPropertyNumbers.Superscript, 2, 0),

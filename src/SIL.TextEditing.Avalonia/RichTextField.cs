@@ -314,6 +314,7 @@ namespace SIL.TextEditing.Avalonia
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
                     foreach (var li in pl.Lines) if (!li.IsEmpty) li.Line.Draw(context, new Point(li.X, y + li.TextY));
+                    pl.DrawSquiggles(context, y);
                     pl.DrawLabel(context, y);
                     if (ObjectAsGlyph)
                     {
