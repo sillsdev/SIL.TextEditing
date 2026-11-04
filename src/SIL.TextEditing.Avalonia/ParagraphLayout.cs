@@ -49,7 +49,8 @@ namespace SIL.TextEditing.Avalonia
         public override IBrush? BackgroundBrush => null;
         public override BaselineAlignment BaselineAlignment => _baseline;
         public override CultureInfo? CultureInfo => _culture;
-        public override FontFeatureCollection? FontFeatures => _features;    }
+        public override FontFeatureCollection? FontFeatures => _features;
+    }
 
     sealed class ParagraphProperties : TextParagraphProperties
     {
@@ -375,8 +376,6 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
-        /// <summary>The boxes of the characters from <paramref name="from"/> to <paramref name="to"/> (effective offsets), one per run piece, with
-        /// each piece's baseline offset: x in paragraph coordinates, y from the top of the line's text (before the offset is applied).</summary>
         /// <summary>A box from Avalonia's line as the line is shown: moved by the line's origin and stretched with it.</summary>
         Rect Shown(Rect r)
         {
@@ -384,6 +383,8 @@ namespace SIL.TextEditing.Avalonia
             return new Rect(left, r.Y, right - left, r.Height);
         }
 
+        /// <summary>The boxes of the characters from <paramref name="from"/> to <paramref name="to"/> (effective offsets), one per run piece, with
+        /// each piece's baseline offset: x in paragraph coordinates, y from the top of the line's text (before the offset is applied).</summary>
         internal List<KeyValuePair<Rect, double>> Pieces(int from, int to)
         {
             var result = new List<KeyValuePair<Rect, double>>();
