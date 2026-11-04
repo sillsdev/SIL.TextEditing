@@ -147,11 +147,18 @@ namespace SIL.TextEditing.Markdown.Writer
 
         // ---------------------------------------------------------------- the ladder
 
-        /// <summary>Finds the first spelling of the inline text that <paramref name="accepts"/>. Within a spelling it tries no optional
-        /// escape, then every one, then removes them one at a time, from the end back to the start, keeping each that is still needed.</summary>
-        /// <summary>The most optional escapes the writer tries to remove one by one; a paragraph with more keeps them all.</summary>
-        const int MaxSearched = 400;
+        /// <summary>How many characters the search may have the parser read for one paragraph: it spends them in whole reads, so a longer
+        /// paragraph gets fewer. Only a paragraph that needs thousands of escapes can come near it (the search takes about two reads per
+        /// escape it keeps, times the log of the candidates it spares); what is left unsearched stays escaped, which still reads back.</summary>
+        const long ReadBudgetChars = 5_000_000;
 
+        const int MinReads = 64;
+
+        /// <summary>Finds the first spelling of the inline text that <paramref name="accepts"/>. Within a spelling it tries no optional
+        /// escape, then every one, then takes escapes away from the end back to the start, keeping each that is still needed. It takes them
+        /// away in blocks: a block whose removal reads back goes in one read, one that does not is split in halves, the upper half first.
+        /// Where a removal that fails is not rescued by another, which is the usual case, that is the same result as taking them one at a
+        /// time, in about two reads per escape that stays, not one per candidate.</summary>
         string? Search(InlineGenerator generator, IReadOnlyList<List<Run>> cells, Func<string, bool> accepts)
         {
             bool anyStar = false, anyParen = false;
@@ -171,15 +178,30 @@ namespace SIL.TextEditing.Markdown.Writer
                 for (int k = 0; k < count; k++) mask[k] = true;
                 string all = generator.Generate(cells, mode, mask, out _);
                 if (!accepts(all)) continue;
-                if (count > MaxSearched) return all; // a paragraph this full of marks is not worth a read per mark
-                for (int k = count - 1; k >= 0; k--)
-                {
-                    mask[k] = false;
-                    if (!accepts(generator.Generate(cells, mode, mask, out _))) mask[k] = true;
-                }
+                // The state of the mask always reads back: it starts as "every escape" and only a removal that was just read is kept.
+                long reads = Math.Max(MinReads, ReadBudgetChars / Math.Max(1, all.Length));
+                int mid = count / 2;
+                RemoveEscapes(generator, cells, mode, mask, mid, count, accepts, ref reads);
+                RemoveEscapes(generator, cells, mode, mask, 0, mid, accepts, ref reads);
                 return generator.Generate(cells, mode, mask, out _);
             }
             return null;
+        }
+
+        /// <summary>Takes the escapes in [low, high) away when the text still reads back without them; otherwise splits the block and
+        /// tries the upper half, then the lower half.</summary>
+        static void RemoveEscapes(InlineGenerator generator, IReadOnlyList<List<Run>> cells, GenMode mode, bool[] mask, int low, int high,
+            Func<string, bool> accepts, ref long reads)
+        {
+            if (low >= high || reads <= 0) return;
+            reads--;
+            for (int k = low; k < high; k++) mask[k] = false;
+            if (accepts(generator.Generate(cells, mode, mask, out _))) return;
+            for (int k = low; k < high; k++) mask[k] = true;
+            if (high - low == 1) return;
+            int mid = low + (high - low) / 2;
+            RemoveEscapes(generator, cells, mode, mask, mid, high, accepts, ref reads);
+            RemoveEscapes(generator, cells, mode, mask, low, mid, accepts, ref reads);
         }
 
         // ---------------------------------------------------------------- empty paragraphs and fences

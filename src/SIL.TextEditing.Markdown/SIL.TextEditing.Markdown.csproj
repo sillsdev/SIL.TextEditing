@@ -11,6 +11,8 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The tests compare the writer's escaping search with a reference implementation that uses the internal generator. -->
+    <InternalsVisibleTo Include="SIL.TextEditing.Markdown.Tests" />
     <PackageReference Include="Markdig.Signed" />
     <ProjectReference Include="..\SIL.TextEditing\SIL.TextEditing.csproj" />
   </ItemGroup>
