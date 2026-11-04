@@ -558,11 +558,89 @@ namespace SIL.TextEditing.Avalonia
         public int End { get; }
     }
 
+    /// <summary>The formats of one layout of a paragraph, each worked out once: the host's styles are asked once for each style and writing system, and
+    /// runs that format alike share one set of text run properties (typeface, font features, culture, brushes) and so cost one allocation of them.</summary>
+    sealed class FormatCache
+    {
+        readonly WritingSystemRegistry _writingSystems;
+        readonly IBrush _foreground;
+        readonly IBrush? _forceText;
+        readonly Dictionary<(CharFormat, string, bool), RunTextProperties> _properties = new Dictionary<(CharFormat, string, bool), RunTextProperties>(new KeyComparer());
+        readonly Dictionary<(string?, string?), FontFeatureCollection?> _features = new Dictionary<(string?, string?), FontFeatureCollection?>();
+
+        sealed class KeyComparer : IEqualityComparer<(CharFormat, string, bool)>
+        {
+            public bool Equals((CharFormat, string, bool) x, (CharFormat, string, bool) y) => x.Item2 == y.Item2 && x.Item3 == y.Item3 && x.Item1.SameAs(y.Item1);
+            public int GetHashCode((CharFormat, string, bool) k) => k.Item1.SameHash() * 31 + k.Item2.GetHashCode() + (k.Item3 ? 1 : 0);
+        }
+
+        public FormatCache(Paragraph paragraph, WritingSystemRegistry writingSystems, IBrush foreground, IStyleResolver? styles, IBrush? forceText)
+        {
+            Formats = new FormatResolver.CharFormats(paragraph, styles);
+            _writingSystems = writingSystems;
+            _foreground = foreground;
+            _forceText = forceText;
+        }
+
+        public FormatResolver.CharFormats Formats { get; }
+
+        /// <summary>How many sets of text run properties were made (the runs that format alike share one).</summary>
+        public int Built { get; private set; }
+
+        /// <summary>The paragraph style's character format in the writing system of a run (the run's own properties not applied).</summary>
+        public CharFormat Char(Run run) => Formats.Resolve(run, _writingSystems.Get(run.Ws).Size);
+
+        public RunTextProperties For(Run run, bool preedit = false)
+        {
+            var ws = _writingSystems.Get(run.Ws);
+            var f = Formats.Resolve(run, ws.Size);
+            return For(f, ws, run.Ws, preedit);
+        }
+
+        public RunTextProperties For(CharFormat f, WritingSystemInfo ws, string wsTag, bool preedit = false)
+        {
+            var key = (f, wsTag, preedit);
+            if (_properties.TryGetValue(key, out var found)) return found;
+            Built++;
+            return _properties[key] = ParagraphLayout.MakeProperties(f, ws, wsTag, _foreground, preedit, true, _forceText, this);
+        }
+
+        public FontFeatureCollection? Features(string? ws, string? run)
+        {
+            if (!_features.TryGetValue((ws, run), out var found)) _features[(ws, run)] = found = ParseFeatures(ws, run);
+            return found;
+        }
+
+        internal static FontFeatureCollection? ParseFeatures(string? ws, string? run)
+        {
+            FontFeatureCollection? features = null;
+            foreach (var list in new[] { ws, run })
+            {
+                if (string.IsNullOrEmpty(list)) continue;
+                foreach (var item in list!.Split(','))
+                {
+                    if (item.Trim().Length == 0) continue;
+                    features ??= new FontFeatureCollection();
+                    features.Add(FontFeature.Parse(item.Trim()));
+                }
+            }
+            return features;
+        }
+    }
+
     /// <summary>The layout of one paragraph with TextFormatter: lines, hit testing, caret, selection and visual caret
     /// stops. Offsets are model offsets unless a name says "effective"; the two differ only while an IME preedit
     /// string is shown inside the paragraph.</summary>
     public sealed class ParagraphLayout : IDisposable
     {
+        FormatCache? _formats;
+
+        /// <summary>How many sets of text run properties this layout made: runs that format alike share one.</summary>
+        internal int FormatsBuilt => _formats?.Built ?? 0;
+
+        /// <summary>How many times the host's styles were asked for a style while this layout was made.</summary>
+        internal int StyleLookups => _formats?.Formats.StyleLookups ?? 0;
+
         ParagraphLayout(Paragraph paragraph, double layoutWidth)
         {
             Paragraph = paragraph;
@@ -611,33 +689,15 @@ namespace SIL.TextEditing.Avalonia
         TextLine? _label;
         RunTextProperties? _labelRun;
 
-        /// <summary>Builds the text run properties for a run: the writing system's font and size, then the paragraph style,
-        /// character style and the run's own properties, resolved through <paramref name="styles"/>.</summary>
-        static RunTextProperties MakeProperties(Paragraph paragraph, Run run, WritingSystemRegistry writingSystems, IBrush foreground, IStyleResolver? styles, bool preedit = false, bool ownDecorations = false, IBrush? forceText = null)
-        {
-            var ws = writingSystems.Get(run.Ws);
-            var f = FormatResolver.ResolveChar(paragraph, run, styles, ws.Size);
-            return MakeProperties(f, ws, run.Ws, foreground, preedit, true, forceText);
-        }
-
         /// <param name="ownDecorations">True when the paragraph draws the run's underline or strikethrough itself (<see cref="DrawDecorations"/>), so Avalonia is not given it.</param>
         /// <param name="forceText">A brush that is the text's colour whatever colour the run has, or null.</param>
-        static RunTextProperties MakeProperties(CharFormat f, WritingSystemInfo ws, string wsTag, IBrush foreground, bool preedit = false, bool ownDecorations = false, IBrush? forceText = null)
+        internal static RunTextProperties MakeProperties(CharFormat f, WritingSystemInfo ws, string wsTag, IBrush foreground, bool preedit = false, bool ownDecorations = false, IBrush? forceText = null, FormatCache? cache = null)
         {
             var weight = (FontWeight)f.Weight;
             var style = f.Italic ? FontStyle.Italic : FontStyle.Normal;
             double size = f.SizePt > 0 ? f.SizePt : ws.Size;
             if (f.Superscript != 0) size *= CharFormat.DefaultSuperscriptScale;
-            var featureList = new List<string>();
-            if (!string.IsNullOrEmpty(ws.Features)) featureList.AddRange(ws.Features!.Split(','));
-            if (!string.IsNullOrEmpty(f.FontFeatures)) featureList.AddRange(f.FontFeatures!.Split(','));
-            FontFeatureCollection? features = null;
-            foreach (var item in featureList)
-            {
-                if (item.Trim().Length == 0) continue;
-                features ??= new FontFeatureCollection();
-                features.Add(FontFeature.Parse(item.Trim()));
-            }
+            FontFeatureCollection? features = cache != null ? cache.Features(ws.Features, f.FontFeatures) : FormatCache.ParseFeatures(ws.Features, f.FontFeatures);
             CultureInfo culture;
             try { culture = CultureInfo.GetCultureInfo(wsTag); }
             catch (CultureNotFoundException) { culture = CultureInfo.InvariantCulture; }
@@ -758,6 +818,7 @@ namespace SIL.TextEditing.Avalonia
             var layout = new ParagraphLayout(paragraph, width);
             if (forceText == null) layout._recolour = brush => Build(paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, brush);
             var pf = ResolveFormat(paragraph, writingSystems, styles);
+            var formats = layout._formats = new FormatCache(paragraph, writingSystems, foreground, styles, forceText);
             // Every paragraph draws its own underlines and strikethrough (DrawDecorations): Avalonia's leave a gap at each descender, and in a justified
             // paragraph, which is drawn in pieces, they would restart their pattern in each.
             layout.PreviousSpaceAfter = previousSpaceAfter;
@@ -775,14 +836,14 @@ namespace SIL.TextEditing.Avalonia
                 if (t.Length == 0) return;
                 int a = sb.Length;
                 sb.Append(t);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, true, forceText) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = formats.For(r) });
             }
 
             void AddPreedit()
             {
                 int a = sb.Length;
                 sb.Append(preedit);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, preeditRun, writingSystems, foreground, styles, true, true, forceText) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = formats.For(preeditRun, true) });
                 preeditDone = true;
             }
 
@@ -800,7 +861,7 @@ namespace SIL.TextEditing.Avalonia
                 {
                     int s0 = sb.Length;
                     sb.Append(objectAsGlyph ? " " : r.Text);
-                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, true, forceText), IsObject = true, Data = r.ObjData });
+                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = formats.For(r), IsObject = true, Data = r.ObjData });
                 }
                 else AddSegment(r.Text, r);
                 pos += r.Text.Length;
@@ -820,7 +881,7 @@ namespace SIL.TextEditing.Avalonia
             }
 
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
-            var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles, false, true, forceText);
+            var defaultProperties = formats.For(defaultRun);
             var baseWs = writingSystems.Get(defaultRun.Ws);
             layout.Format = pf;
             layout.ApplyBox(pf, width, paragraph.Rtl, foreground);
@@ -828,7 +889,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 // The label takes the paragraph style's character format and the number font, not the first run's own look (its
                 // superscript, underline or background).
-                var lf = FormatResolver.ResolveChar(paragraph, new Run { Ws = defaultRun.Ws }, styles, baseWs.Size);
+                var lf = formats.Char(new Run { Ws = defaultRun.Ws });
                 if (pf.BulNumFontInfo.Length > 0) lf.ApplyOver(BulletNumbers.ParseFontInfo(pf.BulNumFontInfo));
                 if (BulletNumbers.IsBullet(pf.BulNumScheme)) lf.FontFamily = BulletNumbers.BulletFont;
                 layout._labelFormat = lf;
@@ -1206,8 +1267,7 @@ namespace SIL.TextEditing.Avalonia
         TextLine? EllipsisLine(Run defaultRun, WritingSystemInfo baseWs, IStyleResolver? styles, IBrush foreground)
         {
             if (_ellipsis != null) return _ellipsis;
-            var format = FormatResolver.ResolveChar(Paragraph, new Run { Ws = defaultRun.Ws }, styles, baseWs.Size);
-            var props = MakeProperties(format, baseWs, defaultRun.Ws, foreground, false, true);
+            var props = _formats!.For(_formats.Char(new Run { Ws = defaultRun.Ws }), baseWs, defaultRun.Ws);
             EllipsisProperties = props;
             var source = new ParagraphSource { Text = "..." };
             source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 3, Properties = props });

@@ -46,6 +46,14 @@ namespace SIL.TextEditing
 
         internal CharFormat Copy() => (CharFormat)MemberwiseClone();
 
+        /// <summary>True when the other format has every value this one has, so the two draw alike.</summary>
+        public bool SameAs(CharFormat? o) => o != null && Weight == o.Weight && Italic == o.Italic && Superscript == o.Superscript && Underline == o.Underline
+            && UnderColor == o.UnderColor && SizePt == o.SizePt && OffsetPt == o.OffsetPt && ForeColor == o.ForeColor && BackColor == o.BackColor
+            && FontFamily == o.FontFamily && FontFeatures == o.FontFeatures;
+
+        /// <summary>A hash that agrees with <see cref="SameAs"/>.</summary>
+        public int SameHash() => ((((Weight * 31 + (Italic ? 1 : 0)) * 31 + Superscript) * 31 + Underline) * 31 + SizePt.GetHashCode()) * 31 + (ForeColor ?? -1) + 7 * (BackColor ?? -1) + 13 * (UnderColor ?? -1) + 17 * (FontFamily?.GetHashCode() ?? 0) + 19 * OffsetPt.GetHashCode() + 23 * (FontFeatures?.GetHashCode() ?? 0);
+
         /// <summary>Applies a bag's character properties over this format (a number font over the paragraph's, say).</summary>
         public void ApplyOver(PropertyBag bag) => Apply(bag);
 
@@ -240,6 +248,49 @@ namespace SIL.TextEditing
     /// </summary>
     public static class FormatResolver
     {
+        /// <summary>Resolves the character formats of one paragraph's runs, asking the host's styles once for each (style name, writing system) and applying
+        /// the paragraph's layers once for each writing system, however many runs there are. It gives what <see cref="ResolveChar"/> gives. Made for one
+        /// layout of the paragraph: it never sees a change to the styles or the paragraph.</summary>
+        public sealed class CharFormats
+        {
+            readonly Paragraph _paragraph;
+            readonly IStyleResolver? _styles;
+            readonly Dictionary<(string, string), PropertyBag?> _bags = new Dictionary<(string, string), PropertyBag?>();
+            readonly Dictionary<(string, double), CharFormat> _layers = new Dictionary<(string, double), CharFormat>();
+
+            public CharFormats(Paragraph paragraph, IStyleResolver? styles)
+            {
+                _paragraph = paragraph;
+                _styles = styles;
+            }
+
+            /// <summary>How many times the host's styles were asked for a style.</summary>
+            public int StyleLookups { get; private set; }
+
+            PropertyBag? Lookup(string style, string ws)
+            {
+                if (_bags.TryGetValue((style, ws), out var bag)) return bag;
+                StyleLookups++;
+                return _bags[(style, ws)] = _styles!.Resolve(style, ws);
+            }
+
+            public CharFormat Resolve(Run run, double baseSizePt)
+            {
+                if (!_layers.TryGetValue((run.Ws, baseSizePt), out var layer))
+                {
+                    layer = new CharFormat { SizePt = baseSizePt };
+                    var paraStyle = StyleName(_paragraph);
+                    if (_styles != null && paraStyle.Length > 0 && Lookup(paraStyle, run.Ws) is PropertyBag bag) layer.Apply(bag);
+                    layer.Apply(_paragraph.Props);
+                    _layers[(run.Ws, baseSizePt)] = layer;
+                }
+                var f = layer.Copy();
+                if (run.Props.TryGetStr(TextPropertyNumbers.NamedStyle, out var charStyle) && charStyle.Length > 0 && _styles != null && Lookup(charStyle, run.Ws) is PropertyBag cbag) f.Apply(cbag);
+                f.Apply(run.Props);
+                return f;
+            }
+        }
+
         public static CharFormat ResolveChar(Paragraph paragraph, Run run, IStyleResolver? styles, double baseSizePt)
         {
             var f = new CharFormat { SizePt = baseSizePt };
