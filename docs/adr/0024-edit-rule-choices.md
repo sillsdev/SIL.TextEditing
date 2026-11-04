@@ -81,6 +81,15 @@ one, and can change without superseding anything.
   The same holds when a wrap, not a break, puts the visible end on the boundary of a locked run and the hidden editable
   run after it (issue #38): the visible end has no editable neighbour that can be seen, so it is not an editable place,
   the caret is not offered there and Tab leaves. A lone break that ends the paragraph is not hidden text (above).
+- **Backspace and Delete join at a paragraph mark even when the text beside it is hidden.** A paragraph that starts with an
+  editable hard break and whose line limit hides the rest can be joined by Backspace at its start, or by Delete at the end
+  of the paragraph above (issue #56; since #38 the join had been refused, though it worked before). The caret rests at the
+  start of that paragraph, so the mark is reachable, and a join changes no text it cannot reach; the "hidden text is not
+  an editable place" rule above applies to typing and Tab, not to the mark. A mark whose neighbour may not be edited is
+  still refused (ADR 0019), and Backspace into a line-limited paragraph above whose end is hidden is still refused by the
+  field, because the joined text would vanish. Read from FieldWorks' Backspace at the start of a paragraph, which moves the
+  paragraph's text into the one above and looks at editability, not at truncation; the combination itself was not run
+  there. Default, not an owner decision.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

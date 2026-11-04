@@ -331,6 +331,59 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
         });
 
+        static RichTextField BreakFirstThenHidden()
+        {
+            // The second paragraph starts with an editable hard break and the line limit hides everything after it.
+            var p1 = Para("en", "en", Break + "rest");
+            p1.Props.SetInt(TextPropertyNumbers.MaxLines, 1);
+            var field = Fixtures.Field(Doc(Para("en", "en", "ab"), p1), 520);
+            var pl = field.ParagraphLayoutFor(1);
+            Assert.True(pl.Truncated);
+            Assert.Equal(0, pl.VisibleEnd);
+            return field;
+        }
+
+        [Fact]
+        public void Backspace_at_the_start_of_a_paragraph_that_begins_with_an_editable_break_and_hides_the_rest_joins_it_to_the_one_above() => Headless.Run(() =>
+        {
+            // The paragraph mark is reachable (the caret rests at the start of the second paragraph), so the join is allowed even
+            // though the editable text beside it is hidden; FieldWorks' join does not look at truncation.
+            var field = BreakFirstThenHidden();
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Back);
+            Assert.Single(field.Editor.Document.Paragraphs);
+            Assert.Equal("ab" + Break + "rest", Text(field));
+            Assert.Equal(new TextPosition(0, 2), field.Editor.Caret);
+        });
+
+        [Fact]
+        public void Delete_at_the_end_of_the_paragraph_above_one_that_begins_with_an_editable_break_and_hides_the_rest_joins_them() => Headless.Run(() =>
+        {
+            var field = BreakFirstThenHidden();
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.Press(Key.Delete);
+            Assert.Single(field.Editor.Document.Paragraphs);
+            Assert.Equal("ab" + Break + "rest", Text(field));
+        });
+
+        [Fact]
+        public void The_join_is_still_refused_when_the_hidden_paragraph_begins_with_text_that_may_not_be_edited() => Headless.Run(() =>
+        {
+            var p1 = new Paragraph { DefaultWs = "en" };
+            var locked = new Run { Ws = "en", Text = Break };
+            locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            p1.Runs.Add(locked);
+            p1.Runs.Add(new Run { Ws = "en", Text = "rest" });
+            p1.Props.SetInt(TextPropertyNumbers.MaxLines, 1);
+            var field = Fixtures.Field(Doc(Para("en", "en", "ab"), p1), 520);
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Back);
+            Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.Press(Key.Delete);
+            Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
+        });
+
         [Fact]
         public void A_preedit_before_a_trailing_break_draws_its_caret_after_the_preedit_on_the_same_line() => Headless.Run(() =>
         {
