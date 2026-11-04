@@ -10,7 +10,7 @@ using SIL.TextEditing.Markdown.Notation;
 
 namespace SIL.TextEditing.Markdown.Reader
 {
-    /// <summary>Reads GDR Markdown into paragraphs: Markdig for the CommonMark blocks and inlines, our own scan for fenced blocks
+    /// <summary>Reads FieldWorks Markdown into paragraphs: Markdig for the CommonMark blocks and inlines, our own scan for divs and the front matter
     /// (spec 3.1), the notation extension for spec 3.2 to 3.4.</summary>
     internal sealed class MarkdownReader
     {
@@ -19,20 +19,20 @@ namespace SIL.TextEditing.Markdown.Reader
         readonly string _source;
         readonly List<Paragraph> _paragraphs = new List<Paragraph>();
 
-        MarkdownReader(MarkdownOptions options, string source)
+        MarkdownReader(MarkdownOptions options, string source, bool bom)
         {
             _options = options;
             _context = new ReaderContext(options, source);
-            _source = ReadFrontMatter(source);
+            _source = ReadFrontMatter(source, bom ? 1 : 0);
         }
 
         bool _unsupportedVersion;
 
         /// <summary>Finds the front matter (spec 2.1), takes the defaults and the version from it, and returns the text with it blanked (same length, so every
         /// offset is the source's). Front matter with no <c>fwmd</c> key is some other YAML block and only blanked.</summary>
-        string ReadFrontMatter(string source)
+        string ReadFrontMatter(string source, int start)
         {
-            if (!FrontMatterFormat.TryFind(source, out int end, out bool closed) || !closed) return source;
+            if (!FrontMatterFormat.TryFind(source, start, out int end, out bool closed) || !closed) return source;
             var block = source.Substring(0, end);
             var fm = FrontMatterFormat.Parse(block, (a, b, message) => { if (block.IndexOf("fwmd", StringComparison.Ordinal) >= 0) _context.Report(MarkdownDiagnosticIds.MalformedAttribute, MarkdownSeverity.Error, message, a, b); });
             fm.Range = new[] { 0, end };
@@ -61,7 +61,7 @@ namespace SIL.TextEditing.Markdown.Reader
 
         public static MarkdownParseResult Read(string markdown, MarkdownOptions options)
         {
-            var reader = new MarkdownReader(options, Prepare(markdown));
+            var reader = new MarkdownReader(options, Prepare(markdown), markdown.Length > 0 && markdown[0] == Chars.ByteOrderMark);
             reader.ReadAll();
             var document = new Document();
             document.Paragraphs.AddRange(reader._paragraphs);
@@ -73,7 +73,7 @@ namespace SIL.TextEditing.Markdown.Reader
         /// writing system or link) are not the writer's concern.</summary>
         public static List<Paragraph> ReadParagraphs(string markdown, MarkdownOptions options, out bool clean)
         {
-            var reader = new MarkdownReader(options, Prepare(markdown));
+            var reader = new MarkdownReader(options, Prepare(markdown), markdown.Length > 0 && markdown[0] == Chars.ByteOrderMark);
             reader.ReadAll();
             clean = true;
             foreach (var d in reader._context.Diagnostics)
@@ -91,7 +91,7 @@ namespace SIL.TextEditing.Markdown.Reader
         /// <summary>One inline-only text (the abstract, spec 3.5): runs, with block syntax reported.</summary>
         public static List<Run> ReadInline(string text, MarkdownOptions options, out ReaderContext context)
         {
-            var reader = new MarkdownReader(options, Prepare(text));
+            var reader = new MarkdownReader(options, Prepare(text), text.Length > 0 && text[0] == Chars.ByteOrderMark);
             var runs = reader.ReadInlineText();
             context = reader._context;
             return runs;
@@ -269,7 +269,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     continue;
                 }
                 _context.Report(MarkdownDiagnosticIds.FieldBlockSyntax, MarkdownSeverity.Error,
-                    "The abstract can't hold " + Describe(block) + ". Move it to the body.", block.Span.Start, block.Span.End + 1);
+                    "A multi-string field such as the abstract can't hold " + Describe(block) + ". Move it to the body.", block.Span.Start, block.Span.End + 1);
             }
             var p = new Paragraph { Runs = runs };
             p.Normalize();
@@ -566,7 +566,7 @@ namespace SIL.TextEditing.Markdown.Reader
             string? style = Names.Heading(heading.Level);
             if (style == null)
             {
-                _context.Report(MarkdownDiagnosticIds.HeadingTooDeep, MarkdownSeverity.Error, "A heading of level " + heading.Level + " has no style. Use ### or a fenced style.",
+                _context.Report(MarkdownDiagnosticIds.HeadingTooDeep, MarkdownSeverity.Error, "A heading of level " + heading.Level + " has no style. Use ### or a div with custom-style.",
                     heading.Span.Start, heading.Span.End + 1);
                 style = "Heading " + heading.Level;
             }

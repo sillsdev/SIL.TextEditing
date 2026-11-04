@@ -12,6 +12,9 @@ namespace SIL.TextEditing.Markdown
         /// <summary>The format version this library reads and writes (<c>fwmd: 1</c>).</summary>
         public const int CurrentVersion = 1;
 
+        /// <summary>The usual file name ending: <c>*.fw.md</c>. It is only a hint, so that editors can match it; the front matter decides what a file is.</summary>
+        public const string FileExtension = ".fw.md";
+
         /// <summary>The <c>fwmd</c> key, or null when the block has none.</summary>
         public int? Version { get; set; }
 
@@ -32,11 +35,11 @@ namespace SIL.TextEditing.Markdown
     {
         /// <summary>Where the front matter of <paramref name="text"/> is: the block starts at offset 0 with a <c>---</c> line and ends with a <c>---</c> or
         /// <c>...</c> line. Returns false when the text has none. <paramref name="closed"/> is false when the opening line has no closing line.</summary>
-        public static bool TryFind(string text, out int end, out bool closed)
+        public static bool TryFind(string text, int start, out int end, out bool closed)
         {
             end = 0;
             closed = false;
-            if (!IsFenceAt(text, 0, out int next)) return false;
+            if (!IsFenceAt(text, start, out int next)) return false;
             int pos = next;
             while (pos < text.Length)
             {
