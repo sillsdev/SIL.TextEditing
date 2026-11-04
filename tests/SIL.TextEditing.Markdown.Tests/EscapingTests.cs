@@ -70,6 +70,28 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Equal(1, Backslashes(text));
         }
 
+        // A long run of spaces used to be written in quadratic time (each space asked whether only spaces followed). The size is what the
+        // check is: before the change this took many seconds, now it is one pass.
+        [Theory]
+        [InlineData("a", 100_000, "b")]
+        [InlineData("a", 100_000, "")]
+        [InlineData("", 100_000, "")]
+        public void ALongRunOfSpacesIsWrittenAsReferences(string before, int spaces, string after)
+        {
+            string text = before + new string(' ', spaces) + after;
+            string markdown = Write(B.Plain(text));
+            Assert.Equal(before + string.Concat(Enumerable.Repeat("&#x20;", spaces)) + after + "\n", markdown);
+            var back = MarkdownConverter.Parse(markdown, Hosts.Project());
+            Assert.Equal(text, back.Document.Paragraphs[0].Text);
+        }
+
+        [Fact]
+        public void SpacesAtTheEndOfACellAreReferencesAndTheOnesBetweenWordsAreNot()
+        {
+            string markdown = Write(B.P("GDR Table Header", B.En("a b  \tc d   ")));
+            Assert.Equal("| a b&#x20;&#x20; | c d&#x20;&#x20;&#x20; |\n| --- | --- |\n", markdown);
+        }
+
         // ------------------------------------------------------------ the search writes what the one-by-one search it replaced wrote
 
         /// <summary>What the writer chose before the block search: try none of the optional escapes, then all, then take them away one at a

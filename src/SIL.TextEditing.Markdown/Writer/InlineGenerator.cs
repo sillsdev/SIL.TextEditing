@@ -325,6 +325,9 @@ namespace SIL.TextEditing.Markdown.Writer
         void Text(string text, bool allowBreak, bool endsLine, bool bare = false)
         {
             int n = text.Length;
+            // Where the spaces that end the line start: found once, so a long run of spaces is not asked about space by space.
+            int trailingFrom = n;
+            if (endsLine) while (trailingFrom > 0 && text[trailingFrom - 1] == ' ') trailingFrom--;
             for (int k = 0; k < n; k++)
             {
                 char c = text[k];
@@ -346,7 +349,7 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (c == ' ')
                 {
                     bool run = (k > 0 && text[k - 1] == ' ') || (k + 1 < n && text[k + 1] == ' ');
-                    bool trailing = endsLine && OnlySpacesFrom(text, k);
+                    bool trailing = k >= trailingFrom;
                     if (_lineStart || run || trailing) Raw(Ref(' ')); else Raw(" ");
                     continue;
                 }
@@ -374,10 +377,5 @@ namespace SIL.TextEditing.Markdown.Writer
             }
         }
 
-        static bool OnlySpacesFrom(string text, int index)
-        {
-            for (int i = index; i < text.Length; i++) if (text[i] != ' ') return false;
-            return true;
-        }
     }
 }
