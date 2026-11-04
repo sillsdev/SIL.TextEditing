@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
+    <RootNamespace>SIL.TextEditing.Markdown</RootNamespace>
+    <AssemblyName>SIL.TextEditing.Markdown</AssemblyName>
+    <Description>Converts between SIL.TextEditing runs and GDR Markdown text: the parser, the writer and the escaping (ADR 0011).</Description>
+  </PropertyGroup>
+  <!-- Trimmable and AOT-compatible on net10.0 (Motif's target); CI proves it with tests/AotCheck. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Markdig.Signed" />
+    <ProjectReference Include="..\SIL.TextEditing\SIL.TextEditing.csproj" />
+  </ItemGroup>
+</Project>

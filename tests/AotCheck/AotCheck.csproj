@@ -26,8 +26,10 @@
     <PackageReference Include="Avalonia" />
     <ProjectReference Include="..\..\src\SIL.TextEditing\SIL.TextEditing.csproj" />
     <ProjectReference Include="..\..\src\SIL.TextEditing.Avalonia\SIL.TextEditing.Avalonia.csproj" />
+    <ProjectReference Include="..\..\src\SIL.TextEditing.Markdown\SIL.TextEditing.Markdown.csproj" />
     <TrimmerRootAssembly Include="SIL.TextEditing" />
     <TrimmerRootAssembly Include="SIL.TextEditing.Avalonia" />
+    <TrimmerRootAssembly Include="SIL.TextEditing.Markdown" />
     <TrimmerRootDescriptor Include="libpalaso-roots.xml" />
   </ItemGroup>
   <Target Name="SingleWarnThirdParty" BeforeTargets="WriteIlcRspFileForCompilation">
