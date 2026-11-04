@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Markdig;
 using Markdig.Extensions.Tables;
@@ -33,7 +34,7 @@ namespace SIL.TextEditing.Markdown.Reader
             reader.ReadAll();
             var document = new Document();
             document.Paragraphs.AddRange(reader._paragraphs);
-            return new MarkdownParseResult(document, reader._context.Diagnostics);
+            return new MarkdownParseResult(document, reader._context.Diagnostics.Select((d, i) => (d, i)).OrderBy(x => x.d.Start).ThenBy(x => x.i).Select(x => x.d).ToList());
         }
 
         /// <summary>The paragraphs of a text, for the writer's check that what it wrote reads back. <paramref name="clean"/> is false when
@@ -335,13 +336,24 @@ namespace SIL.TextEditing.Markdown.Reader
         }
 
         void UnsupportedBlock(Block block, string message)
-            => _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, message, block.Span.Start, block.Span.End + 1);
+        {
+            int start = block.Span.Start, end = block.Span.End + 1;
+            // Raw HTML is fixed by escaping its angle brackets.
+            string? fix = block is HtmlBlock && start >= 0 && end <= _source.Length && end >= start ? _source.Substring(start, end - start).Replace("<", "\\<") : null;
+            _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, message, start, end, fix);
+        }
 
         void ReadParagraph(ParagraphBlock block, string text)
         {
             string raw = text.Substring(block.Span.Start, block.Span.Length);
+            int before = _context.Diagnostics.Count;
             if (TryEmptyMarker(raw, block.Span.Start))
+            {
+                // Markdig read the line as text before the marker was recognised, so a quoted value that looks like a link or a
+                // span has drawn findings of its own. The marker is read from the raw line, and those findings do not apply.
+                _context.RemoveBefore(before, block.Span.Start, block.Span.End + 1);
                 return;
+            }
             _paragraphs.Add(MakeParagraph(Names.Normal, new PropertyBag(), InlineReader.Read(block.Inline, _context), null));
         }
 

@@ -157,8 +157,9 @@ namespace SIL.TextEditing.Markdown.Reader
             if (end < limit && text[end] == '{')
             {
                 var status = AttributeScanner.TryScan(text, end, limit, out var block, out int errorPos, out string error);
-                if (status == ScanStatus.Ok) { attrs = block; end = block!.End; }
-                else SpanParser.ReportBadBlock(context, status, end, errorPos, error);
+                int delta = processor.GetSourcePosition(start) - start;
+                if (status == ScanStatus.Ok) { end = block!.End; attrs = block.Shifted(delta); }
+                else SpanParser.ReportBadBlock(context, status, end, errorPos, error, delta);
             }
             processor.Inline = new NameLinkInline
             {
@@ -192,12 +193,13 @@ namespace SIL.TextEditing.Markdown.Reader
             if (open == null || open.IsImage || !open.IsActive) return false;
             int braceAt = slice.Start + 1;
             var status = AttributeScanner.TryScan(slice.Text, braceAt, slice.End + 1, out var block, out int errorPos, out string error);
+            int delta = processor.GetSourcePosition(braceAt) - braceAt;
             if (status != ScanStatus.Ok)
             {
-                ReportBadBlock(context, status, braceAt, errorPos, error);
+                ReportBadBlock(context, status, braceAt, errorPos, error, delta);
                 return false;
             }
-            var span = new SpanInline { Attrs = block! };
+            var span = new SpanInline { Attrs = block!.Shifted(delta) };
             int openStart = open.Span.Start;
             int line = open.Line, column = open.Column;
             open.ReplaceBy(span);
@@ -211,11 +213,15 @@ namespace SIL.TextEditing.Markdown.Reader
             return true;
         }
 
-        internal static void ReportBadBlock(ReaderContext context, ScanStatus status, int blockStart, int errorPos, string error)
+        /// <param name="delta">What to add to an offset in Markdig's text to get the offset in the source (not zero inside a table).</param>
+        internal static void ReportBadBlock(ReaderContext context, ScanStatus status, int blockStart, int errorPos, string error, int delta = 0)
         {
             string id = status == ScanStatus.Unclosed ? MarkdownDiagnosticIds.UnclosedMark : MarkdownDiagnosticIds.MalformedAttribute;
-            int end = Math.Min(context.Source.Length, context.Base + errorPos + 1);
-            context.Report(id, MarkdownSeverity.Error, "The attribute block here is not valid: " + error + ". Escape the brace as \\{ if it is text.", context.Base + blockStart, end);
+            int end = Math.Min(context.Source.Length, context.Base + delta + errorPos + 1);
+            int start = context.Base + delta + blockStart;
+            // A block that only lacks its closing brace is fixed by adding it.
+            string? fix = status == ScanStatus.Unclosed && error == "no closing }" && end > start ? context.Source.Substring(start, end - start) + "}" : null;
+            context.Report(id, MarkdownSeverity.Error, "The attribute block here is not valid: " + error + ". Escape the brace as \\{ if it is text.", start, end, fix);
         }
     }
 
@@ -231,15 +237,16 @@ namespace SIL.TextEditing.Markdown.Reader
             var context = ReaderContext.From(processor.Context);
             if (context == null) return false;
             var status = AttributeScanner.TryScan(slice.Text, slice.Start, slice.End + 1, out var block, out int errorPos, out string error);
+            int start = slice.Start;
+            int delta = processor.GetSourcePosition(start) - start;
             if (status != ScanStatus.Ok)
             {
-                SpanParser.ReportBadBlock(context, status, slice.Start, errorPos, error);
+                SpanParser.ReportBadBlock(context, status, start, errorPos, error, delta);
                 return false;
             }
-            int start = slice.Start;
             processor.Inline = new AttrsInline
             {
-                Attrs = block!,
+                Attrs = block!.Shifted(delta),
                 Span = new SourceSpan(processor.GetSourcePosition(start, out int line, out int column), processor.GetSourcePosition(block!.End - 1)),
                 Line = line,
                 Column = column,

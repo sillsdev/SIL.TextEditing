@@ -40,6 +40,16 @@ namespace SIL.TextEditing.Markdown.Notation
         public int Start { get; }
         public int End { get; }
         public List<AttrItem> Items { get; }
+
+        /// <summary>The same block with every offset moved by <paramref name="delta"/>: Markdig numbers a table cell's text from the start of the
+        /// table, so the parsers shift what they scan to offsets in the source.</summary>
+        public AttrBlock Shifted(int delta)
+        {
+            if (delta == 0) return this;
+            var items = new List<AttrItem>(Items.Count);
+            foreach (var item in Items) items.Add(new AttrItem(item.Key, item.Value, item.Quoted, item.Start + delta, item.End + delta));
+            return new AttrBlock(Start + delta, End + delta, items);
+        }
     }
 
     internal enum ScanStatus { Ok, Unclosed, Malformed }

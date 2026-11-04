@@ -153,8 +153,16 @@ namespace SIL.TextEditing.Markdown.Reader
             return _context.Source.Substring(a, b - a);
         }
 
+        /// <summary>Reports unsupported inline markup. The fix is the same text with each angle bracket and backtick escaped (or the
+        /// first bracket of a reference link).</summary>
         void Unsupported(int start, int end, string message)
-            => _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, message, Abs(start), Abs(end) + 1);
+        {
+            string observed = Source(start, end);
+            string? fix = null;
+            if (observed.IndexOf('<') >= 0 || observed.IndexOf('`') >= 0) fix = observed.Replace("<", "\\<").Replace("`", "\\`");
+            else if (observed.StartsWith("[", StringComparison.Ordinal)) fix = "\\" + observed;
+            _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, message, Abs(start), Abs(end) + 1, fix);
+        }
 
         // -------------------------------------------------------------- spans and links
 

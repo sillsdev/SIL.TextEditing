@@ -48,6 +48,14 @@ namespace SIL.TextEditing.Markdown.Tests
             _objects = objects;
         }
 
+        // Taken from the seeded generator, so a seed gives the same GUIDs and so the same object data.
+        Guid NextGuid()
+        {
+            var bytes = new byte[16];
+            _random.NextBytes(bytes);
+            return new Guid(bytes);
+        }
+
         bool Chance(int percent) => _random.Next(100) < percent;
         T Pick<T>(IReadOnlyList<T> items) => items[_random.Next(items.Count)];
 
@@ -137,7 +145,7 @@ namespace SIL.TextEditing.Markdown.Tests
             {
                 case 0: // a picture the host knows
                 {
-                    var guid = Guid.NewGuid();
+                    var guid = NextGuid();
                     _objects.Pictures.Add(guid);
                     _pictures.Add(guid);
                     run.Text = "\uFFFC";
@@ -146,7 +154,7 @@ namespace SIL.TextEditing.Markdown.Tests
                 }
                 case 1: // a link to a project object, in name form or text form
                 {
-                    var guid = Guid.NewGuid();
+                    var guid = NextGuid();
                     string kind = Pick(new[] { "w", "rule", "exc", "tmpl", "cat" });
                     string name = Chance(50) ? Pick(Words) : Text(false);
                     if (name.Length == 0) name = "n";
@@ -163,7 +171,7 @@ namespace SIL.TextEditing.Markdown.Tests
                 case 3: // some other object, picture the host does not know
                 {
                     run.Text = "\uFFFC";
-                    run.ObjData = Chance(50) ? TestObjects.PictureData(Guid.NewGuid()) : TestObjects.OwnName + Text(false);
+                    run.ObjData = Chance(50) ? TestObjects.PictureData(NextGuid()) : TestObjects.OwnName + Text(false);
                     break;
                 }
                 default: // anything at all

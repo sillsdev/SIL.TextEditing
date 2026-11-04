@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Not in the solution. CI runs: dotnet publish tests/AotCheck -r win-x64
-       Warnings are errors, so any trim or AOT warning in the two libraries fails the publish. Both are rooted whole,
+       Warnings are errors, so any trim or AOT warning in the three libraries fails the publish. All three are rooted whole,
        so the analyzer sees all their code, not only what Program uses. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>

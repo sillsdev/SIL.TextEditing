@@ -48,6 +48,10 @@ namespace SIL.TextEditing.Markdown.Tests
             => RoundTrip(B.Plain("[x]:::mang  ng{}{a,b}!::: ~"), B.Plain("[x]:abc"));
 
         [Fact]
+        public void AnEmptyParagraphWhoseStringPropertyLooksLikeALinkAndABlockRoundTrips()
+            => RoundTrip(B.Empty("Heading 1", "ar").WithProps(p => p.SetStr(2, "[x](y){a,b} ").SetStr(147, "mang")));
+
+        [Fact]
         public void ABackslashBeforeALineSeparatorIsEscaped()
             => RoundTrip(B.Plain("a\\\x2028b"), B.Plain("a\\\\\x2028b"));
 

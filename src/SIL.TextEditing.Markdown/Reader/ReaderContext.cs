@@ -24,6 +24,13 @@ namespace SIL.TextEditing.Markdown.Reader
         public string Source { get; }
         public IReadOnlyList<MarkdownDiagnostic> Diagnostics => _diagnostics;
 
+        /// <summary>Drops the findings among the first <paramref name="count"/> that start in [start, end).</summary>
+        public void RemoveBefore(int count, int start, int end)
+        {
+            for (int i = Math.Min(count, _diagnostics.Count) - 1; i >= 0; i--)
+                if (_diagnostics[i].Start >= start && _diagnostics[i].Start < end) _diagnostics.RemoveAt(i);
+        }
+
         /// <summary>The offset in <see cref="Source"/> of the text Markdig is parsing now (a fence line is parsed on its own).</summary>
         public int Base { get; set; }
 
