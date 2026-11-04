@@ -182,6 +182,26 @@ namespace SIL.TextEditing.Avalonia.Tests
             window.Close();
         });
 
+        [Fact]
+        public void A_field_with_a_pause_scheduler_never_allocates_a_dispatcher_timer() => Headless.Run(() =>
+        {
+            var (window, field) = Fixtures.InWindow(OneParagraph("ab"));
+            try
+            {
+                var scheduled = 0;
+                field.PauseScheduler = (after, run) => { scheduled++; return new NoPause(); };
+                field.Editor.SetCaret(new TextPosition(0, 2));
+                field.Type("x");
+                field.Type("y");
+                Assert.Equal(2, scheduled);   // the scheduler was asked after each edit
+                var timer = typeof(RichTextField).GetField("_pauseTimer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(field);
+                Assert.Null(timer);
+            }
+            finally { window.Close(); }
+        });
+
+        sealed class NoPause : System.IDisposable { public void Dispose() { } }
+
         static bool PauseTimerRunning(RichTextField field)
         {
             var timer = typeof(RichTextField).GetField("_pauseTimer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(field) as global::Avalonia.Threading.DispatcherTimer;

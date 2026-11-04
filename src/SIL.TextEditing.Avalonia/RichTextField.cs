@@ -74,9 +74,9 @@ namespace SIL.TextEditing.Avalonia
             ActualThemeVariantChanged += (o, e) => InvalidateVisual();
         }
 
-        static void RequireUIThread()
+        void RequireUIThread()
         {
-            if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            if (!CheckAccess())
                 throw new InvalidOperationException("A RichTextField's document must be edited on the UI thread: the field changes Avalonia state when the document changes. Marshal the edit with Dispatcher.UIThread.");
         }
 
@@ -347,7 +347,7 @@ namespace SIL.TextEditing.Avalonia
             // Edits are refused off the UI thread (Editor.AccessCheck), so this is only reached from another thread when a host
             // has removed that check; a DispatcherTimer has thread affinity, so the timer is handed to the UI thread then. A field
             // that is not on screen has no timer (it closes the step when it leaves the screen).
-            if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            if (!CheckAccess())
             {
                 global::Avalonia.Threading.Dispatcher.UIThread.Post(RestartPauseTimer);
                 return;
@@ -359,12 +359,7 @@ namespace SIL.TextEditing.Avalonia
                 _pauseHandle = null;
                 return;
             }
-            if (_pauseTimer == null)
-            {
-                _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
-                _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
-            }
-            _pauseTimer.Stop();
+            _pauseTimer?.Stop();
             _pauseHandle?.Dispose();
             _pauseHandle = null;
             if (!Editor.HasOpenUndoGroup) return;
@@ -374,6 +369,11 @@ namespace SIL.TextEditing.Avalonia
                 _pauseHandle = scheduler(Editor.TypingPause, () => Editor.CloseUndoGroup());
                 return;
             }
+            if (_pauseTimer == null)
+            {
+                _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
+                _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
+            }
             _pauseTimer.Interval = Editor.TypingPause;
             _pauseTimer.Start();
         }
@@ -382,9 +382,10 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Starts the one-shot timer that ends a typing step when the pause passes (ADR 0023): it is given the pause
         /// (<see cref="DocumentEditor.TypingPause"/>) and the action to run when it elapses, and returns something that cancels
-        /// it; the field cancels and asks again after every edit. Null, the default, uses a dispatcher timer. A host or a test
-        /// with its own clock sets it to drive the pause without waiting.</summary>
-        public Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
+        /// it; the field cancels and asks again after every edit. Null, the default, uses a dispatcher timer, which the field
+        /// does not create while a scheduler is set. Internal: a test with its own clock sets it to drive the pause without
+        /// waiting, and the action it is given must run on the UI thread, which the field does not check.</summary>
+        internal Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
 
         bool _onScreen;
 
