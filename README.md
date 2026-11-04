@@ -33,7 +33,7 @@ because Avalonia 11.3.17 already has the `DataTransfer` API that 12 uses, and `F
 without `FontFeatureCollection.Parse` (absent in 11.3) for both. Keep any future per-version difference small, behind
 `#if NET10_0_OR_GREATER`, and list it here. The differences now: `SpellScanner` asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a
 one-character string on netstandard2.0 (no overload there), which only costs an allocation for a letter outside the basic plane; and `ScriptPlacement` reads a font's
-OS/2 and hhea tables with `IGlyphTypeface.TryGetTable` on netstandard2.0 and, as Avalonia 12 gives no access to tables, from the font file's own table directory on net10.0 (once for each font).
+OS/2 and hhea tables with `IGlyphTypeface.TryGetTable` on netstandard2.0 and, as Avalonia 12 gives no access to tables, from the font file's own table directory on net10.0 (once for each font; in a font collection from the member whose family name is the typeface's, and nothing is read whole).
 
 Avalonia.Desktop, Avalonia.Themes.Fluent and Avalonia.Win32.Interoperability are used by the samples only; the
 libraries do not reference them. The playground tests load the Fluent theme so the sample's buttons and pickers have

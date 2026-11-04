@@ -16,18 +16,45 @@ namespace SIL.TextEditing.Avalonia.Tests
         {
             public int SubSize, SubOffset, SuperSize, SuperOffset, Height;
 
-            public static FontFile Read(string name)
+            /// <summary>The values of a file's font; of a collection's member whose family name (name ids 1 and 16) is <paramref name="family"/>.</summary>
+            public static FontFile Read(string name, string? family = null)
             {
                 var data = File.ReadAllBytes(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts", name));
                 int Short(int at) => (short)((data[at] << 8) | data[at + 1]);
                 int Long(int at) => (data[at] << 24) | (data[at + 1] << 16) | (data[at + 2] << 8) | data[at + 3];
-                int count = (data[4] << 8) | data[5], os2 = -1, hhea = -1;
-                for (int i = 0; i < count; i++)
+                int Table(int start, string wanted)
                 {
-                    string tag = new string(new[] { (char)data[12 + 16 * i], (char)data[13 + 16 * i], (char)data[14 + 16 * i], (char)data[15 + 16 * i] });
-                    if (tag == "OS/2") os2 = Long(12 + 16 * i + 8);
-                    if (tag == "hhea") hhea = Long(12 + 16 * i + 8);
+                    int n = (data[start + 4] << 8) | data[start + 5];
+                    for (int i = 0; i < n; i++)
+                    {
+                        string tag = new string(new[] { (char)data[start + 12 + 16 * i], (char)data[start + 13 + 16 * i], (char)data[start + 14 + 16 * i], (char)data[start + 15 + 16 * i] });
+                        if (tag == wanted) return Long(start + 12 + 16 * i + 8);
+                    }
+                    return -1;
                 }
+                bool Named(int start)
+                {
+                    int nameTable = Table(start, "name");
+                    int records = (data[nameTable + 2] << 8) | data[nameTable + 3], strings = nameTable + ((data[nameTable + 4] << 8) | data[nameTable + 5]);
+                    for (int i = 0; i < records; i++)
+                    {
+                        int r = nameTable + 6 + 12 * i, id = (data[r + 6] << 8) | data[r + 7], length = (data[r + 8] << 8) | data[r + 9], offset = (data[r + 10] << 8) | data[r + 11];
+                        if ((id != 1 && id != 16) || ((data[r] << 8) | data[r + 1]) != 3) continue;
+                        var sb = new System.Text.StringBuilder();
+                        for (int k = 0; k < length; k += 2) sb.Append((char)((data[strings + offset + k] << 8) | data[strings + offset + k + 1]));
+                        if (string.Equals(sb.ToString(), family, StringComparison.OrdinalIgnoreCase)) return true;
+                    }
+                    return false;
+                }
+                int begin = 0;
+                if (data[0] == 't' && data[1] == 't' && data[2] == 'c')
+                {
+                    int members = Long(8);
+                    begin = Long(12);
+                    for (int m = 0; m < members && family != null; m++)
+                        if (Named(Long(12 + 4 * m))) { begin = Long(12 + 4 * m); break; }
+                }
+                int os2 = Table(begin, "OS/2"), hhea = Table(begin, "hhea");
                 return new FontFile
                 {
                     SubSize = Short(os2 + 12), SubOffset = Short(os2 + 16), SuperSize = Short(os2 + 20), SuperOffset = Short(os2 + 24),
@@ -67,6 +94,20 @@ namespace SIL.TextEditing.Avalonia.Tests
             var sub = ScriptRun(family, 2, 20);
             Assert.Equal(20.0 * font.SubSize / font.Height, sub.Size, 2);
             Assert.Equal(-20.0 * font.SubOffset / font.Height, sub.Offset, 2);
+        });
+
+        [Theory]
+        [InlineData("Yu Gothic UI", "YuGothR.ttc", "Yu Gothic")]
+        [InlineData("Yu Gothic UI", "YuGothR.ttc", "Yu Gothic UI")]
+        public void A_font_in_a_collection_gives_the_values_of_its_own_member_not_of_the_first(string family, string file, string member) => Headless.Run(() =>
+        {
+            var first = FontFile.Read(file, "Yu Gothic");
+            var own = FontFile.Read(file, "Yu Gothic UI");
+            Assert.NotEqual((first.SuperSize, first.SuperOffset, first.Height), (own.SuperSize, own.SuperOffset, own.Height));   // the members differ, so the member matters
+            if (member != family) return;
+            var sup = ScriptRun(family, 1, 20);
+            Assert.Equal(20.0 * own.SuperSize / own.Height, sup.Size, 2);
+            Assert.Equal(20.0 * (own.SuperOffset != 0 ? (double)own.SuperOffset / own.Height : 1 - (double)own.SuperSize / own.Height), sup.Offset, 2);
         });
 
         [Fact]
