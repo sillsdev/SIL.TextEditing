@@ -44,7 +44,7 @@ namespace SIL.TextEditing
         static List<Paragraph> JoinIntoOne(List<Paragraph> fragment)
         {
             var joined = fragment[0].Clone(false);
-            joined.Runs = new List<Run>();
+            joined.Runs = new RunList();
             for (int i = 0; i < fragment.Count; i++)
             {
                 if (i > 0) joined.Runs.Add(new Run { Text = "\n", Ws = joined.Runs.Count > 0 ? joined.Runs[joined.Runs.Count - 1].Ws : fragment[i].DefaultWs });
@@ -108,7 +108,7 @@ namespace SIL.TextEditing
                 i = j;
             }
             Flush();
-            paragraph.Runs = runs;
+            paragraph.Runs = new RunList(runs);
             paragraph.Normalize();
         }
     }

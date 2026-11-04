@@ -38,6 +38,15 @@ Avalonia.Desktop, Avalonia.Themes.Fluent and Avalonia.Win32.Interoperability are
 libraries do not reference them. The playground tests load the Fluent theme so the sample's buttons and pickers have
 templates.
 
+## The run model
+
+`Paragraph.Runs` is a `RunList`, not a `List<Run>`: it tells its paragraph whenever a run is added, removed or replaced, and each
+run tells it when its text changes, so `Paragraph.Length`, `RunBefore`, `RunAfter` and `Spans` are answered from run starts the
+paragraph keeps current (a binary search, not a walk over the runs) however a host changes the runs. A host may edit `Run.Text` or
+the list directly. `RunList` has `Add`, `Insert`, `RemoveAt`, `RemoveRange`, `AddRange`, `Clear`, an indexer and `IEnumerable<Run>`
+(use LINQ for `ConvertAll`, `FindIndex` and the like); assign a `new RunList(runs)` to `Paragraph.Runs` to replace the runs. A
+change to a run's `PropertyBag` in place is not seen (see the spelling section for what to call).
+
 ## Build and test
 
 Windows with the .NET 10 SDK and the .NET Framework 4.8 targeting pack (net48 builds and tests run only on Windows):

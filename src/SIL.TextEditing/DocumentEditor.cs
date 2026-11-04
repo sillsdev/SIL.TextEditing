@@ -361,7 +361,7 @@ namespace SIL.TextEditing
             tail.Delete(0, b.Offset);
             var survivor = Document.Paragraphs[KeptParagraph(a, b)];
             var merged = survivor.Clone();
-            merged.Runs = new List<Run>();
+            merged.Runs = new RunList();
             foreach (var r in head.Runs) merged.Runs.Add(r.Clone());
             TextPosition caret;
             var newParas = new List<Paragraph>();
@@ -396,7 +396,7 @@ namespace SIL.TextEditing
                     var runs = fragment[fragment.Count - 1].Runs.Select(r => r.Clone()).ToList();
                     int off = runs.Sum(r => r.Text.Length);
                     runs.AddRange(tail.Runs.Select(r => r.Clone()));
-                    lastNew.Runs = runs;
+                    lastNew.Runs = new RunList(runs);
                     lastNew.Normalize();
                     newParas.Add(lastNew);
                     caret = new TextPosition(a.Paragraph + fragment.Count - 1, off);
@@ -450,7 +450,7 @@ namespace SIL.TextEditing
                 var p = Document.Paragraphs[pi];
                 int s = pi == a.Paragraph ? a.Offset : 0;
                 int e = pi == b.Paragraph ? b.Offset : p.Length;
-                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = p.Slice(s, e) });
+                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = new RunList(p.Slice(s, e)) });
             }
             return result;
         }

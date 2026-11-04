@@ -226,14 +226,8 @@ namespace SIL.TextEditing
             var runs = Document.Paragraphs[pi].Runs;
             int limit = LimitOf(pi);
 
-            // The run that holds the character at p: found by adding up lengths (no probes), not by testing each run.
-            int idx = runs.Count, idxStart = 0;
-            for (int k = 0; k < runs.Count; k++)
-            {
-                int end = idxStart + runs[k].Text.Length;
-                if (end > p.Offset) { idx = k; break; }
-                idxStart = end;
-            }
+            // The run that holds the character at p, from the paragraph's run starts (no probes).
+            int idx = Document.Paragraphs[pi].RunIndexAt(p.Offset, out int idxStart);
 
             // Forward: the start of the first editable run at or after idx (p is not editable, so none touches p from the left).
             int f = idx, fpos = idxStart;

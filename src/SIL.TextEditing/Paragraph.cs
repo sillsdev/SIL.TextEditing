@@ -19,15 +19,88 @@ namespace SIL.TextEditing
         /// <summary>The paragraph's own text properties (an ITsString paragraph's StyleRules), opaque like a run's bag: copied through
         /// every split, join and slice, never interpreted. <see cref="Style"/> and <see cref="Rtl"/> are the two the field reads.</summary>
         public PropertyBag Props { get; set; } = new PropertyBag();
-        public List<Run> Runs { get; set; } = new List<Run>();
+
+        RunList _runs;
+
+        public Paragraph()
+        {
+            _runs = new RunList(this);
+        }
+
+        /// <summary>The paragraph's runs. Add, remove or change them directly if you like: the list and each run tell the paragraph,
+        /// so <see cref="Length"/> and the run lookups stay right. Assigning a list that no paragraph holds adopts it; any other
+        /// list is copied.</summary>
+        public RunList Runs
+        {
+            get => _runs;
+            set
+            {
+                if (value == null) throw new ArgumentNullException(nameof(value));
+                if (ReferenceEquals(value, _runs)) return;
+                var adopted = value.Owner == null ? value : new RunList(value);
+                _runs.Owner = null;
+                adopted.Owner = this;
+                _runs = adopted;
+                RunsChanged();
+            }
+        }
+
+        // Where each run starts, with the total length after the last: n + 1 entries for n runs. The runs and each run's text tell this
+        // paragraph when they change (RunsChanged), which drops the starts; the next question builds them again in one pass. So a
+        // run the paragraph was told about can never leave the starts stale, and any number of questions between changes cost a
+        // binary search each instead of a walk over the runs (issue 76).
+        int[]? _starts;
+
+        internal void RunsChanged() => _starts = null;
+
+        int[] Starts()
+        {
+            var starts = _starts;
+            if (starts != null) return starts;
+            var runs = _runs;
+            starts = new int[runs.Count + 1];
+            int n = 0;
+            for (int i = 0; i < runs.Count; i++)
+            {
+                starts[i] = n;
+                n += runs[i].Text.Length;
+            }
+            starts[runs.Count] = n;
+            return _starts = starts;
+        }
+
+        /// <summary>The index of the last run that starts at or before <paramref name="offset"/> (strictly before when
+        /// <paramref name="strict"/>), or -1.</summary>
+        int LastStartingBefore(int[] starts, int offset, bool strict)
+        {
+            int lo = 0, hi = starts.Length - 2;                // run indexes; starts[Count] is only the total
+            int found = -1;
+            while (lo <= hi)
+            {
+                int mid = lo + (hi - lo) / 2;
+                if (strict ? starts[mid] < offset : starts[mid] <= offset) { found = mid; lo = mid + 1; }
+                else hi = mid - 1;
+            }
+            return found;
+        }
+
+        /// <summary>The index of the run that holds the character at <paramref name="offset"/> (the one that starts there at a
+        /// boundary), or <see cref="List{T}.Count"/> when the offset is at or past the end.</summary>
+        internal int RunIndexAt(int offset, out int runStart)
+        {
+            var starts = Starts();
+            int i = offset < 0 ? -1 : LastStartingBefore(starts, offset, false);
+            if (i >= 0 && offset < starts[i + 1]) { runStart = starts[i]; return i; }
+            runStart = starts[starts.Length - 1];
+            return _runs.Count;
+        }
 
         public int Length
         {
             get
             {
-                int n = 0;
-                foreach (var r in Runs) n += r.Text.Length;
-                return n;
+                var starts = Starts();
+                return starts[starts.Length - 1];
             }
         }
 
@@ -53,35 +126,24 @@ namespace SIL.TextEditing
         /// <summary>The run that ends at or contains the offset (the preceding run at a boundary), or null.</summary>
         public Run? RunBefore(int offset, out int runStart)
         {
-            int pos = 0;
             runStart = 0;
-            foreach (var r in Runs)
-            {
-                if (r.Text.Length > 0 && offset > pos && offset <= pos + r.Text.Length)
-                {
-                    runStart = pos;
-                    return r;
-                }
-                pos += r.Text.Length;
-            }
-            return null;
+            var starts = Starts();
+            if (offset <= 0) return null;
+            int i = LastStartingBefore(starts, offset, true);
+            if (i < 0 || offset > starts[i + 1]) return null;           // an empty run is never the one that ends at the offset
+            if (starts[i + 1] == starts[i]) return null;
+            runStart = starts[i];
+            return _runs[i];
         }
 
         /// <summary>The run that starts at or contains the offset (the following run at a boundary), or null.</summary>
         public Run? RunAfter(int offset, out int runStart)
         {
-            int pos = 0;
             runStart = 0;
-            foreach (var r in Runs)
-            {
-                if (offset >= pos && offset < pos + r.Text.Length)
-                {
-                    runStart = pos;
-                    return r;
-                }
-                pos += r.Text.Length;
-            }
-            return null;
+            if (offset < 0) return null;
+            int i = RunIndexAt(offset, out runStart);
+            if (i >= _runs.Count) { runStart = 0; return null; }
+            return _runs[i];
         }
 
         /// <summary>Makes a run boundary at the offset, copying all properties to both halves. Returns the index of
