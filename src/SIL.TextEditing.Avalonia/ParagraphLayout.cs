@@ -609,18 +609,20 @@ namespace SIL.TextEditing.Avalonia
         IBrush? _labelForeground;
         string? _labelText;
         TextLine? _label;
+        RunTextProperties? _labelRun;
 
         /// <summary>Builds the text run properties for a run: the writing system's font and size, then the paragraph style,
         /// character style and the run's own properties, resolved through <paramref name="styles"/>.</summary>
-        static RunTextProperties MakeProperties(Paragraph paragraph, Run run, WritingSystemRegistry writingSystems, IBrush foreground, IStyleResolver? styles, bool preedit = false, bool ownDecorations = false)
+        static RunTextProperties MakeProperties(Paragraph paragraph, Run run, WritingSystemRegistry writingSystems, IBrush foreground, IStyleResolver? styles, bool preedit = false, bool ownDecorations = false, IBrush? forceText = null)
         {
             var ws = writingSystems.Get(run.Ws);
             var f = FormatResolver.ResolveChar(paragraph, run, styles, ws.Size);
-            return MakeProperties(f, ws, run.Ws, foreground, preedit, true);
+            return MakeProperties(f, ws, run.Ws, foreground, preedit, true, forceText);
         }
 
         /// <param name="ownDecorations">True when the paragraph draws the run's underline or strikethrough itself (<see cref="DrawDecorations"/>), so Avalonia is not given it.</param>
-        static RunTextProperties MakeProperties(CharFormat f, WritingSystemInfo ws, string wsTag, IBrush foreground, bool preedit = false, bool ownDecorations = false)
+        /// <param name="forceText">A brush that is the text's colour whatever colour the run has, or null.</param>
+        static RunTextProperties MakeProperties(CharFormat f, WritingSystemInfo ws, string wsTag, IBrush foreground, bool preedit = false, bool ownDecorations = false, IBrush? forceText = null)
         {
             var weight = (FontWeight)f.Weight;
             var style = f.Italic ? FontStyle.Italic : FontStyle.Normal;
@@ -639,9 +641,9 @@ namespace SIL.TextEditing.Avalonia
             CultureInfo culture;
             try { culture = CultureInfo.GetCultureInfo(wsTag); }
             catch (CultureNotFoundException) { culture = CultureInfo.InvariantCulture; }
-            IBrush text = ColorBrush(f.ForeColor) ?? foreground;
+            IBrush text = forceText ?? ColorBrush(f.ForeColor) ?? foreground;
             int lineKind = preedit ? 3 : f.Underline >= 1 && f.Underline <= 5 ? f.Underline : 0;
-            var lineBrush = lineKind == 0 ? null : (preedit ? null : ColorBrush(f.UnderColor)) ?? text;
+            var lineBrush = lineKind == 0 ? null : forceText ?? (preedit ? null : ColorBrush(f.UnderColor)) ?? text;
             var decorations = ownDecorations ? null : preedit ? Decorations(3, null, text) : Decorations(f.Underline, f.UnderColor, text);
             var baseline = f.Superscript == 1 ? BaselineAlignment.Superscript : f.Superscript == 2 ? BaselineAlignment.Subscript : BaselineAlignment.Baseline;
             return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null, preedit ? 0 : f.OffsetPt, lineKind, lineBrush, lineKind == 3 && (preedit || ColorBrush(f.UnderColor) == null));
@@ -751,9 +753,10 @@ namespace SIL.TextEditing.Avalonia
         /// DrawableTextRun in a right-to-left paragraph gets the wrong visual order in 11.3 and 12.1): the object is
         /// laid out as an EM SPACE sized to the picture and the picture is painted over its text bounds.
         /// </summary>
-        public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null, double previousSpaceAfter = 0)
+        public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null, double previousSpaceAfter = 0, IBrush? forceText = null)
         {
             var layout = new ParagraphLayout(paragraph, width);
+            if (forceText == null) layout._recolour = brush => Build(paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, brush);
             var pf = ResolveFormat(paragraph, writingSystems, styles);
             // Every paragraph draws its own underlines and strikethrough (DrawDecorations): Avalonia's leave a gap at each descender, and in a justified
             // paragraph, which is drawn in pieces, they would restart their pattern in each.
@@ -772,14 +775,14 @@ namespace SIL.TextEditing.Avalonia
                 if (t.Length == 0) return;
                 int a = sb.Length;
                 sb.Append(t);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, true) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, true, forceText) });
             }
 
             void AddPreedit()
             {
                 int a = sb.Length;
                 sb.Append(preedit);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, preeditRun, writingSystems, foreground, styles, true, true) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, preeditRun, writingSystems, foreground, styles, true, true, forceText) });
                 preeditDone = true;
             }
 
@@ -797,7 +800,7 @@ namespace SIL.TextEditing.Avalonia
                 {
                     int s0 = sb.Length;
                     sb.Append(objectAsGlyph ? " " : r.Text);
-                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, true), IsObject = true, Data = r.ObjData });
+                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, true, forceText), IsObject = true, Data = r.ObjData });
                 }
                 else AddSegment(r.Text, r);
                 pos += r.Text.Length;
@@ -817,7 +820,7 @@ namespace SIL.TextEditing.Avalonia
             }
 
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
-            var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles, false, true);
+            var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles, false, true, forceText);
             var baseWs = writingSystems.Get(defaultRun.Ws);
             layout.Format = pf;
             layout.ApplyBox(pf, width, paragraph.Rtl, foreground);
@@ -1195,13 +1198,17 @@ namespace SIL.TextEditing.Avalonia
         int _ellipsisLineIndex = -1;
         TextLine? _ellipsis;
 
+        /// <summary>How the ellipsis is drawn (its font, size and colour, and the underline the field draws itself under it), once there is one.</summary>
+        internal RunTextProperties? EllipsisProperties { get; private set; }
+
         /// <summary>The "..." drawn after the last visible line of a paragraph the line limit cuts off, in the paragraph style's character format
         /// (not the last run's own look).</summary>
         TextLine? EllipsisLine(Run defaultRun, WritingSystemInfo baseWs, IStyleResolver? styles, IBrush foreground)
         {
             if (_ellipsis != null) return _ellipsis;
             var format = FormatResolver.ResolveChar(Paragraph, new Run { Ws = defaultRun.Ws }, styles, baseWs.Size);
-            var props = MakeProperties(format, baseWs, defaultRun.Ws, foreground);
+            var props = MakeProperties(format, baseWs, defaultRun.Ws, foreground, false, true);
+            EllipsisProperties = props;
             var source = new ParagraphSource { Text = "..." };
             source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 3, Properties = props });
             _ellipsis = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left), null);
@@ -1233,6 +1240,7 @@ namespace SIL.TextEditing.Avalonia
             if (!HasEllipsis) return;
             var box = EllipsisRect;
             _ellipsis!.Draw(context, new Point(box.X, top + box.Y));
+            if (EllipsisProperties is RunTextProperties dots) DrawDecorationLine(context, dots, box.X, box.Right, top + box.Y + _ellipsis.Baseline);
         }
 
         /// <summary>The extra space a bullet or number needs after it: three points unless it ends with a space.</summary>
@@ -1373,7 +1381,8 @@ namespace SIL.TextEditing.Avalonia
             if (_labelFormat == null || _labelWs == null || text.Length == 0) return null;
             if (_label != null && _labelText == text) return _label;
             _label?.Dispose();
-            var props = MakeProperties(_labelFormat, _labelWs, _labelWsTag, _labelForeground ?? Brushes.Black);
+            var props = MakeProperties(_labelFormat, _labelWs, _labelWsTag, _labelForeground ?? Brushes.Black, false, true);
+            _labelRun = props;
             var source = new ParagraphSource { Text = text };
             source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = text.Length, Properties = props });
             _label = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left), null);   // Left: drawn from its own x, not from the right of the 100000 wide line
@@ -1407,6 +1416,7 @@ namespace SIL.TextEditing.Avalonia
             if (label == null) return;
             double baseline = Lines.Count > 0 && _labelLineHeight <= 0 ? Lines[0].Line.Baseline : label.Baseline;
             label.Draw(context, new Point(box.X, top + box.Y + baseline - label.Baseline));
+            if (_labelRun is RunTextProperties labelRun) DrawDecorationLine(context, labelRun, box.X, box.Right, top + box.Y + baseline);   // the label's own underline, like the text's (DrawDecorations)
         }
 
         // ---- model offset <-> effective offset; they differ only while a preedit is shown ----
@@ -1778,8 +1788,29 @@ namespace SIL.TextEditing.Avalonia
             return right ? firstLeft + width : firstLeft;
         }
 
+        // The same paragraph laid out again with all its text in one colour, for the selected text in a high contrast theme; made when first asked for.
+        Func<IBrush, ParagraphLayout>? _recolour;
+        ParagraphLayout? _recoloured;
+        Color _recolouredTo;
+
+        /// <summary>This paragraph laid out the same way (the same lines, so the same places) with all its text and its underlines in <paramref name="colour"/>,
+        /// whatever colours the runs have: what the selected text is drawn in where the system gives it a colour of its own. Built once and kept with this
+        /// layout, so selecting costs a redraw and not a layout of the text each time.</summary>
+        internal ParagraphLayout? InColour(Color colour)
+        {
+            if (_recolour == null) return null;
+            if (_recoloured == null || _recolouredTo != colour)
+            {
+                _recoloured?.Dispose();
+                _recoloured = _recolour(new SolidColorBrush(colour));
+                _recolouredTo = colour;
+            }
+            return _recoloured;
+        }
+
         public void Dispose()
         {
+            _recoloured?.Dispose();
             _label?.Dispose();
             _ellipsis?.Dispose();
             foreach (var l in Lines) l.Line.Dispose();

@@ -136,7 +136,7 @@ short English and French word list.
 
 Until the host sets `Foreground` (text, and a border with no colour of its own) and `Background` (the page), the field takes them from the
 theme: the text colour the caret uses and the theme's window colour, and in a Windows high contrast theme the system's window text and window
-colours, as FieldWorks does (the selection takes the system highlight). The text keeps one default brush that the field changes in place when
+colours, as FieldWorks does (the selection takes the system highlight, and selected text the system's highlight text colour, whatever colour its runs have). The text keeps one default brush that the field changes in place when
 the theme or the system's colours change, so a theme switch redraws the text and does not lay out the paragraphs again.
 
 A colour the host sets is kept as it is under every theme, high contrast included. So a host that sets one sets the other, or neither: a host

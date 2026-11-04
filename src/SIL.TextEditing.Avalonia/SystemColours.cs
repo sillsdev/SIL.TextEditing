@@ -16,6 +16,8 @@ namespace SIL.TextEditing.Avalonia
         Window,
         /// <summary>The fill of selected text.</summary>
         Highlight,
+        /// <summary>The colour of selected text, on the highlight.</summary>
+        HighlightText,
     }
 
     static class SystemColours
@@ -54,7 +56,7 @@ namespace SIL.TextEditing.Avalonia
         static Color? DefaultGet(SystemColour kind)
         {
             if (!IsWindows) return null;
-            uint rgb = GetSysColor(kind == SystemColour.WindowText ? 8 : kind == SystemColour.Window ? 5 : 13);   // COLOR_WINDOWTEXT, COLOR_WINDOW, COLOR_HIGHLIGHT
+            uint rgb = GetSysColor(kind == SystemColour.WindowText ? 8 : kind == SystemColour.Window ? 5 : kind == SystemColour.Highlight ? 13 : 14);   // COLOR_WINDOWTEXT, COLOR_WINDOW, COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT
             return Color.FromRgb((byte)(rgb & 0xFF), (byte)((rgb >> 8) & 0xFF), (byte)((rgb >> 16) & 0xFF));
         }
 
