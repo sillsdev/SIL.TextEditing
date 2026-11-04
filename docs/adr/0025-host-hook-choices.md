@@ -99,3 +99,16 @@ Scrolling the view that shows the field is the host's (ADR 0021); the field move
 - **Auto-scroll while drag-selecting** goes per pointer-move event, with no timer, as FieldWorks does: a pointer past the top or
   bottom of what shows extends the selection only to just past the edge (by the scroll distance) and asks to scroll by 10
   pixels when within 30 pixels of the edge and by 30 beyond that. A pointer held still scrolls no further, as in FieldWorks.
+
+## Window reactivation (issue #71)
+
+Checked in real windows on both lines (a field in one window, a second window shown and activated, then the first activated again
+with no click; Avalonia 11.3.17 on net48 and 12.1.2 on net10.0, Win32 backend): the field gets `LostFocus` when its window is
+deactivated and `GotFocus` (navigation method unspecified) when it is activated again, so the field already raises
+`ActiveWsChanged` on the return (old and new equal), raised nothing while its window was in the background, and a caret change made
+meanwhile is reported once, in that event. No activation event is added: FieldWorks does not reset the keyboard when focus returns
+without a click, so a host that wants to keep the keyboard the user chose elsewhere ignores the focus-gain event when the previous
+focus was not in its own process (README, "Keyboards"), as before. The event arguments cannot tell a reactivation from any other focus
+gain (the navigation method is unspecified for both); a host that must tell uses its window's `Activated` event. The report in the
+issue of `ActiveWsChanged` firing while another window was active came from headless windows, where activating a second window
+leaves the first window's focused control focused; headless activation is approximate and is not a fault of the field.

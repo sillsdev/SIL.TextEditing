@@ -97,7 +97,7 @@ gives the navigation method and key modifiers, not the source), so it raises the
 decides: switch only if the previously focused window was its own, otherwise leave the keyboard alone. The field's event
 follows changes of writing system, so a click into text of the same writing system gives no event of its own. To restore the
 default keyboard, subscribe to the field's `LostFocus` and switch when focus has moved to a control of your own application
-that is not a field. The field raises nothing when it loses focus.
+that is not a field. The field raises nothing when it loses focus. Avalonia gives the field `LostFocus` when its window is deactivated and `GotFocus` when it is activated again, on both lines (checked in real windows), so Alt+Tab away and back gives one focus-gain event; the event arguments cannot tell that from any other focus gain, so a host that must uses its window's `Activated`.
 
 ## Host hooks (ADR 0021, ADR 0025)
 
