@@ -65,7 +65,7 @@ namespace SIL.TextEditing.Avalonia
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => ActiveWsChanged?.Invoke(o, n);
             Editor.CaretMoved += OnCaretMoved;
-            Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count ? VisibleLength(p) : int.MaxValue;
+            Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count && FormatOf(p).MaxLines > 0 ? VisibleLength(p) : int.MaxValue;
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
             GotFocus += (o, e) => InvalidateVisual();
@@ -403,7 +403,9 @@ namespace SIL.TextEditing.Avalonia
             base.OnDetachedFromVisualTree(e);
         }
 
-        /// <summary>The text a caret can reach in a paragraph: all of it, or the part a line limit leaves showing.</summary>
+        /// <summary>The text a caret can reach in a paragraph with a line limit: the part the limit leaves showing. Only such a paragraph
+        /// needs a layout to know it; the editor is told there is no limit for any other, so searching for an editable place does not lay
+        /// out paragraphs that are not on screen.</summary>
         int VisibleLength(int paragraph) => ParagraphLayoutFor(paragraph).VisibleEnd;
 
         /// <summary>A position moved back to the end of the visible text when it is in text a line limit hides (FieldWorks puts an

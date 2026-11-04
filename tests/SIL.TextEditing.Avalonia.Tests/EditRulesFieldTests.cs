@@ -95,6 +95,49 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(field.ParagraphLayoutFor(0).Lines.Count > 0);
         });
 
+        static long LayoutsForTabs(int paragraphs, System.Action<Paragraph>? shape = null)
+        {
+            var doc = new Document();
+            for (int i = 0; i < paragraphs; i++)
+            {
+                var p = new Paragraph { DefaultWs = "en" };
+                p.Runs.Add(new Run { Ws = "en", Text = "abc " + i });
+                var locked = new Run { Ws = "en", Text = "LOCK" };
+                locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+                p.Runs.Add(locked);
+                p.Runs.Add(new Run { Ws = "en", Text = "def" });
+                shape?.Invoke(p);
+                doc.Paragraphs.Add(p);
+            }
+            var field = Fixtures.Field(doc, 520);
+            field.InvalidateAllLayouts();   // nothing is laid out, as in a long document whose paragraphs are not on screen
+            field.Editor.SetCaret(new TextPosition(0, 0));
+            long before = field.LayoutCount;
+            field.HandleKey(Key.Tab, KeyModifiers.None);           // to the place after the locked run
+            field.HandleKey(Key.Tab, KeyModifiers.None);           // to the next paragraph
+            field.HandleKey(Key.Tab, KeyModifiers.Control);        // to the last place of the document
+            Assert.Equal(new TextPosition(paragraphs - 1, doc.Paragraphs[paragraphs - 1].Length), field.Editor.Caret);
+            return field.LayoutCount - before;
+        }
+
+        [Fact]
+        public void Tab_over_a_long_document_lays_out_only_the_paragraphs_with_a_line_limit_it_has_to_ask() => Headless.Run(() =>
+        {
+            // Only a paragraph with a line limit needs its layout to know what is visible, so Tab in a document without limits lays
+            // out the paragraphs around the caret and not every paragraph; the count does not grow with the document.
+            long small = LayoutsForTabs(20);
+            long large = LayoutsForTabs(200);
+            Assert.True(large <= small + 2, $"{large} layouts for 200 paragraphs, {small} for 20");
+            Assert.True(large < 20);
+        });
+
+        [Fact]
+        public void Tab_still_lays_out_a_paragraph_that_has_a_line_limit_to_find_what_is_visible() => Headless.Run(() =>
+        {
+            long limited = LayoutsForTabs(20, p => p.Props.SetInt(TextPropertyNumbers.MaxLines, 1));
+            Assert.True(limited >= 19, $"{limited} layouts for 20 limited paragraphs");   // all but the first, which the caret already laid out
+        });
+
         [Fact]
         public void Editing_from_a_background_thread_throws_a_clear_exception_before_anything_changes() => Headless.Run(async () =>
         {
