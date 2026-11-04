@@ -17,72 +17,88 @@ namespace SIL.TextEditing
         /// paragraph, so a single paragraph keeps it.</summary>
         internal static bool IsParagraphSeparator(char c) => c == (char)13 || c == (char)10 || c == (char)0x85 || c == (char)0x2029;
 
-        /// <summary>Text with every run of paragraph separators turned into one space, and none at the start or the end.</summary>
-        internal static string OneLine(string text)
+        /// <summary>True for a character a separator swallows when it sits beside one: any white space except the hard line
+        /// break, which is content.</summary>
+        static bool IsGap(char c) => c != LineSeparator && char.IsWhiteSpace(c);
+
+        /// <summary>The character just before the selection (or the caret), or '\0' at the start of a paragraph: what a pasted
+        /// text that starts with a separator meets.</summary>
+        char CharBeforeSelection()
+        {
+            Ordered(out var a, out _);
+            return a.Offset > 0 ? Document.Paragraphs[a.Paragraph].Text[a.Offset - 1] : '\0';
+        }
+
+        /// <summary>Whether a separator at the start of the inserted text leaves a space: when it follows text that does not end
+        /// in white space, so the words do not fuse.</summary>
+        static bool NeedsSpaceAfter(char before) => before != '\0' && !char.IsWhiteSpace(before);
+
+        /// <summary>Text with every stretch of white space that holds a separator turned into one space, none at the end, and one at
+        /// the start only when <paramref name="before"/>, the character it will follow, is not white space (or absent).</summary>
+        internal static string OneLine(string text, char before = '\0')
         {
             var sb = new System.Text.StringBuilder(text.Length);
-            bool pending = false;
-            foreach (var c in text)
+            int i = 0;
+            while (i < text.Length)
             {
-                if (IsParagraphSeparator(c)) { pending = true; continue; }
-                if (pending && sb.Length > 0) sb.Append(' ');
-                pending = false;
-                sb.Append(c);
+                if (!IsGap(text[i])) { sb.Append(text[i++]); continue; }
+                int j = i;
+                bool separator = false;
+                while (j < text.Length && IsGap(text[j])) { if (IsParagraphSeparator(text[j])) separator = true; j++; }
+                if (!separator) sb.Append(text, i, j - i);
+                else if (j < text.Length && (i > 0 || NeedsSpaceAfter(before))) sb.Append(' ');
+                i = j;
             }
             return sb.ToString();
         }
 
-        /// <summary>The fragment as one paragraph: the first paragraph's style and properties, the runs of every non-empty
-        /// paragraph in order, and one plain space (in the writing system of the text before it) between paragraphs unless
-        /// whitespace is already there. Empty paragraphs add nothing, so a trailing newline leaves no trailing space. A
-        /// separator inside a run becomes a space.</summary>
+        /// <summary>The fragment as one paragraph: the first paragraph's style and properties and the runs of every paragraph in
+        /// order, a separator between neighbours that <see cref="CollapseSeparators"/> then turns into one space (in the writing
+        /// system of the text before it). Empty paragraphs are separators too, so they add nothing between texts and at the end,
+        /// and one space at the start.</summary>
         static List<Paragraph> JoinIntoOne(List<Paragraph> fragment)
         {
             var joined = fragment[0].Clone(false);
             joined.Runs = new List<Run>();
-            string tail = string.Empty;   // the text so far, to see whether it ends in whitespace
             for (int i = 0; i < fragment.Count; i++)
             {
-                if (fragment[i].Length == 0) continue;
-                var text = fragment[i].Text;
-                if (joined.Runs.Count > 0 && !char.IsWhiteSpace(tail[tail.Length - 1]) && !char.IsWhiteSpace(text[0]))
-                    joined.Runs.Add(new Run { Text = " ", Ws = joined.Runs[joined.Runs.Count - 1].Ws });
+                if (i > 0) joined.Runs.Add(new Run { Text = "\n", Ws = joined.Runs.Count > 0 ? joined.Runs[joined.Runs.Count - 1].Ws : fragment[i].DefaultWs });
                 joined.Runs.AddRange(fragment[i].Runs.Select(r => r.Clone()));
-                tail = text;
             }
-            joined.Normalize();
             return new List<Paragraph> { joined };
         }
 
-        /// <summary>Turns every run of separators inside the paragraph's runs, across run boundaries, into one space, and drops
-        /// those at the start and the end, so a pasted run "foo, newline, bar, newline" gives "foo bar". Object runs count as content.</summary>
-        static void SeparatorsToSpaces(Paragraph paragraph)
+        /// <summary>Turns every stretch of white space that holds a separator, across run boundaries, into one space (a separator
+        /// swallows the white space beside it), and drops it at the end; at the start it leaves one space only when
+        /// <paramref name="before"/>, the character before the insertion point, is not white space (or absent), so a pasted
+        /// "foo, newline, bar, newline" gives "foo bar" and a leading newline after "X" gives "X ". The hard line break and object
+        /// runs count as content. The space takes the writing system of the text before it, else of the text after.</summary>
+        static void CollapseSeparators(Paragraph paragraph, char before = '\0')
         {
             if (!paragraph.Runs.Any(r => !r.IsObject && r.Text.Any(IsParagraphSeparator))) return;
-            var runs = new List<Run>();
-            bool started = false, pending = false;   // started: some content so far; pending: a separator since the last content
+            var chars = new List<char>();
+            var owners = new List<Run>();
             foreach (var r in paragraph.Runs)
+                foreach (var c in r.Text) { chars.Add(c); owners.Add(r); }
+            var runs = new List<Run>();
+            Run? lastOwner = null;   // the source run the last output run copies, null for a synthesised space
+            void Emit(char c, Run owner, bool plain)
             {
-                if (r.IsObject)
-                {
-                    if (pending) runs.Add(new Run { Text = " ", Ws = runs.Count > 0 ? runs[runs.Count - 1].Ws : r.Ws });
-                    pending = false;
-                    started = true;
-                    runs.Add(r);
-                    continue;
-                }
-                var sb = new System.Text.StringBuilder(r.Text.Length);
-                foreach (var c in r.Text)
-                {
-                    if (IsParagraphSeparator(c)) { if (started) pending = true; continue; }
-                    if (pending) sb.Append(' ');
-                    pending = false;
-                    started = true;
-                    sb.Append(c);
-                }
-                if (sb.Length == 0) continue;
-                r.Text = sb.ToString();
-                runs.Add(r);
+                if (!plain && runs.Count > 0 && ReferenceEquals(lastOwner, owner)) { runs[runs.Count - 1].Text += c; return; }
+                var run = plain ? new Run { Text = c.ToString(), Ws = owner.Ws } : owner.CloneWithText(c.ToString());
+                runs.Add(run);
+                lastOwner = plain ? null : owner;
+            }
+            int i = 0, n = chars.Count;
+            while (i < n)
+            {
+                if (!IsGap(chars[i])) { Emit(chars[i], owners[i], false); i++; continue; }
+                int j = i;
+                bool separator = false;
+                while (j < n && IsGap(chars[j])) { if (IsParagraphSeparator(chars[j])) separator = true; j++; }
+                if (!separator) for (int k = i; k < j; k++) Emit(chars[k], owners[k], false);
+                else if (j < n && (i > 0 || NeedsSpaceAfter(before))) Emit(' ', i > 0 ? owners[i - 1] : owners[j], true);
+                i = j;
             }
             paragraph.Runs = runs;
             paragraph.Normalize();

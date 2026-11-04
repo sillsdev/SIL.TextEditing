@@ -73,7 +73,7 @@ namespace SIL.TextEditing.Tests
         [Theory]
         [InlineData("foo\r\n", "Xfoo")]
         [InlineData("foo\n\n\n", "Xfoo")]
-        [InlineData("\r\nfoo", "Xfoo")]
+        [InlineData("\r\nfoo", "X foo")]
         [InlineData("a\r\n\r\n\u2029\rb", "Xa b")]
         [InlineData("\n\n", "X")]
         public void Trailing_leading_and_repeated_separators_never_leave_stray_spaces(string pasted, string expected)
@@ -87,7 +87,7 @@ namespace SIL.TextEditing.Tests
         [InlineData("foo\nbar\n", "Xfoo bar")]
         [InlineData("foo\n\nbar", "Xfoo bar")]
         [InlineData("a\r\n\r\n\u2029\rb", "Xa b")]
-        [InlineData("\nfoo", "Xfoo")]
+        [InlineData("\nfoo", "X foo")]
         [InlineData("\n\n", "X")]
         [InlineData("a\u2028\nb", "Xa\u2028 b")]
         public void Separators_inside_one_pasted_run_collapse_to_one_space_and_never_lead_or_trail(string pasted, string expected)
@@ -144,7 +144,58 @@ namespace SIL.TextEditing.Tests
 
             e = Single("X");
             e.Paste(new List<Paragraph> { Para("en"), Para("en", "en", "a") });
-            Assert.Equal("Xa", e.Document.Paragraphs[0].Text);
+            Assert.Equal("X a", e.Document.Paragraphs[0].Text);   // a leading empty paragraph is a leading separator
+        }
+
+        [Theory]
+        [InlineData("X", "\nb", "X b")]
+        [InlineData("X", "\r\n\r\nb", "X b")]
+        [InlineData("X", " \n b", "X b")]
+        [InlineData("X ", "\nb", "X b")]
+        [InlineData("X ", "\n b", "X b")]
+        [InlineData("", "\nb", "b")]
+        [InlineData("a\u2028", "\nb", "a\u2028b")]
+        [InlineData("X", "b\n", "Xb")]
+        [InlineData("X", "b \n", "Xb")]
+        [InlineData("X", "a \n b", "Xa b")]
+        [InlineData("X", "a  \n\t\n  b", "Xa b")]
+        [InlineData("X", "a\u2029  b", "Xa b")]
+        [InlineData("X", "a  b", "Xa  b")]
+        public void A_separator_leaves_one_space_where_it_meets_text_and_swallows_the_whitespace_beside_it(string existing, string pasted, string expected)
+        {
+            var typed = Single(existing);
+            typed.TypeText(pasted);
+            Assert.Equal(expected, typed.Document.Paragraphs[0].Text);
+
+            var plain = Single(existing);
+            plain.PasteText(pasted);
+            Assert.Equal(expected, plain.Document.Paragraphs[0].Text);
+
+            var runs = Single(existing);
+            runs.Paste(new List<Paragraph> { Para("en", "en", pasted) });
+            Assert.Equal(expected, runs.Document.Paragraphs[0].Text);
+        }
+
+        [Fact]
+        public void A_leading_empty_paragraph_or_one_that_starts_with_whitespace_beside_a_break_gets_one_space_too()
+        {
+            var e = Single("X");
+            e.Paste(new List<Paragraph> { Para("en"), Para("en", "en", "foo") });
+            Assert.Equal("X foo", e.Document.Paragraphs[0].Text);
+
+            e = Single("X");
+            e.Paste(new List<Paragraph> { Para("en", "en", "a "), Para("en", "en", " b") });
+            Assert.Equal("Xa b", e.Document.Paragraphs[0].Text);
+        }
+
+        [Fact]
+        public void A_leading_separator_replacing_a_selection_looks_at_the_text_before_the_selection()
+        {
+            var e = Single("Xhello");
+            e.SetCaret(new TextPosition(0, 1));
+            e.SetCaret(new TextPosition(0, 6), true);
+            e.PasteText("\nb");
+            Assert.Equal("X b", e.Document.Paragraphs[0].Text);
         }
 
         [Fact]
