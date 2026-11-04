@@ -6,9 +6,10 @@ using System.Linq;
 namespace SIL.TextEditing
 {
     /// <summary>One way a selection travels on the clipboard (ADR 0029). The host registers the forms it can write and read: a
-    /// FieldWorks host registers the TsString form through the LCModel adapter and FieldWorks Markdown through the Markdown
-    /// library; plain text is built into the field and needs no registration. Every form works on text: a payload is a string,
-    /// so the field takes no dependency on the library that writes it.</summary>
+    /// FieldWorks host registers its own TsString form (a binary-serialised wrapper object under "TsString"), the adapter's TsString-XML form and the FieldWorks
+    /// Markdown form (the Markdown library); plain text is built into the field and needs no registration. A payload is an <c>object</c>, handed to the
+    /// <see cref="IClipboardBackend"/> untouched: a string, a <c>byte[]</c> or a host object the host's own backend can store, so the field takes no
+    /// dependency on the library that writes it and a form is not limited to text.</summary>
     public interface IClipboardForm
     {
         /// <summary>The stable name the paste order and "Copy as" use, such as <see cref="ClipboardForms.TsStringId"/>.</summary>
@@ -17,21 +18,57 @@ namespace SIL.TextEditing
         /// <summary>The name a menu shows for "Copy as" (see <see cref="OffersCopyAs"/>).</summary>
         string DisplayName { get; }
 
-        /// <summary>The platform clipboard format name the payload is stored under ("TsString" for FieldWorks' own format).</summary>
+        /// <summary>The clipboard format name the payload is stored under ("TsString" for FieldWorks' own format).</summary>
         string FormatName { get; }
 
-        /// <summary>True when "Copy as" offers this form on its own. A form that only exists to talk to another program, such as
-        /// the TsString XML, says false.</summary>
+        /// <summary>True when "Copy as" offers this form on its own. Only a form whose payload is a string can be offered (the copy is as text); a form that
+        /// exists to talk to another program, such as the TsString wrapper, says false.</summary>
         bool OffersCopyAs { get; }
 
-        /// <summary>The payload for a copied selection (the fragment <see cref="DocumentEditor.GetFragment"/> returns), or null when
-        /// the form cannot carry it. The field skips a form that returns null or throws; the other forms still go on the clipboard.</summary>
-        string? Write(IReadOnlyList<Paragraph> fragment);
+        /// <summary>The payload for a copied selection (the fragment <see cref="DocumentEditor.GetFragment"/> returns): a string, a <c>byte[]</c> or a host object
+        /// its backend stores, or null when the form cannot carry it. The field skips a form that returns null or throws; the other forms still go on the clipboard.</summary>
+        object? Write(IReadOnlyList<Paragraph> fragment);
 
-        /// <summary>The paragraphs a payload holds, or null when it is not this form's (the field then tries the next form in the paste
-        /// order). The paragraphs are new objects with no keys; the field maps writing systems the target lacks (ADR 0029) before
-        /// inserting them, and the editor normalises their text. A form that throws counts as null.</summary>
-        IReadOnlyList<Paragraph>? Read(string payload);
+        /// <summary>The paragraphs a payload holds, or null when it is not this form's (the field then tries the next form in the paste order). The payload is
+        /// what the backend read under <see cref="FormatName"/>: usually a string or a <c>byte[]</c> (<see cref="ClipboardPayload.AsText"/> gives text from either), or
+        /// the host's own object. The paragraphs are new objects with no keys; the field maps writing systems the target lacks (ADR 0029) before inserting them,
+        /// and the editor normalises their text. A form that throws counts as null.</summary>
+        IReadOnlyList<Paragraph>? Read(object payload);
+    }
+
+    /// <summary>Where the clipboard is kept (ADR 0029): the field reads and writes it only through this, so a host can plug in its own (FieldWorks'
+    /// WinForms host, which puts a serialised object under "TsString" with its own clipboard calls). <c>RichTextField</c> uses Avalonia's clipboard until a
+    /// host sets <c>ClipboardBackend</c>. Payloads pass through untouched.</summary>
+    public interface IClipboardBackend
+    {
+        /// <summary>Replaces the clipboard with the plain text and the named formats.</summary>
+        System.Threading.Tasks.Task SetAsync(string plainText, IReadOnlyList<KeyValuePair<string, object>> forms);
+
+        /// <summary>The payload stored under a format name (a string, a <c>byte[]</c> or the host's object), or null when there is none. Must not throw for data it
+        /// does not understand.</summary>
+        System.Threading.Tasks.Task<object?> GetAsync(string formatName);
+
+        /// <summary>The plain text on the clipboard, or null.</summary>
+        System.Threading.Tasks.Task<string?> GetTextAsync();
+    }
+
+    /// <summary>Helpers for a form that carries text.</summary>
+    public static class ClipboardPayload
+    {
+        /// <summary>The text of a payload: a string as it is, a <c>byte[]</c> decoded as UTF-16LE (how Avalonia 11 writes strings) or UTF-8 (a typical external
+        /// writer), anything else null.</summary>
+        public static string? AsText(object? payload) => payload as string ?? (payload is byte[] bytes ? Decode(bytes) : null);
+
+        /// <summary>Decodes a custom-format clipboard payload: UTF-16LE or UTF-8.</summary>
+        public static string Decode(byte[] bytes)
+        {
+            int n = bytes.Length;
+            while (n > 0 && bytes[n - 1] == 0) n--;
+            bool utf16 = bytes.Length >= 2 && bytes[1] == 0 && bytes[0] != 0;
+            return utf16
+                ? System.Text.Encoding.Unicode.GetString(bytes, 0, n + (n % 2))
+                : System.Text.Encoding.UTF8.GetString(bytes, 0, n);
+        }
     }
 
     /// <summary>The clipboard forms a field knows and the order paste reads them in (ADR 0029). Plain text is always available under
@@ -138,7 +175,7 @@ namespace SIL.TextEditing
         public string DisplayName => "Runs (debug dump)";
         public string FormatName => Interchange.ClipboardFormat;
         public bool OffersCopyAs => true;
-        public string? Write(IReadOnlyList<Paragraph> fragment) => Interchange.ToXml(fragment);
-        public IReadOnlyList<Paragraph>? Read(string payload) => Interchange.FromXml(payload);
+        public object? Write(IReadOnlyList<Paragraph> fragment) => Interchange.ToXml(fragment);
+        public IReadOnlyList<Paragraph>? Read(object payload) => ClipboardPayload.AsText(payload) is string xml ? Interchange.FromXml(xml) : null;
     }
 }

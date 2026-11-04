@@ -20,9 +20,11 @@ the planned scope needs them; either can be added later without changing the for
 stays only as a test and debug dump).
 
 **Consequences:** FieldWorks' "TsString" clipboard format is a .NET-serialised `TsStringWrapper` that lives in FieldWorks' own SimpleRootSite, not in
-liblcm, so the field and the LCModel adapter neither reference nor copy it. The adapter's `TsStringClipboardForm` is TsString XML under its own format name; FieldWorks, as
-the host, registers a form under "TsString" that wraps and unwraps the adapter's XML with its wrapper. Nothing writes raw XML under "TsString", and a payload a form cannot
-read is skipped so paste falls through. A TsString copy of several paragraphs joins them with "; " and pastes as one paragraph, as FieldWorks does; with TsString first in the
+liblcm, so the field and the LCModel adapter neither reference nor copy it. The adapter's `TsStringClipboardForm` is TsString XML under its own id and format name, so it can sit beside a host's "TsString" form. FieldWorks interop is the host's
+job and uses two hooks the field provides: a host-replaceable clipboard (`IClipboardBackend`; Avalonia's by default), so FieldWorks' WinForms host can keep the
+clipboard itself and put the serialised wrapper under "TsString" with its own calls; and an `object` payload on `IClipboardForm` (a string, a `byte[]` or a host object, passed to
+the backend untouched), so FieldWorks registers a form under "TsString" whose `Write` returns the wrapper (built from the adapter's XML) and whose `Read` unwraps it. Nothing writes raw
+XML under "TsString", and a payload a form cannot read is skipped so paste falls through. A TsString copy of several paragraphs joins them with "; " and pastes as one paragraph, as FieldWorks does; with TsString first in the
 paste order, a copy of several paragraphs from one field to another therefore loses its paragraph breaks unless the FieldWorks Markdown form is tried first. Markdown on the clipboard always carries its front matter, so unmarked text never takes its writing
 system from the target project's defaults. This refines ADR 0016, which put only the TsString format in the adapter
 package. FieldWorks Markdown is a back end first (agents, files, drafting); on the clipboard it is an extra form, not

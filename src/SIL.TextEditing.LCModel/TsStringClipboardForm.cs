@@ -9,7 +9,7 @@ namespace SIL.TextEditing.LCModel
     /// Usage:
     /// <c>field.ClipboardForms.Add(new TsStringClipboardForm(handles))</c>. Copy writes the selection as the XML of one ITsString
     /// (<see cref="TsStringClipboard.FragmentToXml"/>: paragraphs joined with <see cref="TsStringClipboard.FieldWorksParagraphSeparator"/>,
-    /// as FieldWorks' own copy does) and paste reads one, so a FieldWorks paste of our copy agrees with its own. By default the pasted
+    /// as FieldWorks' own copy does) and paste reads one. By default the pasted
     /// string is one paragraph, as FieldWorks pastes it; <see cref="PasteParagraphSeparator"/> splits it at a separator instead. A
     /// writing system the payload names that the host's handles do not know keeps its id (it is given a handle only for the length
     /// of the read), so the field can tell it is missing and map it to the writing system of the selection
@@ -29,17 +29,18 @@ namespace SIL.TextEditing.LCModel
         /// <summary>When set, a pasted string is split into paragraphs at this text; null (FieldWorks) keeps it as one paragraph.</summary>
         public string? PasteParagraphSeparator { get; set; }
 
-        public string Id => ClipboardForms.TsStringId;
+        public string Id => TsStringClipboard.XmlFormatName;
         public string DisplayName => "TsString";
         public string FormatName => TsStringClipboard.XmlFormatName;
         public bool OffersCopyAs => false;
 
-        public string? Write(IReadOnlyList<Paragraph> fragment) =>
+        public object? Write(IReadOnlyList<Paragraph> fragment) =>
             fragment.Count == 0 ? null : TsStringClipboard.FragmentToXml(fragment, _writingSystems, WriteParagraphSeparator);
 
-        public IReadOnlyList<Paragraph>? Read(string payload)
+        public IReadOnlyList<Paragraph>? Read(object payloadObject)
         {
-            if (payload.IndexOf("<Str", StringComparison.Ordinal) < 0) return null;   // not a TsString payload
+            var payload = ClipboardPayload.AsText(payloadObject);
+            if (payload == null || payload.IndexOf("<Str", StringComparison.Ordinal) < 0) return null;   // not a TsString payload
             try { return TsStringClipboard.FromXmlToFragment(payload, new ReadHandles(_writingSystems), PasteParagraphSeparator); }
             catch (Exception e) when (e is System.Xml.XmlException || e is ArgumentException || e is InvalidOperationException || e is FormatException)
             {

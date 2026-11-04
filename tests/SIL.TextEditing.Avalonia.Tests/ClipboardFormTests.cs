@@ -32,7 +32,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         }
 
         static async Task Put(TopLevel top, string plain, params (IClipboardForm Form, string Payload)[] forms) =>
-            await ClipboardCompat.SetAsync(top, plain, forms.Select(f => new KeyValuePair<string, string>(f.Form.FormatName, f.Payload)).ToList());
+            await ClipboardCompat.SetAsync(top, plain, forms.Select(f => new KeyValuePair<string, object>(f.Form.FormatName, f.Payload)).ToList());
 
         static void Empty(RichTextField field)
         {

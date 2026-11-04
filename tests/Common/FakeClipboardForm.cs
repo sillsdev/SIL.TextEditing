@@ -29,16 +29,18 @@ namespace SIL.TextEditing.Tests
         public string ReadWs { get; set; } = "en";
         public int Reads { get; private set; }
 
-        public string? Write(IReadOnlyList<Paragraph> fragment)
+        public object? Write(IReadOnlyList<Paragraph> fragment)
         {
             if (Throws) throw new InvalidOperationException("fake form cannot write");
             return WritesNothing ? null : _tag + string.Join("|", fragment.Select(p => p.Text));
         }
 
-        public IReadOnlyList<Paragraph>? Read(string payload)
+        public IReadOnlyList<Paragraph>? Read(object payloadObject)
         {
             Reads++;
             if (Throws) throw new InvalidOperationException("fake form cannot read");
+            var payload = ClipboardPayload.AsText(payloadObject);
+            if (payload == null) return null;
             if (!payload.StartsWith(_tag, StringComparison.Ordinal)) return null;
             return payload.Substring(_tag.Length).Split('|').Select(t =>
             {

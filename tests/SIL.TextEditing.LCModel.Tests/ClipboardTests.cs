@@ -80,12 +80,12 @@ namespace SIL.TextEditing.LCModel.Tests
         public void The_form_writes_TsString_xml_with_FieldWorks_separator_and_pastes_one_paragraph()
         {
             var form = new TsStringClipboardForm(H);
-            Assert.Equal("TsString", form.Id);
+            Assert.Equal(TsStringClipboard.XmlFormatName, form.Id);   // its own id: a host's TsString wrapper form keeps "TsString"
             Assert.Equal(TsStringClipboard.XmlFormatName, form.FormatName);
             Assert.NotEqual("TsString", form.FormatName);   // that name is FieldWorks' wrapper, which a host registers
             Assert.False(form.OffersCopyAs);
             var doc = TsStringConversion.ToDocument(new[] { new TextParagraph(null, Nfd(), null), new TextParagraph(null, Fr2(), null) }, H);
-            var xml = form.Write(doc.Paragraphs)!;
+            var xml = (string)form.Write(doc.Paragraphs)!;
             Assert.Contains("<Str", xml);
             var pasted = Assert.Single(form.Read(xml)!);
             Assert.Equal("e\u0301cole\u0301 a\u0300; deux", pasted.Text);

@@ -1045,6 +1045,16 @@ namespace SIL.TextEditing.Avalonia
 
         ClipboardForms _clipboardForms = new ClipboardForms();
 
+        IClipboardBackend? _clipboardBackend;
+
+        /// <summary>Where copy, cut and paste keep the clipboard (ADR 0029). The default is Avalonia's clipboard of the window the field is in; a host with its own
+        /// (FieldWorks' WinForms host, which puts a serialised object under "TsString") sets one. Payloads of the forms pass through it untouched.</summary>
+        public IClipboardBackend ClipboardBackend
+        {
+            get => _clipboardBackend ??= new AvaloniaClipboardBackend(() => TopLevel.GetTopLevel(this));
+            set => _clipboardBackend = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
         /// <summary>Whether the target has a writing system, asked when text is pasted (ADR 0029). With none set, the field asks its
         /// <see cref="WritingSystems"/> registry, and a registry with no writing systems in it (no project) accepts every one. Pasted text
         /// in a writing system this refuses takes the writing system of the selection it replaces, as FieldWorks does.</summary>
@@ -1066,20 +1076,20 @@ namespace SIL.TextEditing.Avalonia
             if (!Editor.HasSelection) return;
             if (cut && !Editor.CanEdit) return;   // Cut is disabled where Delete is: it must not leave the text on the clipboard either
             var fragment = Editor.GetFragment();
-            var written = new List<KeyValuePair<string, string>>();
+            var written = new List<KeyValuePair<string, object>>();
             foreach (var form in ClipboardForms)
             {
                 try
                 {
                     var payload = form.Write(fragment);
-                    if (!string.IsNullOrEmpty(payload)) written.Add(new KeyValuePair<string, string>(form.FormatName, payload!));
+                    if (payload != null && !(payload is string empty && empty.Length == 0)) written.Add(new KeyValuePair<string, object>(form.FormatName, payload));
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Trace.TraceWarning("Clipboard form " + form.Id + " could not write the selection: " + ex.Message);
                 }
             }
-            await ClipboardCompat.SetAsync(TopLevel.GetTopLevel(this), PlainText(fragment), written);
+            await ClipboardBackend.SetAsync(PlainText(fragment), written);
             if (cut) Editor.DeleteSelection("cut");
         }
 
@@ -1096,7 +1106,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 var form = ClipboardForms.Find(formId);
                 if (form == null) return false;
-                try { text = form.Write(fragment); }
+                try { text = form.Write(fragment) as string; }   // as text: a form whose payload is not a string cannot be copied as
                 catch (Exception ex)
                 {
                     System.Diagnostics.Trace.TraceWarning("Clipboard form " + form.Id + " could not write the selection: " + ex.Message);
@@ -1104,7 +1114,7 @@ namespace SIL.TextEditing.Avalonia
                 }
             }
             if (string.IsNullOrEmpty(text)) return false;
-            await ClipboardCompat.SetAsync(TopLevel.GetTopLevel(this), text!);
+            await ClipboardBackend.SetAsync(text!, new List<KeyValuePair<string, object>>());
             return true;
         }
 
@@ -1113,22 +1123,27 @@ namespace SIL.TextEditing.Avalonia
         public async Task PasteAsync()
         {
             if (AtHiddenEdge() || !Editor.CanEdit) return;   // a read-only field or text that may not be edited reads nothing and tells nobody
-            var topLevel = TopLevel.GetTopLevel(this);
             foreach (var id in ClipboardForms.PasteOrder.ToList())
             {
                 if (id == ClipboardForms.PlainTextId)
                 {
-                    var text = await ClipboardCompat.GetTextAsync(topLevel);
+                    var text = await ClipboardBackend.GetTextAsync();
                     if (string.IsNullOrEmpty(text)) continue;
                     Editor.PasteText(text ?? string.Empty);
                     return;
                 }
                 var form = ClipboardForms.Find(id);
                 if (form == null) continue;
-                var payload = await ClipboardCompat.GetStringAsync(topLevel, form.FormatName);
-                if (string.IsNullOrEmpty(payload)) continue;
+                object? payload;
+                try { payload = await ClipboardBackend.GetAsync(form.FormatName); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.TraceWarning("The clipboard could not be read as " + form.FormatName + ": " + ex.Message);
+                    continue;
+                }
+                if (payload == null || (payload is string none && none.Length == 0)) continue;
                 IReadOnlyList<Paragraph>? read;
-                try { read = form.Read(payload!); }
+                try { read = form.Read(payload); }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Trace.TraceWarning("Clipboard form " + form.Id + " could not read the clipboard: " + ex.Message);

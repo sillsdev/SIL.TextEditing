@@ -46,7 +46,7 @@ namespace SIL.TextEditing.Playground.Tests
                 p.Runs.Add(new Run { Ws = "qqq", Text = "stranger" });
                 var top = TopLevel.GetTopLevel(s.Field);
                 await global::SIL.TextEditing.Avalonia.ClipboardCompat.SetAsync(top, "stranger",
-                    new[] { new System.Collections.Generic.KeyValuePair<string, string>(Interchange.ClipboardFormat, Interchange.ToXml(new[] { p })) });
+                    new[] { new System.Collections.Generic.KeyValuePair<string, object>(Interchange.ClipboardFormat, Interchange.ToXml(new[] { p })) });
                 s.Caret(0, 0);
                 s.Click(PlaygroundView.Names.Paste);
                 await s.WaitClipboard();
