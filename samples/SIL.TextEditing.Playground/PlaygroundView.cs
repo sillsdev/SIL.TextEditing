@@ -51,6 +51,7 @@ namespace SIL.TextEditing.Playground
             public const string SpellWholeLast = "SpellWholeLastButton";
             public const string SpellAdd = "SpellAddButton";
             public const string SpellIgnore = "SpellIgnoreButton";
+            public const string HyphenLetter = "HyphenLetterBox";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
             public const string DefaultVernacular = "DefaultVernacularButton";
             public const string WsLabel = "WsLabel";
@@ -101,6 +102,7 @@ namespace SIL.TextEditing.Playground
         CheckBox _leaveHandled = null!;
         CheckBox _spellCheck = null!;
         SampleSpelling? _spelling;
+        CheckBox _hyphenLetter = null!;
         TextBox _findBox = null!;
         TextBox _replaceBox = null!;
         CheckBox _matchCase = null!;
@@ -225,6 +227,14 @@ namespace SIL.TextEditing.Playground
                 SetSpelling(_spellCheck.IsChecked == true);
             };
             toolbar.Children.Add(_spellCheck);
+            _hyphenLetter = new CheckBox { Name = Names.HyphenLetter, Content = "Hyphen is a letter", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_hyphenLetter, "The host's word rule (RichTextField.WordRules): a writing system that makes the hyphen a letter makes well-known one word for a double-click, Ctrl+Left and Right, find and the spell checker");
+            _hyphenLetter.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                SetWordRules(_hyphenLetter.IsChecked == true);
+            };
+            toolbar.Children.Add(_hyphenLetter);
             toolbar.Children.Add(Tool(Names.SpellShow, "Spelling at caret", "What the context menu would offer for the marked word at the caret: the word, why it is marked and the suggestions", () => ShowSpelling()));
             toolbar.Children.Add(Tool(Names.SpellReplace, "Use first suggestion", "Replace the marked word at the caret with the first suggestion (one undo step)", () => ReplaceSpelling()));
             toolbar.Children.Add(Tool(Names.SpellSpaces, "Insert missing spaces", "For a word that mixes writing systems or holds an object: put a space between the parts, each part keeping its own writing system", () => SpacesSpelling()));
@@ -508,6 +518,7 @@ namespace SIL.TextEditing.Playground
             _readOnlyCheck.IsChecked = false;
             _singleParagraphCheck.IsChecked = false;
             _spellCheck.IsChecked = scenario.Name == Scenarios.Spelling;
+            _hyphenLetter.IsChecked = false;
             _syncing = false;
             SetSpelling(scenario.Name == Scenarios.Spelling);
             _selectionState = string.Empty;
@@ -600,6 +611,13 @@ namespace SIL.TextEditing.Playground
         }
 
         // ------------------------------------------------------------ spelling
+
+        /// <summary>The host's word rule for every field: with <paramref name="hyphenIsLetter"/> the hyphen forms words, as a writing system that says so would make it.</summary>
+        void SetWordRules(bool hyphenIsLetter)
+        {
+            foreach (var session in _sessions) session.Field.WordRules = hyphenIsLetter ? SampleWordRules.HyphenIsLetter : null;
+            Log("word rule: " + (hyphenIsLetter ? "the hyphen is a letter (a double-click, Ctrl+arrows, find and spelling take it)" : "the defaults"));
+        }
 
         void SetSpelling(bool on)
         {

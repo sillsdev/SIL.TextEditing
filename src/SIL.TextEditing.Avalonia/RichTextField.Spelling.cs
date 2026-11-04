@@ -35,8 +35,8 @@ namespace SIL.TextEditing.Avalonia
                 StopListening();
                 _spellHost = value;
                 _spellGuard = value == null ? null : new GuardedHost(this, value);
-                // A context request names the word by the spell checker's rule while there is one, so it is the word that is squiggled.
-                Editor.WordFinder = value == null ? (Func<Paragraph, int, (int Start, int End)?>?)null : (paragraph, index) => SpellScanner.TryWordAt(paragraph, index, _spellGuard!, out int a, out int b) ? (a, b) : ((int, int)?)null;
+                // The word of a double-click, Ctrl+arrow, find and context request is the word the spell checker marks while the host has no word rule of its own (WordRules).
+                UpdateWordRules();
                 if (_onScreen) StartListening();
                 RestartSpelling();
             }
@@ -351,22 +351,27 @@ namespace SIL.TextEditing.Avalonia
             /// <summary>Forgets the wrappers: a restart starts from what the host says now.</summary>
             public void Forget() => _wrappers.Clear();
 
+            // The word rule is the field's own (RichTextField.WordRules) when the host set one, else the spell host's, so the marks and the double-click agree.
             public bool IsWordForming(string ws, int codePoint)
             {
-                try { return _inner.IsWordForming(ws, codePoint); }
+                var own = _field._wordRules;
+                try { return (own ?? _inner).IsWordForming(ws, codePoint); }
                 catch (Exception e)
                 {
-                    _field.SpellFailure(ws, e);
+                    if (own != null) _field.WordRulesFailed(e);
+                    else _field.SpellFailure(ws, e);
                     return SpellScanner.DefaultIsWordForming(codePoint);
                 }
             }
 
             public bool JoinsWords(string ws, int codePoint)
             {
-                try { return _inner.JoinsWords(ws, codePoint); }
+                var own = _field._wordRules;
+                try { return (own ?? _inner).JoinsWords(ws, codePoint); }
                 catch (Exception e)
                 {
-                    _field.SpellFailure(ws, e);
+                    if (own != null) _field.WordRulesFailed(e);
+                    else _field.SpellFailure(ws, e);
                     return SpellScanner.DefaultJoinsWords(codePoint);
                 }
             }

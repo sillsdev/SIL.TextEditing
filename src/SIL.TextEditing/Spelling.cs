@@ -32,22 +32,12 @@ namespace SIL.TextEditing
     }
 
     /// <summary>What the host tells the field about spelling: the dictionary of each writing system and which characters make words.</summary>
-    public interface ISpellCheckHost
+    public interface ISpellCheckHost : IWordRules
     {
         /// <summary>The checker for a writing system, or null when the writing system has no dictionary (its text is then not
-        /// checked, though a word that mixes writing systems is still marked).</summary>
+        /// checked, though a word that mixes writing systems is still marked). The word rule is the host's <see cref="IWordRules"/>; the field
+        /// uses it for the double-click, Ctrl+arrows and find too (<c>RichTextField.WordRules</c> overrides it there).</summary>
         ISpellChecker? GetChecker(string ws);
-
-        /// <summary>True when the code point forms words in the writing system. FieldWorks asks the writing system (its valid
-        /// characters can make an apostrophe or a hyphen a letter); a host with no opinion returns
-        /// <see cref="SpellScanner.DefaultIsWordForming"/>. Digits, which this is not asked about, always form words. (FieldWorks asks about
-        /// a UTF-16 unit; the field asks about a code point, so a supplementary-plane letter arrives whole.)</summary>
-        bool IsWordForming(string ws, int codePoint);
-
-        /// <summary>True when the code point, between two word-forming characters, stays in the word: the apostrophes and the zero-width
-        /// joiners, so "don't" is one word. A host with no opinion returns <see cref="SpellScanner.DefaultJoinsWords"/>; false for every
-        /// code point turns the rule off, and then "don't" is "don" and "t" unless <see cref="IsWordForming"/> says the apostrophe forms words.</summary>
-        bool JoinsWords(string ws, int codePoint);
 
         /// <summary>Raised by the host when what its checkers answer has changed: a word added or removed (an add, or the undo of one), a
         /// dictionary installed or changed. Every field using the host checks again. It may be raised on any thread; the field handles it on
@@ -316,10 +306,18 @@ namespace SIL.TextEditing
         /// system): the apostrophes U+0027 and U+2019 and the zero-width joiner and non-joiner U+200D and U+200C.</summary>
         public static bool DefaultJoinsWords(int codePoint) => codePoint == '\'' || codePoint == 0x2019 || codePoint == 0x200C || codePoint == 0x200D;
 
-        static bool IsNumber(int cp)
+        internal static bool IsNumber(int cp)
         {
             var c = CategoryOf(cp);
             return c == UnicodeCategory.DecimalDigitNumber || c == UnicodeCategory.LetterNumber || c == UnicodeCategory.OtherNumber;
+        }
+
+        /// <summary>The one word-forming test of the field: an embedded object by <paramref name="objectsInWords"/> (the spell checker's reading
+        /// counts it, a double-click's does not), a digit or other number always, anything else as the host says for the writing system of the character.</summary>
+        internal static bool IsWordFormingIn(IWordRules rules, string ws, int codePoint, bool objectsInWords)
+        {
+            if (codePoint == Run.ObjectReplacement) return objectsInWords;
+            return IsNumber(codePoint) || rules.IsWordForming(ws, codePoint);
         }
 
         /// <summary>One word the scanner found and judged: its range, why it is marked, the text the dictionary saw and its checker (null for a mixed word).</summary>
@@ -458,23 +456,9 @@ namespace SIL.TextEditing
                 return _runStart;
             }
 
-            bool WordForming(int index, int cp)
-            {
-                if (cp == Run.ObjectReplacement) return _objectsInWords;
-                return IsNumber(cp) || _host.IsWordForming(WsAt(index), cp);
-            }
+            bool WordForming(int index, int cp) => IsWordFormingIn(_host, WsAt(index), cp, _objectsInWords);
 
-            int CodePointBefore(int index, out int width)
-            {
-                char c = _text[index - 1];
-                if (char.IsLowSurrogate(c) && index >= 2 && char.IsHighSurrogate(_text[index - 2]))
-                {
-                    width = 2;
-                    return char.ConvertToUtf32(_text[index - 2], c);
-                }
-                width = 1;
-                return char.IsSurrogate(c) ? 0xFFFD : c;
-            }
+            int CodePointBefore(int index, out int width) => SpellScanner.CodePointBefore(_text, index, out width);
 
             /// <summary>Where the word that contains or ends at <paramref name="pos"/> starts, so that scanning forward from there finds the same words a
             /// scan from the start of the paragraph would: back over word-forming characters and over a joiner between two of them.</summary>
@@ -573,7 +557,19 @@ namespace SIL.TextEditing
             }
         }
 
-        static int CodePointAt(string text, int index, out int width)
+        internal static int CodePointBefore(string text, int index, out int width)
+        {
+            char c = text[index - 1];
+            if (char.IsLowSurrogate(c) && index >= 2 && char.IsHighSurrogate(text[index - 2]))
+            {
+                width = 2;
+                return char.ConvertToUtf32(text[index - 2], c);
+            }
+            width = 1;
+            return char.IsSurrogate(c) ? 0xFFFD : c;
+        }
+
+        internal static int CodePointAt(string text, int index, out int width)
         {
             char c = text[index];
             if (char.IsHighSurrogate(c) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))

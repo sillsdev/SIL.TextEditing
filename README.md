@@ -141,7 +141,7 @@ The field owns one text; the window around it belongs to the host. These are the
 The host gives the field its dictionaries: set `RichTextField.SpellChecking` to an `ISpellCheckHost` that returns an
 `ISpellChecker` (`Check`, `Suggest`, `Add`; `ISpellIgnorer` adds `Ignore` when a dictionary has it) for each writing system, says which
 characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. Derive from
-`SpellCheckHostBase` to write only `GetChecker`: it has the default word rules and `RaiseDictionariesChanged()` (any thread). The
+`SpellCheckHostBase` to write only `GetChecker`: it has the default word rules and `RaiseDictionariesChanged()` (any thread). The same word rules (`IWordRules`) serve the double-click, Ctrl+arrows and whole-word find; `RichTextField.WordRules` gives them without spell checking. The
 field checks the paragraphs in view when idle, a few words at a time, and draws red squiggles (misspelled, or a word with an object in it) and blue
 ones (a word that mixes writing systems or has unchecked text inside). The rules are in `SpellScanner` (UI-free): words
 break at characters that are not word-forming, and do-not-check text and text that may not be edited (unless forced) are
@@ -185,7 +185,10 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   keyboard (Shift+arrows, Ctrl+arrows by word, Home/End by visual line, Ctrl+Home/End, Ctrl+A, Up/Down with the
   preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with
   an apostrophe between letters inside the word; no dictionary, so Thai and Chinese are not split, and it is not UAX #29
-  word breaking. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
+  word breaking. It is also the host's: one rule (`IWordRules`: which code points form words in a writing system, and which join the words on
+  each side of them) serves the double-click, Ctrl+Left and Right, the whole-word find, the word of a context request and the spell checker
+  (set `RichTextField.WordRules`, or the rule of `SpellChecking` is used), so a writing system that makes a hyphen a letter makes "foo-bar" one word
+  everywhere. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
 - **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2), and on
   both 11.3.17 and 12.1.2 the caret, hit testing and selection of a left-to-right run are wrong on a right-to-left paragraph's line
   of two or more runs, and likewise on a left-to-right paragraph's line of two or more runs with a right-to-left run in it (on 12 some of its ranges throw); an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by

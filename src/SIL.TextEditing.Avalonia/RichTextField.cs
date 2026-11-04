@@ -698,12 +698,12 @@ namespace SIL.TextEditing.Avalonia
             bool backward = para.Rtl ? !left : left;
             if (backward)
             {
-                if (c.Offset > 0) Move(new TextPosition(c.Paragraph, WordBreaks.PreviousWordStart(para.Text, c.Offset)), extend);
+                if (c.Offset > 0) Move(new TextPosition(c.Paragraph, WordBreaks.PreviousWordStart(para, c.Offset, Editor.WordRules)), extend);
                 else if (c.Paragraph > 0) Move(new TextPosition(c.Paragraph - 1, VisibleLength(c.Paragraph - 1)), extend);
             }
             else
             {
-                if (c.Offset < VisibleLength(c.Paragraph)) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para.Text, c.Offset)), extend);
+                if (c.Offset < VisibleLength(c.Paragraph)) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para, c.Offset, Editor.WordRules)), extend);
                 else if (c.Paragraph + 1 < Editor.Document.Paragraphs.Count) Move(new TextPosition(c.Paragraph + 1, 0), extend);
             }
         }
@@ -992,7 +992,7 @@ namespace SIL.TextEditing.Avalonia
                 start = end = new TextPosition(loc.Character.Paragraph, para.Length);
                 return;
             }
-            WordBreaks.WordAt(para.Text, loc.Character.Offset, out int s, out int en);
+            WordBreaks.WordAt(para, loc.Character.Offset, Editor.WordRules, out int s, out int en);
             start = new TextPosition(loc.Character.Paragraph, s);
             end = new TextPosition(loc.Character.Paragraph, en);
         }

@@ -29,7 +29,7 @@ take a `FindOptions`; a match is a `TextRange` inside one paragraph.
 - **A combining mark is a character of general category Mn, Mc or Me.** FieldWorks uses ICU's diacritic and extender properties,
   which .NET does not expose; modifier letters and modifier symbols are treated as letters here. A default.
 - **Whole word** uses the field's word rule (`WordBreaks`), the same one as double-click: a match must start and end where a
-  word, a run of white space or a run of punctuation starts or ends. A default for the rule; FieldWorks uses the writing
+  word, a run of white space or a run of punctuation starts or ends. A default for the rule (the host's word rule for each character's writing system, ADR 0026); FieldWorks uses the writing
   system's ICU word breaker. Whole word and diacritics are not used with regular expressions (FieldWorks disables them too).
 - **Embedded objects are ignorable.** Whole word judges word boundaries on the text without objects too, so "cat", an object and "s" is the word "cats" and not the word "cat". A regular expression sees the text without objects as well. A match may span one (the pattern "abcd" finds "ab", an object and "cd"), and one never
   forms the start or end of a match. Replacing keeps the objects of the match, after the new text, as FieldWorks does. Read from

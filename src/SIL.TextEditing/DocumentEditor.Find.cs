@@ -16,7 +16,7 @@ namespace SIL.TextEditing
         FindPlan NewPlan(FindOptions options)
         {
             FindTimedOut = false;
-            return FindPlan.Create(options);
+            return FindPlan.Create(options, WordRules);
         }
 
         List<Hit> HitsIn(int paragraph, FindPlan plan, bool overlapping, string? replacement = null)
@@ -114,7 +114,7 @@ namespace SIL.TextEditing
         public IReadOnlyList<TextRange> FindAllIn(int paragraph, FindOptions options, out bool timedOut)
         {
             var result = new List<TextRange>();
-            var plan = FindPlan.Create(options);
+            var plan = FindPlan.Create(options, WordRules);
             timedOut = false;
             if (!plan.Valid) return result;
             foreach (var h in plan.Matches(Document.Paragraphs[paragraph], false)) if (h.End <= LimitOf(paragraph)) result.Add(new TextRange(paragraph, h.Start, h.End));

@@ -84,12 +84,24 @@ owner decisions.
   object, is not a word to mark: a lone object, an object between spaces and a footnote marker get no squiggle. FieldWorks
   counts the object and U+FEFF as word-forming and asks the dictionary about them, which the field does not. A word with an object
   next to text is `Embedded` and is not asked.
-- **One word definition for the other word rules.** The double-click, Ctrl+Left and Right and the whole-word find (`WordBreaks`) use the defaults
-  (`SpellScanner.DefaultIsWordForming`, digits, the apostrophes and joiners that stay inside a word) so that they agree with the spell checker.
-  FieldWorks gives a double-click and its Ctrl+arrow word moves the writing system's rule too; the field gives them the defaults only: with a host,
-  only the context request and the marks follow the host's word rules. The whole-word find's use of the same rule is ours (FieldWorks' was not
-  read), and so is a zero-width joiner or non-joiner staying with the grapheme cluster before it. The spell checker's word goes through an
-  embedded object (FieldWorks widens its menu word the same way) and is `Embedded`, so `ContextInfo.Spelling` can reach further than `ContextInfo.Word`.
+- **One word rule (issue 102).** The double-click, Ctrl+Left and Right, the whole-word find, the word of a context request and the spell checker use
+  one rule, as FieldWorks' views use the writing system's rule for all of them: a code point forms words as the host says for the writing system of
+  that character (`IWordRules.IsWordForming`; digits always), and a joiner (`IWordRules.JoinsWords`: the apostrophes and the zero-width joiners by
+  default) between two word-forming code points stays in the word. An `ISpellCheckHost` is an `IWordRules`. The host can also give the rule with no spell
+  checking (`RichTextField.WordRules`, which wins over the spell checker's for everything, the marks included, and starts checking over when set;
+  `DocumentEditor.WordRules` for the editor's own context request and find, which a field sets itself, so a host with a field sets the field's);
+  with neither the defaults apply. A rule that throws is traced once and the defaults answer instead. `WordBreaks` has overloads that take the paragraph
+  (so the writing system of each character is known) and the rule; the string overloads keep the defaults. The classification is the spell
+  checker's, over code points; `WordBreaks` then keeps a grapheme cluster whole (the caret's unit) and gives it the class of its first code point. That
+  reconciles the two exotic differences the first version had: an apostrophe followed by a combining mark stays in the word for both, and a zero-width
+  non-joiner between a word and an apostrophe, or two in a row, no longer joins what follows (a joiner is in the word only between two word-forming
+  characters). What is left, on purpose: a trailing zero-width joiner or non-joiner stays in the double-click's word (it is part of the cluster
+  before it; the spell checker's word stops before it), and a combining mark with no letter before it to stand on (after a space or a hyphen) stays
+  with that character for a double-click while the spell checker, which walks code points as FieldWorks walks UTF-16 units, starts a word at the mark.
+  The whole-word find's use of the same rule is ours (FieldWorks' was not read), and so is a zero-width joiner or non-joiner staying with the
+  grapheme cluster before it. The spell checker's word goes through an embedded object (FieldWorks widens its menu word the same way) and is
+  `Embedded`, so `ContextInfo.Spelling` can reach further than `ContextInfo.Word`. Taking the host's rule for the double-click and Ctrl+arrows
+  matches FieldWorks, which uses the writing system's rule there; the cluster handling and the joiners are ours.
 - **`SpellingSuggestions.WritingSystems` leaves out an object's writing system.** FieldWorks counts every run's, an object's included; an
   object in another writing system alone makes the word `Embedded`, not `Mixed`, so the field does not offer the whole-word items for it.
 - **Insert missing spaces splits at every difference.** FieldWorks puts spaces only where the writing system changes when a word has several, and

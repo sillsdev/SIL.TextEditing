@@ -209,6 +209,7 @@ Scenarios *Find and replace* (the find bar under the writing-system bar) and *Lo
 | 11.9 | Put the caret in a word and press the Menu key, then Shift+F10. | One request each, for the word at the caret. | | | | |
 | 11.10 | In *Long document* press PageDown and PageUp, then with Shift. | The caret moves by what shows in the window and keeps its place on the screen; Shift extends the selection; the log says `scroll requested: Page`. At the ends the caret stops on the first or last line. Ctrl+PageDown puts the caret at the end of the last visible line and Ctrl+PageUp at the start of the first, without scrolling; with Shift the selection extends there. | | | | |
 | 11.11 | Drag from the middle of the field to well below its bottom edge, and above its top edge. | The selection grows and the view scrolls a little at each mouse movement (more when far outside); it stops when the mouse stops. | | | | |
+| 11.12 | In *Spell checking* double-click `known` in `well-known`, then tick *Hyphen is a letter* and double-click it again; press Ctrl+Right from the start of `well-known`; untick the box. | Unticked the double-click takes `known` and Ctrl+Right stops at the hyphen; ticked the double-click takes `well-known`, Ctrl+Right goes past it and its space, and `well-known` gets a red squiggle (the word list does not have it). Unticking brings the first behaviour and its squiggles back. | | | | |
 ## Record
 
 | | |
