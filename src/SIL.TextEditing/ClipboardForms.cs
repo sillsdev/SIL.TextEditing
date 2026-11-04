@@ -5,6 +5,17 @@ using System.Linq;
 
 namespace SIL.TextEditing
 {
+    /// <summary>What a clipboard form's payload is, so the backend reads the format back as that and never guesses.</summary>
+    public enum ClipboardPayloadKind
+    {
+        /// <summary>A string (the backend stores and returns text).</summary>
+        Text,
+        /// <summary>A <c>byte[]</c> (stored and returned as the same bytes, whatever they hold).</summary>
+        Bytes,
+        /// <summary>A host object that only the host's own backend can store.</summary>
+        Object,
+    }
+
     /// <summary>One way a selection travels on the clipboard (ADR 0029). The host registers the forms it can write and read: a
     /// FieldWorks host registers its own TsString form (a binary-serialised wrapper object under "TsString"), the adapter's TsString-XML form and the FieldWorks
     /// Markdown form (the Markdown library); plain text is built into the field and needs no registration. A payload is an <c>object</c>, handed to the
@@ -21,8 +32,12 @@ namespace SIL.TextEditing
         /// <summary>The clipboard format name the payload is stored under ("TsString" for FieldWorks' own format).</summary>
         string FormatName { get; }
 
-        /// <summary>True when "Copy as" offers this form on its own. Only a form whose payload is a string can be offered (the copy is as text); a form that
-        /// exists to talk to another program, such as the TsString wrapper, says false.</summary>
+        /// <summary>What the payload is: <see cref="ClipboardPayloadKind.Text"/> (a string), <see cref="ClipboardPayloadKind.Bytes"/> (a <c>byte[]</c>) or
+        /// <see cref="ClipboardPayloadKind.Object"/> (a host object). The backend reads the format back as this kind, so bytes are never mistaken for text.</summary>
+        ClipboardPayloadKind PayloadKind { get; }
+
+        /// <summary>True when "Copy as" offers this form on its own. Only a form whose payload is text can be offered (the copy is as text):
+        /// <c>RichTextField.CopyAsAsync</c> returns false for a form whose payload is not a string, so a form of bytes or objects, such as the TsString wrapper, says false.</summary>
         bool OffersCopyAs { get; }
 
         /// <summary>The payload for a copied selection (the fragment <see cref="DocumentEditor.GetFragment"/> returns): a string, a <c>byte[]</c> or a host object
@@ -41,12 +56,14 @@ namespace SIL.TextEditing
     /// host sets <c>ClipboardBackend</c>. Payloads pass through untouched.</summary>
     public interface IClipboardBackend
     {
-        /// <summary>Replaces the clipboard with the plain text and the named formats.</summary>
-        System.Threading.Tasks.Task SetAsync(string plainText, IReadOnlyList<KeyValuePair<string, object>> forms);
+        /// <summary>Replaces the clipboard with the plain text and the named formats. Returns the format names it could not store (the default backend cannot store a
+        /// host object), so the field can tell the host; the others were stored.</summary>
+        System.Threading.Tasks.Task<IReadOnlyList<string>> SetAsync(string plainText, IReadOnlyList<KeyValuePair<string, object>> forms);
 
-        /// <summary>The payload stored under a format name (a string, a <c>byte[]</c> or the host's object), or null when there is none. Must not throw for data it
+        /// <summary>The payload stored under a format name, read as the kind the form says it is (a string for <see cref="ClipboardPayloadKind.Text"/>, a <c>byte[]</c> for
+        /// <see cref="ClipboardPayloadKind.Bytes"/>, the host's object for <see cref="ClipboardPayloadKind.Object"/>), or null when there is none. Must not throw for data it
         /// does not understand.</summary>
-        System.Threading.Tasks.Task<object?> GetAsync(string formatName);
+        System.Threading.Tasks.Task<object?> GetAsync(string formatName, ClipboardPayloadKind kind);
 
         /// <summary>The plain text on the clipboard, or null.</summary>
         System.Threading.Tasks.Task<string?> GetTextAsync();
@@ -55,20 +72,9 @@ namespace SIL.TextEditing
     /// <summary>Helpers for a form that carries text.</summary>
     public static class ClipboardPayload
     {
-        /// <summary>The text of a payload: a string as it is, a <c>byte[]</c> decoded as UTF-16LE (how Avalonia 11 writes strings) or UTF-8 (a typical external
-        /// writer), anything else null.</summary>
-        public static string? AsText(object? payload) => payload as string ?? (payload is byte[] bytes ? Decode(bytes) : null);
-
-        /// <summary>Decodes a custom-format clipboard payload: UTF-16LE or UTF-8.</summary>
-        public static string Decode(byte[] bytes)
-        {
-            int n = bytes.Length;
-            while (n > 0 && bytes[n - 1] == 0) n--;
-            bool utf16 = bytes.Length >= 2 && bytes[1] == 0 && bytes[0] != 0;
-            return utf16
-                ? System.Text.Encoding.Unicode.GetString(bytes, 0, n + (n % 2))
-                : System.Text.Encoding.UTF8.GetString(bytes, 0, n);
-        }
+        /// <summary>The text of a <see cref="ClipboardPayloadKind.Text"/> payload: the string, or null for anything else. Bytes are never decoded by guessing: a form that
+        /// carries bytes decodes them itself, knowing its encoding.</summary>
+        public static string? AsText(object? payload) => payload as string;
     }
 
     /// <summary>The clipboard forms a field knows and the order paste reads them in (ADR 0029). Plain text is always available under
@@ -175,6 +181,7 @@ namespace SIL.TextEditing
         public string DisplayName => "Runs (debug dump)";
         public string FormatName => Interchange.ClipboardFormat;
         public bool OffersCopyAs => true;
+        public ClipboardPayloadKind PayloadKind => ClipboardPayloadKind.Text;
         public object? Write(IReadOnlyList<Paragraph> fragment) => Interchange.ToXml(fragment);
         public IReadOnlyList<Paragraph>? Read(object payload) => ClipboardPayload.AsText(payload) is string xml ? Interchange.FromXml(xml) : null;
     }

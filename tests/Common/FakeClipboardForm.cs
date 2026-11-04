@@ -24,6 +24,7 @@ namespace SIL.TextEditing.Tests
         public string DisplayName { get; }
         public string FormatName { get; }
         public bool OffersCopyAs { get; }
+        public ClipboardPayloadKind PayloadKind => ClipboardPayloadKind.Text;
         public bool Throws { get; set; }
         public bool WritesNothing { get; set; }
         public string ReadWs { get; set; } = "en";

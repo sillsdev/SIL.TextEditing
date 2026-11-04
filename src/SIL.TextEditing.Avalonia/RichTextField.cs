@@ -1045,6 +1045,10 @@ namespace SIL.TextEditing.Avalonia
 
         ClipboardForms _clipboardForms = new ClipboardForms();
 
+        /// <summary>Raised after a copy when the backend could not store some forms (the default backend cannot store a host object): the format names. The other forms and
+        /// the plain text were stored. A host that writes object payloads sets its own <see cref="ClipboardBackend"/>.</summary>
+        public event EventHandler<IReadOnlyList<string>>? ClipboardFormsNotStored;
+
         IClipboardBackend? _clipboardBackend;
 
         /// <summary>Where copy, cut and paste keep the clipboard (ADR 0029). The default is Avalonia's clipboard of the window the field is in; a host with its own
@@ -1089,11 +1093,12 @@ namespace SIL.TextEditing.Avalonia
                     System.Diagnostics.Trace.TraceWarning("Clipboard form " + form.Id + " could not write the selection: " + ex.Message);
                 }
             }
-            await ClipboardBackend.SetAsync(PlainText(fragment), written);
+            var refused = await ClipboardBackend.SetAsync(PlainText(fragment), written);
+            if (refused.Count > 0) ClipboardFormsNotStored?.Invoke(this, refused);
             if (cut) Editor.DeleteSelection("cut");
         }
 
-        /// <summary>"Copy as": puts one form on the clipboard, as text, for a program that reads text: the plain text in NFC (the id
+        /// <summary>"Copy as": puts one form on the clipboard, as text, for a program that reads text (so it returns false for a form whose payload is not a string): the plain text in NFC (the id
         /// <see cref="ClipboardForms.PlainTextId"/>) or a registered form's payload, such as FieldWorks Markdown. Pasting it back into a
         /// field reads it as text. False when nothing was copied: no selection, an unknown form, or a form with nothing to say.</summary>
         public async Task<bool> CopyAsAsync(string formId)
@@ -1135,7 +1140,7 @@ namespace SIL.TextEditing.Avalonia
                 var form = ClipboardForms.Find(id);
                 if (form == null) continue;
                 object? payload;
-                try { payload = await ClipboardBackend.GetAsync(form.FormatName); }
+                try { payload = await ClipboardBackend.GetAsync(form.FormatName, form.PayloadKind); }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Trace.TraceWarning("The clipboard could not be read as " + form.FormatName + ": " + ex.Message);

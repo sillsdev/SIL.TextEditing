@@ -33,6 +33,7 @@ namespace SIL.TextEditing.LCModel
         public string DisplayName => "TsString";
         public string FormatName => TsStringClipboard.XmlFormatName;
         public bool OffersCopyAs => false;
+        public ClipboardPayloadKind PayloadKind => ClipboardPayloadKind.Text;
 
         public object? Write(IReadOnlyList<Paragraph> fragment) =>
             fragment.Count == 0 ? null : TsStringClipboard.FragmentToXml(fragment, _writingSystems, WriteParagraphSeparator);

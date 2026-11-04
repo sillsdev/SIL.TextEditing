@@ -17,15 +17,15 @@ namespace SIL.TextEditing.Avalonia.Tests
             public string Plain = string.Empty;
             public readonly Dictionary<string, object> Formats = new Dictionary<string, object>();
 
-            public Task SetAsync(string plainText, IReadOnlyList<KeyValuePair<string, object>> forms)
+            public Task<IReadOnlyList<string>> SetAsync(string plainText, IReadOnlyList<KeyValuePair<string, object>> forms)
             {
                 Plain = plainText;
                 Formats.Clear();
                 foreach (var f in forms) Formats[f.Key] = f.Value;
-                return Task.CompletedTask;
+                return Task.FromResult<IReadOnlyList<string>>(new string[0]);
             }
 
-            public Task<object?> GetAsync(string formatName) => Task.FromResult(Formats.TryGetValue(formatName, out var v) ? v : null);
+            public Task<object?> GetAsync(string formatName, ClipboardPayloadKind kind) => Task.FromResult(Formats.TryGetValue(formatName, out var v) ? v : null);
             public Task<string?> GetTextAsync() => Task.FromResult<string?>(Plain);
         }
 
@@ -44,6 +44,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             public string DisplayName => "Bytes";
             public string FormatName => "test/bytes";
             public bool OffersCopyAs => false;
+            public ClipboardPayloadKind PayloadKind => ClipboardPayloadKind.Bytes;
             public object? Write(IReadOnlyList<Paragraph> fragment) => Bytes;
             public IReadOnlyList<Paragraph>? Read(object payload)
             {
@@ -60,6 +61,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             public string DisplayName => "TsString";
             public string FormatName => "TsString";
             public bool OffersCopyAs => false;
+            public ClipboardPayloadKind PayloadKind => ClipboardPayloadKind.Object;
             public object? Write(IReadOnlyList<Paragraph> fragment) => new Wrapper(string.Join("|", fragment.Select(p => p.Text)));
             public IReadOnlyList<Paragraph>? Read(object payload)
             {
@@ -134,6 +136,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             public string DisplayName => "Markdown";
             public string FormatName => "FieldWorks Markdown";
             public bool OffersCopyAs => true;
+            public ClipboardPayloadKind PayloadKind => ClipboardPayloadKind.Text;
             public object? Write(IReadOnlyList<Paragraph> fragment) => null;
             public IReadOnlyList<Paragraph>? Read(object payload) => new[] { Para("en", "en", (string)payload) };
         }
@@ -166,8 +169,44 @@ namespace SIL.TextEditing.Avalonia.Tests
             {
                 var top = TopLevel.GetTopLevel(field);
                 await ClipboardCompat.SetAsync(top, "plain", new[] { new KeyValuePair<string, object>("test/bytes", BytesForm.Bytes) });
-                var back = await field.ClipboardBackend.GetAsync("test/bytes");
+                var back = await field.ClipboardBackend.GetAsync("test/bytes", ClipboardPayloadKind.Bytes);
                 Assert.Equal(BytesForm.Bytes, Assert.IsType<byte[]>(back));
+            }
+            finally { window.Close(); }
+        });
+
+        [Fact]
+        public void Text_and_bytes_are_read_back_as_the_kind_asked_for_and_never_one_as_the_other() => Headless.Run(async () =>
+        {
+            var (window, field) = Fixtures.InWindow(OneParagraph("x"));
+            try
+            {
+                var top = TopLevel.GetTopLevel(field);
+                string arabic = "\u0627\u0644\u0639\u0631\u0628\u064A\u0629";   // starts above U+00FF: no byte-guessing may mistake it
+                await ClipboardCompat.SetAsync(top, "plain", new[]
+                {
+                    new KeyValuePair<string, object>("test/bytes", BytesForm.Bytes),
+                    new KeyValuePair<string, object>("test/text", arabic),
+                });
+                Assert.Equal(arabic, await field.ClipboardBackend.GetAsync("test/text", ClipboardPayloadKind.Text));
+                Assert.Equal(BytesForm.Bytes, Assert.IsType<byte[]>(await field.ClipboardBackend.GetAsync("test/bytes", ClipboardPayloadKind.Bytes)));
+                Assert.Null(await field.ClipboardBackend.GetAsync("test/bytes", ClipboardPayloadKind.Object));
+            }
+            finally { window.Close(); }
+        });
+
+        [Fact]
+        public void The_default_backend_tells_the_host_which_forms_it_could_not_store() => Headless.Run(async () =>
+        {
+            var (window, field) = Fixtures.InWindow(OneParagraph("hello"));
+            try
+            {
+                field.ClipboardForms.Add(new WrapperForm());
+                IReadOnlyList<string>? told = null;
+                field.ClipboardFormsNotStored += (s, e) => told = e;
+                SelectAll(field);
+                await field.CopyAsync(false);
+                Assert.Equal(new[] { "TsString" }, told!.ToArray());
             }
             finally { window.Close(); }
         });

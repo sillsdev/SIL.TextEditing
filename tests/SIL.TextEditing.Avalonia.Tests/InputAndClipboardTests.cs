@@ -92,12 +92,5 @@ namespace SIL.TextEditing.Avalonia.Tests
             }
             finally { window.Close(); }
         });
-
-        [Fact]
-        public void Decode_reads_utf8_and_utf16_payloads()
-        {
-            Assert.Equal("aé", ClipboardCompat.Decode(System.Text.Encoding.UTF8.GetBytes("aé")));
-            Assert.Equal("aé", ClipboardCompat.Decode(System.Text.Encoding.Unicode.GetBytes("aé")));
-        }
     }
 }
