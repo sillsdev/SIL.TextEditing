@@ -1057,6 +1057,19 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
+        /// <summary>Formats a short line of its own (a label, an ellipsis, a space to measure a height by): the line, or, when the formatter refuses it, the line
+        /// of its text with every format character and mark swapped (<see cref="SwapFormatCharacters"/>), or null.</summary>
+        static TextLine? FormatShort(ParagraphSource source, double width, TextParagraphProperties properties)
+        {
+            try { return TextFormatter.Current.FormatLine(source, 0, width, properties, null); }
+            catch (InvalidOperationException) { }
+            string text = source.Text;
+            source.Text = SwapFormatCharacters(text, 3);
+            try { return TextFormatter.Current.FormatLine(source, 0, width, properties, null); }
+            catch (InvalidOperationException) { return null; }
+            finally { source.Text = text; }
+        }
+
         static TextLine? FormatLineGuarded(TextFormatter formatter, ITextSource source, int index, double width, TextParagraphProperties properties, TextLineBreak? previous)
         {
             try { return formatter.FormatLine(source, index, width, properties, previous); }
@@ -1222,7 +1235,7 @@ namespace SIL.TextEditing.Avalonia
                 var spaceSource = new ParagraphSource { Text = " " };
                 spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
                 double slot;
-                using (var metrics = TextFormatter.Current.FormatLine(spaceSource, 0, w, paragraphProperties, null))
+                using (var metrics = FormatShort(spaceSource, w, paragraphProperties))
                 {
                     bool measured = metrics != null && metrics.Height > 0;
                     if (measured) lineHeight = metrics!.Height;
@@ -1305,7 +1318,7 @@ namespace SIL.TextEditing.Avalonia
                 {
                     var spaceSource = new ParagraphSource { Text = " " };
                     spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
-                    var metrics = formatter.FormatLine(spaceSource, 0, w, paragraphProperties, null);
+                    var metrics = FormatShort(spaceSource, w, paragraphProperties);
                     if (metrics != null)
                     {
                         double slot = layout.SlotHeight(metrics.Height);
@@ -1633,7 +1646,7 @@ namespace SIL.TextEditing.Avalonia
             EllipsisProperties = props;
             var source = new ParagraphSource { Text = "..." };
             source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 3, Properties = props });
-            _ellipsis = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left), null);
+            _ellipsis = FormatShort(source, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left));
             return _ellipsis;
         }
 
@@ -1807,7 +1820,7 @@ namespace SIL.TextEditing.Avalonia
             _labelRun = props;
             var source = new ParagraphSource { Text = text };
             source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = text.Length, Properties = props });
-            _label = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left), null);   // Left: drawn from its own x, not from the right of the 100000 wide line
+            _label = FormatShort(source, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left));   // Left: drawn from its own x, not from the right of the 100000 wide line
             _labelText = text;
             return _label;
         }
