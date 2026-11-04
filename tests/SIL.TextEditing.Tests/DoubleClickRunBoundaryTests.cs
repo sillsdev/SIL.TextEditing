@@ -4,12 +4,19 @@ using static SIL.TextEditing.Tests.TestDocs;
 namespace SIL.TextEditing.Tests
 {
     /// <summary>FieldWorks' double-click word stops where the writing system, the spell-check property or the character style changes (issue 116),
-    /// but not at a change of bold, size, colour or any other property.</summary>
+    /// but not at a change of bold, size, colour or any other property. A change of character style stops it only when the two resolved styles differ in
+    /// writing system or spell-check property, so it needs the host's style resolver.</summary>
     public class DoubleClickRunBoundaryTests
     {
-        static (int Start, int End) Word(Paragraph p, int at)
+        sealed class Styles : IStyleResolver
         {
-            WordBreaks.WordAt(p, at, null, out int s, out int e);
+            public readonly System.Collections.Generic.Dictionary<string, PropertyBag> Bags = new System.Collections.Generic.Dictionary<string, PropertyBag>();
+            public PropertyBag? Resolve(string styleName, string ws) => Bags.TryGetValue(styleName, out var b) ? b : null;
+        }
+
+        static (int Start, int End) Word(Paragraph p, int at, IStyleResolver? styles = null)
+        {
+            WordBreaks.WordAt(p, at, null, styles, out int s, out int e);
             return (s, e);
         }
 
@@ -33,14 +40,47 @@ namespace SIL.TextEditing.Tests
             Assert.Equal((4, 6), Word(p, 4));
         }
 
+        static Paragraph Styled(Styles styles, string name, PropertyBag bag)
+        {
+            styles.Bags[name] = bag;
+            var p = Para("en", "en", "un", "en", "believ", "en", "able");
+            p.Runs[1].Props.SetStr(TextPropertyNumbers.NamedStyle, name);
+            return p;
+        }
+
         [Fact]
-        public void A_change_of_the_character_style_stops_the_word()
+        public void A_style_that_only_changes_bold_keeps_the_word_whole()
+        {
+            var styles = new Styles();
+            var p = Styled(styles, "Emphasis", new PropertyBag().SetInt(TextPropertyNumbers.Bold, 1));
+            Assert.Equal((0, 12), Word(p, 3, styles));
+            Assert.Equal((0, 12), Word(p, 0, styles));
+        }
+
+        [Fact]
+        public void A_style_that_changes_the_spell_check_property_stops_the_word()
+        {
+            var styles = new Styles();
+            var p = Styled(styles, "Code", new PropertyBag().SetInt(TextPropertyNumbers.SpellCheck, TextPropertyNumbers.SpellCheckDoNot));
+            Assert.Equal((0, 2), Word(p, 1, styles));
+            Assert.Equal((2, 8), Word(p, 3, styles));
+            Assert.Equal((8, 12), Word(p, 9, styles));
+        }
+
+        [Fact]
+        public void A_style_that_changes_the_writing_system_stops_the_word()
+        {
+            var styles = new Styles();
+            var p = Styled(styles, "Foreign", new PropertyBag().SetInt(TextPropertyNumbers.WritingSystem, 7));
+            Assert.Equal((2, 8), Word(p, 3, styles));
+        }
+
+        [Fact]
+        public void With_no_style_resolver_a_change_of_style_name_does_not_stop_the_word()
         {
             var p = Para("en", "en", "ab", "en", "cd", "en", "ef");
             p.Runs[1].Props.SetStr(TextPropertyNumbers.NamedStyle, "Emphasis");
-            Assert.Equal((0, 2), Word(p, 1));
-            Assert.Equal((2, 4), Word(p, 2));
-            Assert.Equal((4, 6), Word(p, 5));
+            Assert.Equal((0, 6), Word(p, 3));
         }
 
         [Fact]
@@ -53,11 +93,10 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
-        public void A_white_space_run_and_a_word_split_by_the_style_each_stop_at_the_change()
+        public void A_white_space_run_is_cut_at_a_change_of_writing_system()
         {
-            var p = Para("en", "en", "ab  ", "en", "  cd");
-            p.Runs[1].Props.SetStr(TextPropertyNumbers.NamedStyle, "Emphasis");
-            Assert.Equal((2, 4), Word(p, 2));    // the spaces before the style change
+            var p = Para("en", "en", "ab  ", "fr", "  cd");
+            Assert.Equal((2, 4), Word(p, 2));    // the spaces before the change
             Assert.Equal((4, 6), Word(p, 4));    // the spaces after it
         }
 

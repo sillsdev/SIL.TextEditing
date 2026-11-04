@@ -994,7 +994,7 @@ namespace SIL.TextEditing.Avalonia
                 start = end = new TextPosition(loc.Character.Paragraph, para.Length);
                 return;
             }
-            WordBreaks.WordAt(para, loc.Character.Offset, Editor.WordRules, out int s, out int en);
+            WordBreaks.WordAt(para, loc.Character.Offset, Editor.WordRules, _styles, out int s, out int en);
             start = new TextPosition(loc.Character.Paragraph, s);
             end = new TextPosition(loc.Character.Paragraph, en);
         }

@@ -179,12 +179,19 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(rules.Asked < 50, rules.Asked + " questions for one Ctrl+Left in " + text.Length + " characters");
         });
 
+        sealed class CodeStyle : IStyleResolver
+        {
+            public PropertyBag? Resolve(string styleName, string ws) =>
+                styleName == "Code" ? new PropertyBag().SetInt(TextPropertyNumbers.SpellCheck, TextPropertyNumbers.SpellCheckDoNot) : null;
+        }
+
         [Fact]
-        public void A_double_click_stops_at_a_change_of_writing_system_and_of_character_style_and_the_drag_goes_by_the_same_words() => Headless.Run(() =>
+        public void A_double_click_stops_at_a_change_of_writing_system_and_of_a_style_that_changes_spell_checking_and_the_drag_goes_by_the_same_words() => Headless.Run(() =>
         {
             var p = Para("en", "en", "ab", "fr", "cd", "fr", "ef gh");
-            p.Runs[2].Props.SetStr(TextPropertyNumbers.NamedStyle, "Emphasis");
+            p.Runs[2].Props.SetStr(TextPropertyNumbers.NamedStyle, "Code");
             var (w, f) = Fixtures.InWindow(Doc(p), 400);
+            f.StyleResolver = new CodeStyle();
             Headless.Pump();
             Assert.Equal("ab", DoubleClick(w, f, 1));
             Assert.Equal("cd", DoubleClick(w, f, 3));
