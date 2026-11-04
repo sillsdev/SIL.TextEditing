@@ -11,6 +11,15 @@ namespace SIL.TextEditing.Markdown.Writer
     /// <summary>Writes paragraphs as canonical FieldWorks Markdown (spec 3, 6.1). The spelling comes from the rules of the spec; every paragraph is then
     /// read back by the parser and compared with the model, and when the canonical spelling does not read back (which the rules are meant to make
     /// impossible) the writer falls back to the safe spelling, and last to numeric references, so what it writes always reads back to the same paragraph.</summary>
+    /// <summary>For the tests: how often the writer had to leave the canonical spelling (the rules of spec 3.4 and 3.2) because it did not read back. The canonical form must not depend on the
+    /// parser, so this stays 0 for every fixture and every generated document; a count above 0 is a gap in a rule. Per thread, so a test counts only its own work.</summary>
+    internal static class WriterFallbacks
+    {
+        [ThreadStatic] public static int Safe;
+        [ThreadStatic] public static int Numeric;
+        [ThreadStatic] public static int SafeTable;
+    }
+
     internal sealed class MarkdownWriter
     {
         readonly MarkdownOptions _options;
@@ -175,7 +184,9 @@ namespace SIL.TextEditing.Markdown.Writer
             string canonical = generator.Generate(cells, new GenMode());
             if (accepts(canonical)) return canonical;
             string safe = generator.Generate(cells, new GenMode { Safe = true });
+            WriterFallbacks.Safe++;
             if (safe != canonical && accepts(safe)) return safe;
+            WriterFallbacks.Numeric++;
             string numeric = generator.Generate(cells, new GenMode { Numeric = true });
             return accepts(numeric) ? numeric : null;
         }
@@ -255,10 +266,14 @@ namespace SIL.TextEditing.Markdown.Writer
 
         static string SyntheticRow(int width) => "|" + string.Concat(Enumerable.Repeat(" [x]{.v} |", width));
 
-        static bool CellEligible(Entry e)
+        /// <summary>A paragraph can be a table row when its tabs can be cell separators: the separator is plain text in the default analysis writing system, so a tab in an object run, in another
+        /// writing system or with any property would come back as something else.</summary>
+        bool CellEligible(Entry e)
         {
             if (e.HasLineSeparator) return false;
-            foreach (var run in e.Paragraph.Runs) if (run.ObjData != null && run.Text.IndexOf(Chars.Tab) >= 0) return false;
+            string analysis = _options.WritingSystems.DefaultAnalysis;
+            foreach (var run in e.Paragraph.Runs)
+                if (run.Text.IndexOf(Chars.Tab) >= 0 && (run.ObjData != null || run.Ws != analysis || run.Props.Count > 0)) return false;
             return true;
         }
 
@@ -310,6 +325,8 @@ namespace SIL.TextEditing.Markdown.Writer
                 var row = entries[j];
                 // A row with no runs is one empty cell, a row of a one-column table; in a wider table its cell count ends the table.
                 if (row.Props.Count > 0 || row.Paragraph.Style != Names.TableRow || !CellEligible(row)) break;
+                // An empty row has no run to carry a writing system, and a table row has no marker: a row that types in another writing system than the default is left to a div.
+                if (row.IsEmpty && row.Paragraph.DefaultWs != _options.WritingSystems.DefaultAnalysis) break;
                 var cells = SplitCells(row.Paragraph);
                 if (cells.Count != width) break;
                 Func<string, bool> rowAccepts = candidate =>
@@ -327,6 +344,7 @@ namespace SIL.TextEditing.Markdown.Writer
             }
             if (!TableReadsBack(lines, width, expected))
             {
+                WriterFallbacks.SafeTable++;
                 for (int i = 0; i < lines.Count; i++)
                     lines[i] = new InlineGenerator(_options, BlockContext.TableRow()).Generate(cellsOf[i], new GenMode { Safe = true });
                 if (!TableReadsBack(lines, width, expected)) return null;

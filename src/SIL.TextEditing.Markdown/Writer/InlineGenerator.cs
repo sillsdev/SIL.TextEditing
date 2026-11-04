@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using SIL.TextEditing.Markdown.Notation;
 using SIL.TextEditing.Markdown.Reader;
@@ -112,7 +113,13 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (table) { Syn(" ", -1); }
                 else if (c == 0) Syn(string.Empty, -1);
                 var runs = cells[c];
-                for (int i = 0; i < runs.Count; i++) WriteRun(runs[i], i == runs.Count - 1, stars == null ? 0 : stars[runIndex++]);
+                _cellText = string.Concat(runs.Select(r => r.Text));
+                _cellOffset = 0;
+                for (int i = 0; i < runs.Count; i++)
+                {
+                    WriteRun(runs[i], i == runs.Count - 1, stars == null ? 0 : stars[runIndex++]);
+                    _cellOffset += runs[i].Text.Length;
+                }
                 if (table) Syn(" |", -1);
                 else if (c == cells.Count - 1) Syn(string.Empty, -1);
             }
@@ -153,7 +160,7 @@ namespace SIL.TextEditing.Markdown.Writer
                 any = true;
                 if (!StarEligible(run.Text)) continue;
                 if (i + 1 < flat.Count && cellOf[i + 1] == cellOf[i] && StartsWithCombiningMark(flat[i + 1].Text)) continue;
-                var items = RunItems(run, true, true, null, false);
+                var items = RunItems(run, bold, italic, null, false);
                 if (items.Count > 0) continue;
                 candidate[i] = (bold ? 2 : 0) | (italic ? 1 : 0);
             }
@@ -233,13 +240,15 @@ namespace SIL.TextEditing.Markdown.Writer
                 Syn(marks);
                 return;
             }
-            if (items.Count == 0) { Text(run.Text); return; }
+            if (items.Count == 0) { Text(run.Text, allowBreak: true); return; }
             OpenScope();
             Text(run.Text);
             CloseScope("]" + Block(items));
         }
 
         int _openScope;
+        string _cellText = string.Empty;
+        int _cellOffset;
 
         void OpenScope()
         {
@@ -433,7 +442,7 @@ namespace SIL.TextEditing.Markdown.Writer
         static string Ref(int codePoint) => "&#x" + codePoint.ToString("X", CultureInfo.InvariantCulture) + ";";
 
         /// <summary>Turns the text of a run into units: literal characters, and syntax for what a literal cannot carry (spec 3.4).</summary>
-        void Text(string text)
+        void Text(string text, bool allowBreak = false)
         {
             int n = text.Length;
             for (int k = 0; k < n; k++)
@@ -450,7 +459,10 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (c == 0) { Syn("[]{.nul}"); continue; }
                 if (c == Chars.LineSeparator)
                 {
-                    bool backslash = _context.AllowsContinuation && !_context.InTable;
+                    // A backslash line end only between two characters of the paragraph, in plain text: at the start or end of the paragraph, next to another separator, or inside a bracket it is a reference.
+                    int at = _cellOffset + k;
+                    bool backslash = allowBreak && _context.AllowsContinuation && !_context.InTable && at > 0 && at < _cellText.Length - 1
+                        && _cellText[at - 1] != Chars.LineSeparator && _cellText[at + 1] != Chars.LineSeparator;
                     if (backslash) _units.Add(new Unit { Text = "\\\n" + _context.ContinuationPrefix, Break = true, EdgeScope = -1 });
                     else Syn(Ref(c));
                     continue;
