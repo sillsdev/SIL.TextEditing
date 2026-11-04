@@ -152,6 +152,10 @@ are one definition (an underscore ends both, as in FieldWorks). A checker
 that throws raises `SpellCheckerFailed` (written to `Trace` once per writing system when nothing handles it) and is left alone; it does not end
 the application. A host that repairs the dictionary raises `DictionariesChanged` (or calls `RestartSpelling`), which tries that writing system again. The playground's "Spell checking" scenario shows it with a
 short English and French word list.
+A dictionary that is slow can be asked off the UI thread: its checker also implements `IBackgroundSpellChecker` (`Check` may then run on a worker; the field finds the words and applies the answers on its own thread, and drops an answer for a paragraph that has changed since).
+`CheckSpellingStep` then returns false while a batch is out, and `IsSpellingComplete` says when everything in view is checked. A loop of
+`while (!field.CheckSpellingStep()) { }` on the UI thread therefore never ends with such a checker (the answer is applied by the dispatcher the loop blocks):
+let the dispatcher run and wait for `IsSpellingComplete`, or use a checker without the interface where a synchronous check is wanted.
 
 What a host calls (the field restarts checking itself on an edit through the editor, `Apply`, `ExternalReplaceParagraph`, a change of
 `IsReadOnly` on the field or its editor, a word added or ignored, and a `DictionariesChanged` notice): nothing, after it changes a paragraph

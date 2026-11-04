@@ -132,8 +132,23 @@ owner decisions.
   span (2000 device-independent pixels) below its top. FieldWorks checks the whole view, including paragraphs out of sight; the field's choice
   is ADR 0020's, and it is bounded so a long document in a host that scrolls some other way is not checked whole. Scrolling, an edit to a
   paragraph, a new host, `RestartSpelling` and a change of the read-only state make paragraphs due again. Idle means the dispatcher's
-  background priority, one request pending at a time; a test replaces the post (`SpellIdlePost`). The host's checker is still called on the
-  UI thread; a host that cannot answer quickly answers from a cache and raises `DictionariesChanged` when it has more.
+  background priority, one request pending at a time; a test replaces the post (`SpellIdlePost`). A host's checker is called on the UI thread, as
+  FieldWorks' is; a host that cannot answer quickly answers from a cache and raises `DictionariesChanged` when it has more, or opts in to the next entry.
+- **A checker may answer off the UI thread (issue 103).** A checker that is also an `IBackgroundSpellChecker` (the optional capability, as `ISpellIgnorer` is
+  for ignoring; adding a member to `ISpellCheckHost` would have broken every host) says that `Check` may be called on a worker thread, and a host whose
+  dictionary is slow does not hold up input for even one word. The field still finds and judges the words of a step (at most 25) on its own thread,
+  where it reads the model, and sends only the dictionary questions (the checker, the NFC word) to a worker, one batch at a time and one question at a
+  time within it, so a checker is never asked on two threads at once by one field. The answers are posted back and applied on the field's thread only if
+  the paragraph is the one that was asked about, in the state it had (a restart, a width change that moves a line limit, an edit through the editor
+  or a direct change all replace or invalidate it) and at the stamp it had (`Paragraph.ChangeStamp`), in the same epoch; otherwise they are dropped and
+  the text is asked again, so no mark is ever drawn for text that is not there. While a batch is out the idle work starts nothing new and does not
+  busy-wait (`CheckSpellingStep` returns false, `IsSpellingComplete` is false) and the answer asks for the next step. A checker that throws on the
+  worker is left alone for the rest of the batch (its words taken as right) and is reported through `SpellCheckerFailed` on the field's thread,
+  once per writing system as before, unless checking started over meanwhile. A checker without the interface, or a step with none of its words,
+  takes the synchronous path exactly as before; a step with some of each asks the others at once and the rest on the worker. `Suggest` and `Add` stay on
+  the UI thread (a menu asks one word on purpose, and the checker must be safe to call from the UI thread while a worker is in its `Check`). Defaults,
+  ours: a tested seam (`SpellBackgroundRun`, with `SpellIdlePost` for the way back) makes the order deterministic; the real scheduler is the thread pool
+  and the field's dispatcher.
 - **Menu answers are remembered.** `SpellingSuggestionsAt` looks at the word at the position only, however long the paragraph is, and remembers its
   last answer for the paragraph state, the checkers (until a restart) and the read-only state, so a hover over one word asks the host nothing
   the second time; the checker's suggestions for a word are remembered until a restart too.
