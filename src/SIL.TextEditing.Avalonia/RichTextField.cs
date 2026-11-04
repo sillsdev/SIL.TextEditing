@@ -355,6 +355,8 @@ namespace SIL.TextEditing.Avalonia
             if (!_onScreen)
             {
                 _pauseTimer?.Stop();
+                _pauseHandle?.Dispose();
+                _pauseHandle = null;
                 return;
             }
             if (_pauseTimer == null)
@@ -363,10 +365,26 @@ namespace SIL.TextEditing.Avalonia
                 _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
             }
             _pauseTimer.Stop();
+            _pauseHandle?.Dispose();
+            _pauseHandle = null;
             if (!Editor.HasOpenUndoGroup) return;
+            var scheduler = PauseScheduler;
+            if (scheduler != null)
+            {
+                _pauseHandle = scheduler(Editor.TypingPause, () => Editor.CloseUndoGroup());
+                return;
+            }
             _pauseTimer.Interval = Editor.TypingPause;
             _pauseTimer.Start();
         }
+
+        IDisposable? _pauseHandle;
+
+        /// <summary>Starts the one-shot timer that ends a typing step when the pause passes (ADR 0023): it is given the pause
+        /// (<see cref="DocumentEditor.TypingPause"/>) and the action to run when it elapses, and returns something that cancels
+        /// it; the field cancels and asks again after every edit. Null, the default, uses a dispatcher timer. A host or a test
+        /// with its own clock sets it to drive the pause without waiting.</summary>
+        public Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
 
         bool _onScreen;
 
