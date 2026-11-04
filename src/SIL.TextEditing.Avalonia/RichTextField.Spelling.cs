@@ -83,7 +83,7 @@ namespace SIL.TextEditing.Avalonia
         public void RestartSpelling()
         {
             SpellRestarts++;
-            CancelBatch();
+            ReleaseBatchOnRestart();   // a checker that hangs on the old batch must not hold the checking that starts now
             _spellFailed.Clear();
             (_spellGuard as GuardedHost)?.Forget();
             _spellEpoch++;

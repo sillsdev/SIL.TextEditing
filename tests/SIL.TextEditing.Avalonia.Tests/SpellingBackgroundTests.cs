@@ -370,6 +370,38 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void Starting_checking_over_works_even_when_the_checker_never_returned_and_its_late_answer_is_dropped() => Headless.Run(() =>
+        {
+            using var rig = new Rig(Two(), BgHost(out var en));
+            rig.Step();
+            var hung = Assert.Single(rig.Worker);            // the batch is out and, for now, never comes back
+            rig.Worker.Clear();
+            rig.Idle.Clear();
+            rig.Field.RestartSpelling();                     // the same host: its checker may still be stuck on the old question
+            Assert.NotEmpty(rig.Idle);
+            rig.RunAll();
+            Assert.True(rig.Field.IsSpellingComplete);
+            Assert.Equal(new[] { "saat" }, rig.Words(0));
+            hung();                                          // the old question finally returns
+            rig.RunAll();
+            Assert.Equal(new[] { "saat" }, rig.Words(0));    // dropped: no double marks
+            Assert.True(rig.Field.IsSpellingComplete);
+        });
+
+        [Fact]
+        public void Leaving_the_visual_tree_after_the_answers_arrived_keeps_them() => Headless.Run(() =>
+        {
+            using var rig = new Rig(Two(), BgHost(out var en));
+            rig.Step();
+            rig.WorkerRuns();                                // every word is answered; the answer waits to be applied on the field's thread
+            int asked = en.Asked.Count;
+            rig.Window.Content = null;
+            rig.RunAll();
+            Assert.Equal(new[] { "saat" }, rig.Words(0));    // applied, not thrown away and asked again
+            Assert.Equal(asked, en.Asked.Count);
+        });
+
+        [Fact]
         public void A_new_host_works_even_when_the_old_checker_never_returned() => Headless.Run(() =>
         {
             using var rig = new Rig(Two(), BgHost(out var hung));

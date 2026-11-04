@@ -175,6 +175,23 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
+        public void Letting_go_of_a_bag_drops_the_holders_that_are_gone_without_waiting_for_a_new_one()
+        {
+            var shared = new PropertyBag();
+            var first = new Run { Text = "first" };
+            first.Props = shared;
+            HoldBriefly(shared, 100);
+            var last = new Run { Text = "last" };
+            last.Props = shared;
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Assert.True(shared.OwnerCount > 50);             // the dead holders are still listed: nothing has attached or detached since
+            last.Props = new PropertyBag();                   // a live holder lets go; the bag sweeps the dead ones on the way
+            Assert.Equal(1, shared.OwnerCount);
+            GC.KeepAlive(first);
+        }
+
+        [Fact]
         public void The_change_stamp_is_read_and_written_as_one_value()
         {
             var p = Two();
