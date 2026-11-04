@@ -468,6 +468,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>True when the line is stretched to the edges of the text area (a justified paragraph's line that is not its last).</summary>
         public bool IsJustified => _justification != null;
         internal void Justify(Justification justification) => _justification = justification;
+        internal Justification? Stretch => _justification;
 
         /// <summary>The x, from the line's origin, where Avalonia's natural x ends up on the line as shown.</summary>
         internal double Map(double x) => _justification == null ? x : _justification.Map(x);
@@ -485,35 +486,109 @@ namespace SIL.TextEditing.Avalonia
         public void Draw(DrawingContext context, double top)
         {
             if (_justification == null) { DrawNatural(context, top); return; }
-            // A justified line is Avalonia's line drawn in pieces: each word is the whole line clipped to it and moved to where it now is. A
-            // letter's ink can reach past its advance (the hook of a "j", italics), into the space beside it, so a word's piece takes the half of
-            // the space on its side, unstretched, and the ink stays with its letter. The stretched middle of a space is blank: a justified
-            // paragraph draws its own underlines and strikethrough across the stretched text (see ParagraphLayout.DrawDecorations).
-            const double Far = 100000;
-            var j = _justification;
-            int n = j.Spaces.Count;
-            double previous = -Far;
-            for (int k = 0; k <= n; k++)
+            // A justified line is drawn run by run, each run in pieces: the glyphs between two spaces are one piece, moved to where the stretched text puts it.
+            // Each glyph is drawn once, whatever the number of spaces. The stretched middle of a space is blank: a justified paragraph draws its own
+            // underlines and strikethrough across the stretched text (see ParagraphLayout.DrawDecorations).
+            _pieces ??= MakePieces(_justification);
+            double y = top + TextY;
+            foreach (var piece in _pieces)
             {
-                double guard = k < n ? j.Guard(k) : 0;
-                double end = k < n ? j.Spaces[k].Key + guard : Far;
-                if (end > previous)
-                    DrawPiece(context, top, previous, end, Matrix.CreateTranslation(j.RightAnchor ? -j.Extra * (n - k) : j.Extra * k, 0));
-                if (k == n) break;
-                previous = end;
+                ParagraphLayout.GlyphsDrawn += piece.Count;
+                if (piece.Glyphs == null) { piece.Run!.Draw(context, new Point(piece.X, y + piece.Y)); continue; }
+                using (context.PushTransform(Matrix.CreateTranslation(piece.X, y + piece.Y)))
+                using (context.PushClip(new Rect(piece.Left - piece.X, -2500, piece.Right - piece.Left, 5000)))
+                    context.DrawGlyphRun(piece.Brush, piece.Glyphs);
             }
         }
 
-        void DrawPiece(DrawingContext context, double top, double from, double to, Matrix transform)
+        /// <summary>A part of a justified line drawn on its own: a run of glyphs, or an object, at an x from the control and a y from the line's text top.</summary>
+        sealed class Piece
         {
-            using (context.PushTransform(transform))
-            using (context.PushClip(new Rect(X + from, top + TextY - 50000, to - from, 100000)))
-                DrawNatural(context, top);
+            public GlyphRun? Glyphs;
+            public DrawableTextRun? Run;
+            public IBrush? Brush;
+            public double X, Y, Left, Right;
+            public int Count;
+        }
+
+        List<Piece>? _pieces;
+
+        List<Piece> MakePieces(Justification j)
+        {
+            var pieces = new List<Piece>();
+            foreach (var slot in AllSlots)
+            {
+                double runY = ParagraphLayout.RunTop(Line, slot.Run) - (_offsets?.At(slot.Start) ?? 0);
+                var shaped = slot.Run as ShapedTextRun;
+                var glyphs = shaped?.GlyphRun;
+                if (glyphs == null || glyphs.GlyphInfos.Count == 0)
+                {
+                    double centre = slot.X + slot.Width / 2;
+                    pieces.Add(new Piece { Run = slot.Run, X = X + slot.X + j.Map(centre) - centre, Y = runY, Count = 1 });
+                    continue;
+                }
+                var infos = glyphs.GlyphInfos;
+                double at = slot.X, before = 0, pieceShift = 0, pieceStart = 0;   // where the glyph starts (the line's own x), the run's advance up to it, and the open piece's shift and start
+                int from = 0;
+                for (int g = 0; g <= infos.Count; g++)
+                {
+                    double advance = g < infos.Count ? infos[g].GlyphAdvance : 0;
+                    double shift = g < infos.Count ? j.Map(at + advance / 2) - (at + advance / 2) : 0;
+                    if (g == from && g < infos.Count) pieceShift = shift;
+                    else if (g > from && (g == infos.Count || Math.Abs(shift - pieceShift) > 0.01))
+                    {
+                        var infoPiece = new List<GlyphInfo>(g - from);
+                        // The piece keeps the characters its glyphs stand for, numbered from its own first: a run numbers them from where it began in the paragraph.
+                        int lo = int.MaxValue, hi = 0, first = int.MaxValue;
+                        for (int i = 0; i < infos.Count; i++) first = Math.Min(first, infos[i].GlyphCluster);
+                        for (int i = from; i < g; i++) { lo = Math.Min(lo, infos[i].GlyphCluster); hi = Math.Max(hi, infos[i].GlyphCluster); }
+                        int end = first + glyphs.Characters.Length;
+                        for (int i = 0; i < infos.Count; i++) if (infos[i].GlyphCluster > hi) end = Math.Min(end, infos[i].GlyphCluster);
+                        for (int i = from; i < g; i++) infoPiece.Add(new GlyphInfo(infos[i].GlyphIndex, infos[i].GlyphCluster - lo, infos[i].GlyphAdvance, infos[i].GlyphOffset));
+                        var chars = glyphs.Characters.Slice(lo - first, Math.Max(0, end - lo));
+                        var bounds = PieceBounds(j, pieceShift);
+                        pieces.Add(new Piece
+                        {
+                            Glyphs = new GlyphRun(glyphs.GlyphTypeface, glyphs.FontRenderingEmSize, chars, infoPiece, glyphs.BaselineOrigin, glyphs.BiDiLevel),
+                            Brush = shaped!.Properties?.ForegroundBrush,
+                            X = X + slot.X + pieceStart + pieceShift, Y = runY, Left = bounds.Left, Right = bounds.Right, Count = g - from,
+                        });
+                        from = g;
+                        pieceStart = before;
+                        pieceShift = shift;
+                    }
+                    at += advance;
+                    before += advance;
+                }
+            }
+            return pieces;
+        }
+
+        /// <summary>The x range, from the line's origin, that the words between two spaces are drawn in: from the middle of the space before them to the middle of the
+        /// space after, as stretched. A letter's ink can reach past its advance (the hook of a "j", italics), into the space beside it; it stays with its letter up
+        /// to the middle of the space, which is as far as the space's own width reaches, and is not smeared across the stretched gap.</summary>
+        (double Left, double Right) PieceBounds(Justification j, double shift)
+        {
+            const double Far = 5000;
+            int n = j.Spaces.Count;
+            int k = j.RightAnchor ? n - (int)Math.Round(-shift / j.Extra) : (int)Math.Round(shift / j.Extra);
+            k = Math.Max(0, Math.Min(n, k));
+            double left = k > 0 ? X + (j.Spaces[k - 1].Key + j.Spaces[k - 1].Value) / 2 + shift : -Far;
+            double right = k < n ? X + (j.Spaces[k].Key + j.Spaces[k].Value) / 2 + shift : Far;
+            return (left, right);
+        }
+
+        internal void DisposePieces()
+        {
+            if (_pieces == null) return;
+            foreach (var piece in _pieces) piece.Glyphs?.Dispose();
+            _pieces = null;
         }
 
         void DrawNatural(DrawingContext context, double top)
         {
             double y = top + TextY;
+            foreach (var slot in AllSlots) ParagraphLayout.GlyphsDrawn += (slot.Run as ShapedTextRun)?.GlyphRun.GlyphInfos.Count ?? 1;
             if (!HasOffsets) { Line.Draw(context, new Point(X, y)); return; }
             double x = X + Line.Start;
             foreach (var run in _runs!)
@@ -729,6 +804,12 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>How many times a line's run slots were worked out, for a test that counts the work a layout does.</summary>
         internal static long RunSlotBuilds;
+
+        /// <summary>How many times a line of paragraph text was formatted, for a test that counts the work a layout does (a label, an ellipsis and an empty line are not counted).</summary>
+        internal static long LinesFormatted;
+
+        /// <summary>How many glyphs (and object runs) were handed to the renderer, for a test that counts the work a draw does.</summary>
+        internal static long GlyphsDrawn;
 
         /// <summary>Where each run of a line is drawn and which text it holds, in drawing order. Avalonia's own numbering of a line's runs (the
         /// text run bounds and the character hits) is wrong for a right-to-left paragraph's line with two or more left-to-right runs and a wrapped
@@ -955,6 +1036,7 @@ namespace SIL.TextEditing.Avalonia
                 // The first line starts where PlaceFirstLine put it; the others use the whole text area.
                 double lineWidth = first ? layout._firstWidth : w;
                 double lineX = first ? layout._firstX : layout.ContentLeft;
+                LinesFormatted++;
                 var line = formatter.FormatLine(source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
                 double usedWidth = lineWidth;
@@ -969,6 +1051,7 @@ namespace SIL.TextEditing.Avalonia
                         double room = dots.WidthIncludingTrailingWhitespace;
                         if (w > 3 * room)
                         {
+                            LinesFormatted++;
                             var narrower = formatter.FormatLine(source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
                             if (narrower != null && narrower.Length > 0)
                             {
@@ -1887,7 +1970,7 @@ namespace SIL.TextEditing.Avalonia
             _recoloured?.Dispose();
             _label?.Dispose();
             _ellipsis?.Dispose();
-            foreach (var l in Lines) l.Line.Dispose();
+            foreach (var l in Lines) { l.DisposePieces(); l.Line.Dispose(); }
             Lines.Clear();
         }
     }

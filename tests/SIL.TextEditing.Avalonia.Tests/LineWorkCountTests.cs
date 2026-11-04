@@ -25,5 +25,21 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(pl.Lines.Count > 8);
             Assert.True(built <= pl.Lines.Count, "run slots were worked out " + built + " times for " + pl.Lines.Count + " lines");
         });
+
+        [Theory]
+        [InlineData(0, 0)]
+        [InlineData(0, -40000)]
+        [InlineData(5, -40000)]
+        public void A_list_paragraph_formats_each_line_once_the_first_beside_its_label_too(int align, int firstIndent) => Headless.Run(() =>
+        {
+            var p = Para("en", "en", Text + Text);
+            p.Props.SetInt(TextPropertyNumbers.BulNumScheme, BulletNumbers.Arabic);
+            p.Props.SetInt(TextPropertyNumbers.Align, align);
+            p.Props.SetInt(TextPropertyNumbers.FirstIndent, firstIndent, 1);
+            long before = ParagraphLayout.LinesFormatted;
+            var pl = Fixtures.Field(Doc(p), 260).ParagraphLayoutFor(0);
+            Assert.True(pl.LabelRect.Width > 0);
+            Assert.Equal(pl.Lines.Count, (int)(ParagraphLayout.LinesFormatted - before));
+        });
     }
 }
