@@ -243,11 +243,17 @@ namespace SIL.TextEditing.Avalonia
             _values.Add(offset);
         }
 
+        /// <summary>The offset of the run that holds the index, or 0. The runs are added in text order, so the one that holds it is found by halving.</summary>
         public double At(int index)
         {
-            for (int i = 0; i < _starts.Count; i++)
-                if (index >= _starts[i] && index < _ends[i]) return _values[i];
-            return 0;
+            int lo = 0, hi = _starts.Count;   // the first run that ends after the index
+            while (lo < hi)
+            {
+                ParagraphLayout.RangeProbes++;
+                int mid = (lo + hi) / 2;
+                if (_ends[mid] > index) hi = mid; else lo = mid + 1;
+            }
+            return lo < _starts.Count && index >= _starts[lo] ? _values[lo] : 0;
         }
     }
 
@@ -814,6 +820,9 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>How many times a line's run slots were worked out, for a test that counts the work a layout does.</summary>
         internal static long RunSlotBuilds;
 
+        /// <summary>How many ranges (a run's offset, background, decoration or squiggle) were looked at, for a test that counts the work a layout and a draw do.</summary>
+        internal static long RangeProbes;
+
         /// <summary>How many times a line of paragraph text was formatted, for a test that counts the work a layout does (a label, an ellipsis and an empty line are not counted).</summary>
         internal static long LinesFormatted;
 
@@ -937,7 +946,17 @@ namespace SIL.TextEditing.Avalonia
                 if (t.Length == 0) return;
                 int a = sb.Length;
                 sb.Append(t);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = formats.For(r) });
+                var properties = formats.For(r);
+                int last = source.Segments.Count - 1;
+                if (last >= 0 && !source.Segments[last].IsObject && ReferenceEquals(source.Segments[last].Properties, properties))
+                {
+                    // Runs that format alike (they differ in a property that is not drawn) are one stretch of text to the formatter: shaped and laid out once.
+                    var joined = source.Segments[last];
+                    joined.End = sb.Length;
+                    source.Segments[last] = joined;
+                    return;
+                }
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = properties });
             }
 
             void AddPreedit()
@@ -1152,8 +1171,10 @@ namespace SIL.TextEditing.Avalonia
         {
             if (_backgrounds.Count == 0) return;
             foreach (var li in Lines)
-                foreach (var bg in _backgrounds)
+                for (int i = FirstEndingAfter(_backgrounds, li.Start); i < _backgrounds.Count && _backgrounds[i].Key < li.End; i++)
                 {
+                    var bg = _backgrounds[i];
+                    RangeProbes++;
                     // The spaces a wrapped line ends with hang outside its text and are not painted (the paragraph's last line is all text).
                     int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, li == Lines[Lines.Count - 1] ? TextEnd(li) : TextBeforeTrailingSpaces(li));
                     if (b <= a) continue;
@@ -1238,9 +1259,34 @@ namespace SIL.TextEditing.Avalonia
         /// and its colour), or null when there is none there.</summary>
         internal RunTextProperties? DecorationAt(int effective)
         {
-            foreach (var d in _decorations)
-                if (effective >= d.Start && effective < d.End) return d.Properties;
+            for (int i = FirstDecorationEndingAfter(effective); i < _decorations.Count && _decorations[i].Start <= effective; i++)
+                if (effective >= _decorations[i].Start && effective < _decorations[i].End) return _decorations[i].Properties;
             return null;
+        }
+
+        int FirstDecorationEndingAfter(int offset)
+        {
+            int lo = 0, hi = _decorations.Count;
+            while (lo < hi)
+            {
+                RangeProbes++;
+                int mid = (lo + hi) / 2;
+                if (_decorations[mid].End > offset) hi = mid; else lo = mid + 1;
+            }
+            return lo;
+        }
+
+        /// <summary>The index of the first range of the list (in text order, not overlapping) that ends after the offset, or the count when none does.</summary>
+        static int FirstEndingAfter(List<KeyValuePair<int, KeyValuePair<int, IBrush>>> ranges, int offset)
+        {
+            int lo = 0, hi = ranges.Count;
+            while (lo < hi)
+            {
+                RangeProbes++;
+                int mid = (lo + hi) / 2;
+                if (ranges[mid].Value.Key > offset) hi = mid; else lo = mid + 1;
+            }
+            return lo;
         }
 
         /// <summary>Where a run's baseline is from the top of its line: the line's, unless the run is a superscript (top aligned) or subscript (bottom
@@ -1267,8 +1313,10 @@ namespace SIL.TextEditing.Avalonia
                 var li = Lines[i];
                 if (li.IsEmpty) continue;
                 int end = i == Lines.Count - 1 ? TextEnd(li) : TextBeforeTrailingSpaces(li);
-                foreach (var decoration in _decorations)
+                for (int d = FirstDecorationEndingAfter(li.Start); d < _decorations.Count && _decorations[d].Start < li.End; d++)
                 {
+                    var decoration = _decorations[d];
+                    RangeProbes++;
                     int a = Math.Max(decoration.Start, li.Start), b = Math.Min(decoration.End, end);
                     if (b <= a) continue;
                     // Boxes that touch are one line, so a pattern runs on across them.
@@ -1305,11 +1353,10 @@ namespace SIL.TextEditing.Avalonia
         public void DrawSquiggles(DrawingContext context, double top)
         {
             if (_squiggles.Count == 0 && _spelling.Count == 0) return;
-            var all = _spelling.Count == 0 ? _squiggles : _squiggles.Concat(_spelling).ToList();
             foreach (var li in Lines)
             {
                 if (li.IsEmpty) continue;
-                foreach (var sq in all)
+                foreach (var sq in RangesOn(li))
                 {
                     int a = Math.Max(sq.Key, li.Start), b = Math.Min(sq.Value.Key, TextEnd(li));
                     if (b <= a) continue;
@@ -1346,16 +1393,37 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Sets the spelling marks drawn under the text, in model offsets: red for a misspelled or embedded word, blue for a word the
         /// dictionary cannot judge. Replaces the earlier marks; null or empty clears them. A mark that an input method's text sits inside is
         /// not drawn, and no mark is drawn under the composing text.</summary>
+        /// <summary>The squiggles and spelling marks that touch a line: the lists are in text order and do not overlap, so they are searched by halving (a list
+        /// that is not, because a host's marks overlap, is read whole).</summary>
+        IEnumerable<KeyValuePair<int, KeyValuePair<int, IBrush>>> RangesOn(LineInfo li)
+        {
+            foreach (var list in new[] { _squiggles, _spelling })
+            {
+                bool ordered = ReferenceEquals(list, _squiggles) || _spellingOrdered;
+                for (int i = ordered ? FirstEndingAfter(list, li.Start) : 0; i < list.Count; i++)
+                {
+                    if (ordered && list[i].Key >= li.End) break;
+                    RangeProbes++;
+                    yield return list[i];
+                }
+            }
+        }
+
+        bool _spellingOrdered = true;
+
         internal void SetSpellingMarks(IReadOnlyList<SpellingMark>? marks)
         {
             _spelling.Clear();
+            _spellingOrdered = true;
             if (marks == null) return;
             foreach (var m in marks)
             {
                 if (PreeditAt >= 0 && m.Start < PreeditAt && m.End > PreeditAt) continue;
                 // A mark that starts where the composing text is inserted starts after it; one that ends there ends before it.
                 int start = PreeditAt >= 0 && m.Start >= PreeditAt ? m.Start + PreeditLength : m.Start;
-                _spelling.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(start, new KeyValuePair<int, IBrush>(ToEffective(m.End), m.Problem == SpellingProblem.Mixed ? Brushes.Blue : Brushes.Red)));
+                var mark = new KeyValuePair<int, KeyValuePair<int, IBrush>>(start, new KeyValuePair<int, IBrush>(ToEffective(m.End), m.Problem == SpellingProblem.Mixed ? Brushes.Blue : Brushes.Red));
+                if (_spelling.Count > 0 && (mark.Key < _spelling[_spelling.Count - 1].Key || mark.Value.Key < _spelling[_spelling.Count - 1].Value.Key)) _spellingOrdered = false;
+                _spelling.Add(mark);
             }
         }
 
