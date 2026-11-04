@@ -120,7 +120,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             var isOn = SystemColours.Probe;
             var get = SystemColours.Get;
             SystemColours.Probe = () => true;
-            SystemColours.Get = kind => kind == SystemColour.WindowText ? Color.Parse("#FFFF00") : kind == SystemColour.Window ? Color.Parse("#000000") : Color.Parse("#1AEBFF");
+            SystemColours.Get = kind => kind == SystemColour.WindowText ? Color.Parse("#FFFF00") : kind == SystemColour.Window ? Color.Parse("#000000") : kind == SystemColour.Highlight ? Color.Parse("#1AEBFF") : Color.Parse("#000000");
             try { body(); }
             finally { SystemColours.Probe = isOn; SystemColours.Get = get; }
         }

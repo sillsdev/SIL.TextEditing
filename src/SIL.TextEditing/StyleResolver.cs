@@ -18,6 +18,9 @@ namespace SIL.TextEditing
     /// <summary>The character formatting of one run after styles and the run's own properties are applied.</summary>
     public sealed class CharFormat
     {
+        /// <summary>The size of superscript and subscript text against its line: two thirds. Provenance: this is the value FieldWorks falls back to when a
+        /// font gives no superscript or subscript size; FieldWorks first reads the size (and the raise or drop) from the font's own OS/2 table, which the field
+        /// does not do yet, so a font that has them draws larger or smaller there. Observed behaviour; the code is ours.</summary>
         public const double DefaultSuperscriptScale = 2.0 / 3.0;
 
         /// <summary>CSS-style weight 100 to 900; 400 is normal and 700 bold.</summary>
@@ -45,6 +48,14 @@ namespace SIL.TextEditing
         public bool Bold => Weight >= 550;
 
         internal CharFormat Copy() => (CharFormat)MemberwiseClone();
+
+        /// <summary>True when the other format has every value this one has, so the two draw alike.</summary>
+        public bool SameAs(CharFormat? o) => o != null && Weight == o.Weight && Italic == o.Italic && Superscript == o.Superscript && Underline == o.Underline
+            && UnderColor == o.UnderColor && SizePt == o.SizePt && OffsetPt == o.OffsetPt && ForeColor == o.ForeColor && BackColor == o.BackColor
+            && FontFamily == o.FontFamily && FontFeatures == o.FontFeatures;
+
+        /// <summary>A hash that agrees with <see cref="SameAs"/>.</summary>
+        public int SameHash() => ((((Weight * 31 + (Italic ? 1 : 0)) * 31 + Superscript) * 31 + Underline) * 31 + SizePt.GetHashCode()) * 31 + (ForeColor ?? -1) + 7 * (BackColor ?? -1) + 13 * (UnderColor ?? -1) + 17 * (FontFamily?.GetHashCode() ?? 0) + 19 * OffsetPt.GetHashCode() + 23 * (FontFeatures?.GetHashCode() ?? 0);
 
         /// <summary>Applies a bag's character properties over this format (a number font over the paragraph's, say).</summary>
         public void ApplyOver(PropertyBag bag) => Apply(bag);
@@ -122,6 +133,10 @@ namespace SIL.TextEditing
         }
 
         // Named sizes, in 1/1000 point: xx-small to xx-large; then "smaller" and "larger" step through the same table.
+        // Provenance: FieldWorks' named font size values are 5, 7, 9, 12, 14, 18 and 24 pt (enumeration numbers 0 to 6, then smaller 7 and larger 8), a
+        // persisted compatibility table like a property number. "Smaller" is the largest named size below the current size, else two thirds of it. "Larger" is
+        // meant to be the smallest named size above the current one, else half as much again, as FieldWorks' own comment says; its loop counts the wrong way
+        // and reads past its table for sizes under 18 pt, so what it gives there is undefined and the field follows the comment, not the loop.
         static readonly int[] NamedSizes = { 5000, 7000, 9000, 12000, 14000, 18000, 24000 };
 
         void ApplySize(int v, int variation)
@@ -204,6 +219,8 @@ namespace SIL.TextEditing
                     case TextPropertyNumbers.LineHeight:
                         if (var == TextPropertyNumbers.VariationRelative)
                         {
+                            // Provenance: a relative line height (a share of 10000) is that share of 1.4 times the font size of the paragraph's base writing
+                            // system, as FieldWorks works it out: it has no font metrics there and takes the height a line needs as 40 % more than the size.
                             LineHeight = baseSizePt * 1.4 * v / 10000.0;
                             ExactLineHeight = false;
                         }
@@ -240,6 +257,49 @@ namespace SIL.TextEditing
     /// </summary>
     public static class FormatResolver
     {
+        /// <summary>Resolves the character formats of one paragraph's runs, asking the host's styles once for each (style name, writing system) and applying
+        /// the paragraph's layers once for each writing system, however many runs there are. It gives what <see cref="ResolveChar"/> gives. Made for one
+        /// layout of the paragraph: it never sees a change to the styles or the paragraph.</summary>
+        public sealed class CharFormats
+        {
+            readonly Paragraph _paragraph;
+            readonly IStyleResolver? _styles;
+            readonly Dictionary<(string, string), PropertyBag?> _bags = new Dictionary<(string, string), PropertyBag?>();
+            readonly Dictionary<(string, double), CharFormat> _layers = new Dictionary<(string, double), CharFormat>();
+
+            public CharFormats(Paragraph paragraph, IStyleResolver? styles)
+            {
+                _paragraph = paragraph;
+                _styles = styles;
+            }
+
+            /// <summary>How many times the host's styles were asked for a style.</summary>
+            public int StyleLookups { get; private set; }
+
+            PropertyBag? Lookup(string style, string ws)
+            {
+                if (_bags.TryGetValue((style, ws), out var bag)) return bag;
+                StyleLookups++;
+                return _bags[(style, ws)] = _styles!.Resolve(style, ws);
+            }
+
+            public CharFormat Resolve(Run run, double baseSizePt)
+            {
+                if (!_layers.TryGetValue((run.Ws, baseSizePt), out var layer))
+                {
+                    layer = new CharFormat { SizePt = baseSizePt };
+                    var paraStyle = StyleName(_paragraph);
+                    if (_styles != null && paraStyle.Length > 0 && Lookup(paraStyle, run.Ws) is PropertyBag bag) layer.Apply(bag);
+                    layer.Apply(_paragraph.Props);
+                    _layers[(run.Ws, baseSizePt)] = layer;
+                }
+                var f = layer.Copy();
+                if (run.Props.TryGetStr(TextPropertyNumbers.NamedStyle, out var charStyle) && charStyle.Length > 0 && _styles != null && Lookup(charStyle, run.Ws) is PropertyBag cbag) f.Apply(cbag);
+                f.Apply(run.Props);
+                return f;
+            }
+        }
+
         public static CharFormat ResolveChar(Paragraph paragraph, Run run, IStyleResolver? styles, double baseSizePt)
         {
             var f = new CharFormat { SizePt = baseSizePt };

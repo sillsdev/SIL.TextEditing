@@ -422,6 +422,7 @@ namespace SIL.TextEditing.Avalonia
             if (_layouts.Count == 0) return;
             Editor.Ordered(out var a, out var b);
             var selectionBrush = Editor.HasSelection ? ResolveSelectionBrush() : null;
+            var selectedText = Editor.HasSelection ? SelectedTextColour() : null;
             double y = 0;
             var clip = new Rect(Bounds.Size);
             for (int i = 0; i < _layouts.Count; i++)
@@ -430,6 +431,7 @@ namespace SIL.TextEditing.Avalonia
                 DropStaleSpelling(i, pl);
                 if (y + pl.Height >= 0 && y <= clip.Bottom + 1)
                 {
+                    List<Rect>? selection = null;
                     pl.DrawBox(context, y);
                     pl.DrawBackgrounds(context, y);
                     DrawFindHighlights(context, pl, i, y);
@@ -437,11 +439,27 @@ namespace SIL.TextEditing.Avalonia
                     {
                         int s = i == a.Paragraph ? a.Offset : 0;
                         int e = i == b.Paragraph ? b.Offset : pl.Paragraph.Length;
-                        foreach (var r in pl.SelectionRects(s, e))
+                        selection = pl.SelectionRects(s, e);
+                        foreach (var r in selection)
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
                     foreach (var li in pl.Lines) if (!li.IsEmpty) li.Draw(context, y);
                     pl.DrawDecorations(context, y);
+                    if (selectedText != null && selection != null && pl.InColour(selectedText.Value) is ParagraphLayout recoloured)
+                    {
+                        // In a high contrast theme the selected text has a colour of its own: the selection's fill is laid again over the text drawn in its
+                        // own colours, and the same text in the selection's colour goes on that.
+                        foreach (var r in selection)
+                        {
+                            var box = new Rect(r.X, r.Y + y, r.Width, r.Height);
+                            context.DrawRectangle(selectionBrush, null, box);
+                            using (context.PushClip(box))
+                            {
+                                foreach (var li in recoloured.Lines) if (!li.IsEmpty) li.Draw(context, y);
+                                recoloured.DrawDecorations(context, y);
+                            }
+                        }
+                    }
                     pl.DrawSquiggles(context, y);
                     pl.DrawLabel(context, y);
                     pl.DrawEllipsis(context, y);
@@ -1107,6 +1125,9 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The selection fill: in a high contrast theme the system highlight colour, else the theme or system highlight resource, else light sky blue.</summary>
         public IBrush ResolveSelectionBrush() => SystemBrush(SystemColour.Highlight) ??
             ThemeBrush(Brushes.LightSkyBlue, "TextControlSelectionHighlightColor", "SystemControlHighlightAccentBrush", "SystemColorHighlightColor");
+
+        /// <summary>The colour of selected text in a high contrast theme (the system's highlight text colour), or null when the theme decides: the text keeps its own.</summary>
+        Color? SelectedTextColour() => SystemColours.IsHighContrast() ? SystemColours.Get(SystemColour.HighlightText) : null;
 
         /// <summary>The caret fill and default text colour: in a high contrast theme the system window text colour, else the theme or system text-colour resource, else black.</summary>
         public IBrush ResolveCaretBrush() => SystemBrush(SystemColour.WindowText) ??
