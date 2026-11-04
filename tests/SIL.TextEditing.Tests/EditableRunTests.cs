@@ -254,6 +254,22 @@ namespace SIL.TextEditing.Tests
             Assert.Equal(new TextPosition(1, 4), back);                   // the end of the first place in the paragraph
         }
 
+
+        [Fact]
+        public void A_read_only_run_of_one_character_still_splits_the_editable_places_around_it()
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(new Run { Ws = "en", Text = "ab" });
+            p.Runs.Add(Marked("L", TextPropertyNumbers.EditableNo));      // offsets 2 and 3 are adjacent, but the character between them is not editable
+            p.Runs.Add(new Run { Ws = "en", Text = "cd" });
+            var e = new DocumentEditor(Doc(Para("en"), p));
+            e.SetCaret(new TextPosition(0, 0));
+            var starts = new List<TextPosition>();
+            while (e.TryGetEditablePlace(EditablePlace.Next, out var next)) { starts.Add(next); e.SetCaret(next); }
+            Assert.Equal(new[] { new TextPosition(1, 0), new TextPosition(1, 3) }, starts);
+            Assert.True(e.TryGetEditablePlace(EditablePlace.Previous, out var back));
+            Assert.Equal(new TextPosition(1, 2), back);                   // the end of the first place
+        }
         [Fact]
         public void Each_paragraph_is_an_editable_place_and_a_read_only_field_has_none()
         {
