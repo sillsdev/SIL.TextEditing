@@ -52,9 +52,27 @@ namespace SIL.TextEditing.Avalonia.Tests
             new Case(false, 5, 138, R("ar", true, "fox ét fox"), R("en", false, " l هذه "), R("en", false, "  (جمل) هذه   فقرة jumps (جمل) "), R("ar", false, "dog fox (جمل) 12 it ét dog فقرة   fox dog 12 "))
         };
 
+        internal static readonly Case[] HangingCases = new[]
+        {
+            new Case(false, 5, 168, R("en", false, "(ج"), R("en", false, "مل) dog   12 فقرة  "), R("en", false, " فقرة   jumps fox فقرة طويلة 12   i jumps هذه فقرة dog   فقرة   ")),
+            new Case(true, 1, 389, R("ar", false, "فقرة it فقرة (جمل) fox   ét (جمل)   طويلة   dog dog Wonderful dog (جمل) it Wonderful ét Wonderful i طويلة ét ill 12   ill dog فقرة"), R("en", false, " فقرة "), R("en", true, "jumps (جمل) l  "), R("en", true, " jumps   dog ")),
+            new Case(true, 5, 301, R("ar", true, "Wonderful ét Wonderful   Wonderful "), R("en", false, "  jumps (جمل) Wonderful "), R("en", false, "فقرة i   طويلة طويلة   fox   12 fox طويلة   l it   it   dog ill Wonderful   fox   ill jumps fox Wonderful   dog ill fox   12 i هذه ")),
+            new Case(true, 5, 107, R("ar", false, "fox   ط"), R("ar", true, "ويلة jumps هذه   it   ét l l هذه (جمل) i ét فقرة i jumps l طويلة i طو"), R("en", false, "يلة   fox jumps هذه   هذه l   هذه   (جمل)   dog jumps i i  "), R("en", false, " Wonderful dog ")),
+            new Case(true, 5, 152, R("en", false, "ét dog "), R("en", false, "  "), R("ar", false, "فقرة   Wonderful dog 12 it  "), R("en", false, " i طويلة it   dog   طويلة ill   "))
+        };
+
+        internal static readonly Case[] BeyondCases = new[]
+        {
+            new Case(false, 1, 102, R("en", false, "(جمل) fox ill fox   fox ill jumps ét   Wonderful طويلة فقرة jumps i طويلة هذه (جمل) l l هذه 12   طوي"), R("en", true, "لة dog il"), R("en", true, "l   fox Wonderful "))
+        };
+
         /// <summary>The numbers of the cases in <paramref name="cases"/>, for a theory (a case itself is not something xunit can carry).</summary>
         public static IEnumerable<object[]> Numbers(Case[] cases) => Enumerable.Range(0, cases.Length).Select(i => new object[] { i });
 
         public static IEnumerable<object[]> EdgeNumbers() => Numbers(EdgeCases);
+
+        public static IEnumerable<object[]> HangingNumbers() => Numbers(HangingCases);
+
+        public static IEnumerable<object[]> BeyondNumbers() => Numbers(BeyondCases);
     }
 }

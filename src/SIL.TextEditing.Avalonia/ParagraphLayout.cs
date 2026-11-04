@@ -454,8 +454,8 @@ namespace SIL.TextEditing.Avalonia
         }
         readonly OffsetMap? _offsets;
         readonly List<RunSlot>? _slots;
-        /// <summary>The carets of the line's text that the control holds away from where the layout has them (<see cref="ParagraphLayout.HitTestDetailed"/>); null until asked for.</summary>
-        internal List<ParagraphLayout.Stop>? HeldStops;
+        /// <summary>The caret stops a click can be moved to when the control draws carets away from where the layout has them (<see cref="ParagraphLayout.HitTestDetailed"/>); null until asked for.</summary>
+        internal List<ParagraphLayout.Stop>? DisplacedStops;
         Justification? _justification;
 
         /// <summary>True when the line is stretched to the edges of the text area (a justified paragraph's line that is not its last).</summary>
@@ -1582,11 +1582,7 @@ namespace SIL.TextEditing.Avalonia
                 }
             }
             if (!last && e == max && max > li.Start) caretHit = TrailingHit(max);
-            if (e <= max && PreeditAt < 0)
-            {
-                HangingCaretAt(li, point.X, last, max, h.FirstCharacterIndex, ref e, ref caretHit);
-                HeldCaretAt(li, point.X, ref e, ref caretHit);
-            }
+            if (e <= max && PreeditAt < 0) DisplacedCaretAt(li, point.X, last, max, ref e, ref caretHit);
             int ch = Math.Max(0, Math.Min(Math.Max(0, EffectiveText.Length - 1), h.FirstCharacterIndex));
             var result = new HitResult
             {
@@ -1597,44 +1593,28 @@ namespace SIL.TextEditing.Avalonia
             return result;
         }
 
-        /// <summary>The carets of the spaces a line ends with are drawn where <see cref="CaretX"/> puts them, which is not where the line's layout has
-        /// them when the control holds them inside its edge: so a click in or beside those spaces goes to the caret nearest to it as drawn, not to the
-        /// character the layout has under it.</summary>
-        void HangingCaretAt(LineInfo li, double x, bool last, int max, int character, ref int e, ref CharacterHit caretHit)
+        /// <summary>Puts a click where the carets are drawn. A click beyond the End caret of a wrapped line (past the spaces it ends with, by more than a hundredth of a pixel, on the side
+        /// they hang to: at the End caret itself the nearest caret decides) gives the End caret, whatever the layout says for an x past its text. Then, the carets that <see cref="CaretX"/> draws somewhere
+        /// other than the layout has them (held at the edge of the control, or spaced apart inside it, over the letters before the spaces) are what the
+        /// mouse follows: the click goes to the nearest of them when it is nearer than the caret the layout gave, and a tie stays with the layout.</summary>
+        void DisplacedCaretAt(LineInfo li, double x, bool last, int max, ref int e, ref CharacterHit caretHit)
         {
-            int core = max;
-            while (core > li.Start && EffectiveText[core - 1] == ' ') core--;
-            if (core == max || character < core) return;
-            // Only for a click on one of the spaces (the character under it is among them): one on the text before them is on the text, though a
-            // caret held inside the control may be drawn over it.
-            bool moved = false;
-            for (int o = core + 1; o <= max && !moved; o++)
+            int core = TextBeforeTrailingSpaces(li);
+            if (!last && core < max && core > li.Start)
             {
-                var hit = o == max && !last ? TrailingHit(max) : new CharacterHit(o - 1, 1);
-                moved = Math.Abs(CaretX(li, hit) - CaretXBeforeClamp(li, hit)) > 0.01;
+                var endHit = TrailingHit(max);
+                double endX = CaretX(li, endHit);
+                if (Rtl ? x < endX - 0.01 : x > endX + 0.01)
+                {
+                    e = max;
+                    caretHit = endHit;
+                    return;
+                }
             }
-            if (!moved) return;
-            double best = Math.Abs(CaretX(li, caretHit) - x);   // the layout's own answer stands unless a caret as drawn is nearer
-            for (int o = core; o <= max; o++)
-            {
-                var hit = o == core ? new CharacterHit(core) : o == max && !last ? TrailingHit(max) : new CharacterHit(o - 1, 1);
-                double away = Math.Abs(CaretX(li, hit) - x);
-                if (away >= best) continue;
-                best = away;
-                e = o;
-                caretHit = hit;
-            }
-        }
-
-        /// <summary>A caret of the line's text that the control holds at its edge (text reaching past it, as a justified or right-aligned line's does) is
-        /// drawn at the edge, not where the layout has it, so a click at it goes to it when it is nearer than the caret the layout gave: the layout's own
-        /// answer for that x can be the letter beside it.</summary>
-        void HeldCaretAt(LineInfo li, double x, ref int e, ref CharacterHit caretHit)
-        {
-            var held = li.HeldStops ??= HeldStopsOf(li);
-            if (held.Count == 0) return;
+            var near = li.DisplacedStops ??= DisplacedStopsOf(li, core);
+            if (near.Count == 0) return;
             double best = Math.Abs(CaretX(li, caretHit) - x);
-            foreach (var stop in held)
+            foreach (var stop in near)
             {
                 double away = Math.Abs(stop.X - x);
                 if (away >= best) continue;
@@ -1644,14 +1624,16 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
-        /// <summary>The caret stops among a line's text (not the spaces it ends with) that are drawn somewhere other than the layout has them.</summary>
-        List<Stop> HeldStopsOf(LineInfo li)
+        /// <summary>The caret stops a click can go to instead of the layout's own answer: those drawn somewhere other than the layout has them and, when
+        /// there are any, every stop of the spaces the line ends with (their carets are drawn as a row, and the layout has no place for a click among them).</summary>
+        List<Stop> DisplacedStopsOf(LineInfo li, int core)
         {
             var result = new List<Stop>();
             if (li.IsEmpty || double.IsInfinity(LayoutWidth)) return result;
-            int core = TextBeforeTrailingSpaces(li);
-            foreach (var stop in VisualStops(li))
-                if (stop.Offset <= core && Math.Abs(CaretXBeforeClamp(li, stop.Hit) - stop.X) > 0.01) result.Add(stop);
+            var stops = VisualStops(li);
+            if (!stops.Any(stop => Math.Abs(CaretXBeforeClamp(li, stop.Hit) - stop.X) > 0.01)) return result;
+            foreach (var stop in stops)
+                if (stop.Offset >= core || Math.Abs(CaretXBeforeClamp(li, stop.Hit) - stop.X) > 0.01) result.Add(stop);
             return result;
         }
 

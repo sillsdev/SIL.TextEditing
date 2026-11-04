@@ -180,6 +180,14 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   visible line of a cut-off paragraph ends with "..." in the paragraph style's character format, on the trailing side of the text
   (left of it in a right-to-left paragraph), with room kept for it when the text area is wide enough for one beside text; the
   caret and hit testing stay on the text, and a hard line break that ends the paragraph is not cut-off text.
+- **Spaces a wrapped line ends with**: they hang past the line's text, outside the alignment (a line is aligned by its text), and the
+  caret across them moves one space width per space, as in FieldWorks, even past the text area. The control draws nothing outside itself, so
+  a caret that would be there is held at the control's edge (the End caret at the edge, the carets of the spaces before it 2 px apart inside
+  it). When the text itself reaches the edge (a justified line, a right-aligned one, a line that just fits) there is no room for those
+  carets to show apart: they crowd on the text's last letters. A host that wants each caret seen gives the text area room on the side the
+  spaces hang to, with the paragraph's trailing indent (property 20: the side lines end on, in either direction) of a few spaces' width; a margin around the control does not help, as
+  the field cannot draw there. The mouse follows the carets as they are drawn: a click at one gives it, and a click beyond the End caret
+  gives the End caret.
 - **Graphemes**: `GraphemeClusters` is `StringInfo` plus Indic conjuncts (GB9c, six scripts; .NET 10 lacks it). The
   netstandard2.0 build also fuses Extend, SpacingMark, emoji ZWJ sequences and flags per UAX #29, with approximated
   property tables; caret stops in the field come from the shaper, except on a right-to-left paragraph's line of several runs
