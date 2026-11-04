@@ -551,7 +551,7 @@ namespace SIL.TextEditing.Markdown.Reader
         {
             ReportAlignments(table);
             int headerCells = -1;
-            int rowNumber = 0;
+            int rowNumber = 0; // the header is row 1, the delimiter row is not counted
             foreach (var child in table)
             {
                 if (!(child is TableRow row)) continue;
@@ -578,7 +578,8 @@ namespace SIL.TextEditing.Markdown.Reader
                 if (isHeader) headerCells = cellRuns.Count;
                 else if (headerCells >= 0 && cellRuns.Count != headerCells)
                     _context.Report(MarkdownDiagnosticIds.TableRagged, MarkdownSeverity.Error,
-                        "Row " + rowNumber + " has " + cellRuns.Count + " cells, the header has " + headerCells + ". Add an empty cell or remove one.", row.Span.Start, row.Span.End + 1);
+                        "Row " + rowNumber + " has " + cellRuns.Count + (cellRuns.Count == 1 ? " cell" : " cells") + ", the header has " + headerCells + ". Add an empty cell or remove one.",
+                        row.Span.Start, row.Span.End + 1);
                 var joined = new List<Run>();
                 for (int c = 0; c < cellRuns.Count; c++)
                 {

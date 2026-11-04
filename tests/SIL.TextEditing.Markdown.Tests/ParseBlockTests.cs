@@ -105,6 +105,19 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ARowWithTooManyCellsIsReported()
             => Assert.Contains("gdr.table.ragged", Ids("| A | B |\n| --- | --- |\n| 1 | 2 | 3 |"));
 
+        // Rows count from the header, which is row 1; the delimiter row is not counted. The finding carries the row's line as well.
+        [Theory]
+        [InlineData("| A | B | C |\n| --- | --- | --- |\n| 1 | 2 |", "Row 2 has 2 cells, the header has 3. Add an empty cell or remove one.", 3)]
+        [InlineData("| A | B | C |\n| --- | --- | --- |\n| 1 |", "Row 2 has 1 cell, the header has 3. Add an empty cell or remove one.", 3)]
+        [InlineData("| A | B |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 | 3 |", "Row 3 has 3 cells, the header has 2. Add an empty cell or remove one.", 4)]
+        [InlineData("| A |\n| --- |\n| 1 | 2 |", "Row 2 has 2 cells, the header has 1. Add an empty cell or remove one.", 3)]
+        public void ARaggedRowSaysHowManyCellsItHasWithTheHeaderAsRowOne(string markdown, string message, int line)
+        {
+            var d = Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics, x => x.Id == "gdr.table.ragged");
+            Assert.Equal(message, d.Message);
+            Assert.Equal(line, d.Line);
+        }
+
         [Fact]
         public void AnAlignmentColonIsReportedNotDropped()
         {
