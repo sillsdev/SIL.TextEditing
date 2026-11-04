@@ -989,19 +989,28 @@ namespace SIL.TextEditing.Avalonia
         /// </summary>
         public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null, double previousSpaceAfter = 0, IBrush? forceText = null)
         {
-            // Avalonia's formatter throws for some sequences of format characters it cannot split a line inside (11.3: "Cannot split: requested length N
-            // consumes entire run", for a zero width joiner after a space before Arabic text). Typed text must not crash the layout, so a paragraph the
-            // formatter refuses is laid out again with the offending characters swapped, one for one, for ones that are drawn the same and break
-            // nowhere (the model and every offset are untouched), and failing that with every format character swapped.
+            // Avalonia's formatter throws for some sequences it cannot split a line inside (11.3: "Cannot split: requested length N consumes entire run", for a
+            // zero width joiner after a space before Arabic text, and for a space followed by a combining mark or a variation selector in a paragraph with Arabic or
+            // Hebrew in it). Typed text must not crash the layout, so a paragraph the formatter refuses is laid out again with the offending characters swapped,
+            // one for one, for ones that are drawn the same and break nowhere (the model and every offset are untouched), and each time with more of them, down
+            // to every format character and mark. If even that is refused, the formatter's own exception is the one thrown.
+            Exception? first = null;
             for (int swap = 0; ; swap++)
             {
                 try { return BuildWith(swap, paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, forceText); }
-                catch (FormatterRefused) when (swap < FormatSwaps - 1) { }
+                catch (FormatterRefused e)
+                {
+                    first ??= e.InnerException;
+                    if (swap < FormatSwaps - 1) continue;
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(first!).Throw();
+                    throw;
+                }
             }
         }
 
-        /// <summary>How many layouts of a paragraph are tried: as it is, with the joiners swapped, with every format character swapped.</summary>
-        const int FormatSwaps = 3;
+        /// <summary>How many layouts of a paragraph are tried: as it is, with the zero width joiners swapped, with the other format characters and the marks after
+        /// a space swapped too, with every format character and mark swapped.</summary>
+        const int FormatSwaps = 4;
 
         /// <summary>The formatter refused a line (<see cref="InvalidOperationException"/> from Avalonia's text formatter).</summary>
         sealed class FormatterRefused : Exception
@@ -1054,21 +1063,47 @@ namespace SIL.TextEditing.Avalonia
             catch (InvalidOperationException e) { throw new FormatterRefused(e); }
         }
 
-        /// <summary>The text the formatter is given: at swap 1 every zero width joiner is a word joiner, at swap 2 every zero width joiner and non-joiner and
-        /// every bidirectional format character is. Same length, so every offset stays.</summary>
-        static string SwapFormatCharacters(string text, int swap)
+        /// <summary>The text the formatter is given, with characters swapped for a word joiner (U+2060) each, so every offset stays: at swap 1 every zero width
+        /// joiner; at swap 2 also every zero width non-joiner and bidirectional format character and every mark (non-spacing, enclosing, variation selector) that
+        /// follows a space or another swapped character; at swap 3 every format character and mark.</summary>
+        internal static string SwapFormatCharacters(string text, int swap)
         {
             if (swap == 0) return text;
             char[]? chars = null;
+            bool afterSpace = false;
             for (int i = 0; i < text.Length; i++)
             {
                 char c = text[i];
-                bool hit = c == '‍' || (swap >= 2 && (c == '‌' || (c >= '‎' && c <= '‏') || (c >= '‪' && c <= '‮') || (c >= '⁦' && c <= '⁩') || c == '؜'));
-                if (!hit) continue;
-                if (chars == null) chars = text.ToCharArray();
-                chars[i] = '⁠';
+                bool hit = c == '\u200D';
+                if (!hit && swap >= 2)
+                    hit = c == '\u200C' || (c >= '\u200E' && c <= '\u200F') || (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || c == '\u061C'
+                        || ((afterSpace || swap >= 3) && IsMark(text, i));
+                if (hit)
+                {
+                    if (chars == null) chars = text.ToCharArray();
+                    chars[i] = '\u2060';
+                    afterSpace = true;   // what follows a swapped character is treated as what follows a space: a run of marks goes together
+                }
+                else afterSpace = c == ' ' || (afterSpace && char.IsLowSurrogate(c));
             }
             return chars == null ? text : new string(chars);
+        }
+
+        /// <summary>Whether the UTF-16 unit at <paramref name="i"/> is (half of) a non-spacing or enclosing mark or a variation selector, or any other format character.</summary>
+        static bool IsMark(string text, int i)
+        {
+            char c = text[i];
+            if (char.IsSurrogate(c))
+            {
+                int start = char.IsHighSurrogate(c) ? i : i - 1;
+                if (start < 0 || start + 1 >= text.Length || !char.IsHighSurrogate(text[start]) || !char.IsLowSurrogate(text[start + 1])) return false;
+                int cp = char.ConvertToUtf32(text[start], text[start + 1]);
+                if (cp >= 0xE0000 && cp <= 0xE0FFF) return true;   // tags and the variation selectors supplement
+                var pair = CharUnicodeInfo.GetUnicodeCategory(text, start);
+                return pair == UnicodeCategory.NonSpacingMark || pair == UnicodeCategory.EnclosingMark || pair == UnicodeCategory.Format;
+            }
+            var category = CharUnicodeInfo.GetUnicodeCategory(c);
+            return category == UnicodeCategory.NonSpacingMark || category == UnicodeCategory.EnclosingMark || category == UnicodeCategory.Format || (c >= '\uFE00' && c <= '\uFE0F') || c == '\u034F';
         }
 
         static ParagraphLayout BuildWith(int swap, Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph, int preeditAt, string? preedit, Run? preeditTemplate, IStyleResolver? styles, string? label, double previousSpaceAfter, IBrush? forceText)

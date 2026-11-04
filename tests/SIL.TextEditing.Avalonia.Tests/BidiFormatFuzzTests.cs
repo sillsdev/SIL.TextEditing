@@ -11,14 +11,15 @@ namespace SIL.TextEditing.Avalonia.Tests
     /// hit testing and drawing must not throw (issues 106 and 112). The default size is small; set TE_FUZZ_PARAGRAPHS to run it as long as you like.</summary>
     public class BidiFormatFuzzTests
     {
-        static readonly string[] Words = { "alpha", "fox", "Wonderful", "ill", "12", "ét", "هذه", "فقرة", "عربية", "طويلة", "(جمل)", "گچپژ", "é" };
+        static readonly string[] Words = { "alpha", "fox", "Wonderful", "ill", "12", "ét", "هذه", "فقرة", "عربية", "طويلة", "(جمل)", "گچپژ", "é", "שלום", "א" };
         static readonly string[] Spaces = { " ", "   ", " ", " " };
         static readonly string[] Formats =
         {
             "‏", "‎", "؜", "‪", "‫", "‬", "‭", "‮", "⁦", "⁧", "⁨", "⁩",
-            "‍", "‌", "​", "⁠", "﻿"
+            "‍", "‌", "​", "⁠", "﻿",
+            "̀", "́", "͏", "️", "︀", char.ConvertFromUtf32(0xE0100), "⃝", "ְ"
         };
-        static readonly string[] Wss = { "en", "ar", "fr" };
+        static readonly string[] Wss = { "en", "ar", "fr", "he" };
 
         static int Count()
         {
