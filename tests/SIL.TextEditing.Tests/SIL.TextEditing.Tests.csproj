@@ -14,5 +14,6 @@
     </PackageReference>
     <ProjectReference Include="..\..\src\SIL.TextEditing\SIL.TextEditing.csproj" />
     <Compile Include="..\Common\TestDocs.cs" Link="TestDocs.cs" />
+    <Compile Include="..\Common\FakeSpelling.cs" Link="FakeSpelling.cs" />
   </ItemGroup>
 </Project>
