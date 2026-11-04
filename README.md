@@ -86,6 +86,14 @@ text it covers, as in FieldWorks), when an edit or undo leaves the caret in anot
 toolbar calls `Editor.SetActiveWs`. It is also raised, with old and new equal, when the field gains focus, so the host can
 switch to the keyboard of the writing system at the caret even though nothing changed in this field.
 
+**Focus in and out (what FieldWorks does, and what a host does to match).** FieldWorks sets the keyboard on focus gain only
+when focus comes from a window of the same process, so a keyboard the user picked in the tray or in another application
+survives clicking back into the field; and when a view loses focus to a control that is not a view, it restores the default
+keyboard. The field cannot tell where focus came from (Avalonia's `GotFocusEventArgs` gives the navigation method and key
+modifiers, not the source), so it raises the focus-gain event every time and the host decides: switch only if the previously
+focused window was its own, otherwise leave the keyboard alone. To restore the default keyboard, subscribe to the field's
+`LostFocus` and switch when focus has moved to something that is not a field. The field raises nothing when it loses focus.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
