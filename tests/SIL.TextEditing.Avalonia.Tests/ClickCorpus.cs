@@ -66,6 +66,19 @@ namespace SIL.TextEditing.Avalonia.Tests
             new Case(false, 1, 102, R("en", false, "(جمل) fox ill fox   fox ill jumps ét   Wonderful طويلة فقرة jumps i طويلة هذه (جمل) l l هذه 12   طوي"), R("en", true, "لة dog il"), R("en", true, "l   fox Wonderful "))
         };
 
+        /// <summary>A no-break space is written "~" in the cases below, so that it can be told from a space.</summary>
+        static (string, bool, string) B(string ws, bool bold, string text) => (ws, bold, text.Replace('~', ' '));
+
+        /// <summary>Left-to-right paragraphs whose line has a right-to-left run that ends in spaces (or is followed by one): a click at the x where the run before it ends,
+        /// which is where the right-to-left run's own end is too, gave the end of the right-to-left run, one or two spaces to the right (issue 109).</summary>
+        internal static readonly Case[] BoundaryCases = new[]
+        {
+            new Case(false, 2, 390, B("ar", false, "Wonderful~itit~فقرة   (جمل)   12~i   12عربية  "), B("en", false, " فقرة~Wonderful~")),
+            new Case(false, 0, 147, B("en", false, "fo"), B("en", true, "x   l~هذه طويلة "), B("fr", false, "  هذه 12do"), B("fr", true, "g 12it فقرة"), B("en", false, "~(جمل) ét")),
+            new Case(false, 5, 303, B("ar", false, "ill   it   ét   فقرة فقرةطويلة "), B("fr", false, "  هذهjumps~jumps   Wonderful é~ét   fox~(جمل) 12 12ét"), B("en", false, " lعربية 12~i~طويلة   طويلة"), B("ar", false, "~é dog~")),
+            new Case(false, 4, 198, B("en", true, "dogفقرة   طويلة~Wonderful   é ét~fox   it   هذه~illهذه(جمل)  "), B("fr", false, " طويلة~ill do"), B("en", false, "g")),
+        };
+
         /// <summary>The numbers of the cases in <paramref name="cases"/>, for a theory (a case itself is not something xunit can carry).</summary>
         public static IEnumerable<object[]> Numbers(Case[] cases) => Enumerable.Range(0, cases.Length).Select(i => new object[] { i });
 
@@ -74,5 +87,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         public static IEnumerable<object[]> HangingNumbers() => Numbers(HangingCases);
 
         public static IEnumerable<object[]> BeyondNumbers() => Numbers(BeyondCases);
+
+        public static IEnumerable<object[]> BoundaryNumbers() => Numbers(BoundaryCases);
     }
 }

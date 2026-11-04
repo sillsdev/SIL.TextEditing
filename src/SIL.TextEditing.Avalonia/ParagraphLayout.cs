@@ -1939,12 +1939,21 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>The caret stops a click can go to instead of the layout's own answer: those drawn somewhere other than the layout has them and, when
-        /// there are any, every stop of the spaces the line ends with (their carets are drawn as a row, and the layout has no place for a click among them).</summary>
+        /// there are any, every stop of the spaces the line ends with (their carets are drawn as a row, and the layout has no place for a click among them);
+        /// on a line that <see cref="LineInfo.UsesRuns"/>, every stop.</summary>
         List<Stop> DisplacedStopsOf(LineInfo li, int core)
         {
             var result = new List<Stop>();
             if (li.IsEmpty || double.IsInfinity(LayoutWidth)) return result;
             var stops = VisualStops(li);
+            if (li.UsesRuns)
+            {
+                // A line read from its runs puts a click where its runs put the carets, and where a run's end is also the end of the run beside it, at the same x, the
+                // layout's answer is the end of the one it asked and not the other's, a space or two away. So every stop of such a line is a candidate: the click goes to the
+                // nearest, which at a stop's own x is that stop.
+                result.AddRange(stops);
+                return result;
+            }
             if (!stops.Any(stop => Math.Abs(CaretXBeforeClamp(li, stop.Hit) - stop.X) > 0.01)) return result;
             foreach (var stop in stops)
                 if (stop.Offset >= core || Math.Abs(CaretXBeforeClamp(li, stop.Hit) - stop.X) > 0.01) result.Add(stop);
