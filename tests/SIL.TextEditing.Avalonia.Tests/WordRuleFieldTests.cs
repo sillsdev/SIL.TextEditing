@@ -178,5 +178,19 @@ namespace SIL.TextEditing.Avalonia.Tests
             f.MoveByWord(true, false);
             Assert.True(rules.Asked < 50, rules.Asked + " questions for one Ctrl+Left in " + text.Length + " characters");
         });
+
+        [Fact]
+        public void A_double_click_stops_at_a_change_of_writing_system_and_of_character_style_and_the_drag_goes_by_the_same_words() => Headless.Run(() =>
+        {
+            var p = Para("en", "en", "ab", "fr", "cd", "fr", "ef gh");
+            p.Runs[2].Props.SetStr(TextPropertyNumbers.NamedStyle, "Emphasis");
+            var (w, f) = Fixtures.InWindow(Doc(p), 400);
+            Headless.Pump();
+            Assert.Equal("ab", DoubleClick(w, f, 1));
+            Assert.Equal("cd", DoubleClick(w, f, 3));
+            Assert.Equal("ef", DoubleClick(w, f, 5));
+            Assert.Equal("gh", DoubleClick(w, f, 8));
+            w.Close();
+        });
     }
 }

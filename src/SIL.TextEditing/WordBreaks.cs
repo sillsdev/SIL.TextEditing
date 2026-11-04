@@ -129,7 +129,42 @@ namespace SIL.TextEditing
         /// <summary>As <see cref="WordAt(string, int, out int, out int)"/>, by the host's word rule (<paramref name="rules"/>, null for the default) for the
         /// writing system of each character of the paragraph.</summary>
         public static void WordAt(Paragraph paragraph, int charIndex, IWordRules? rules, out int start, out int end)
-            => WordAt(paragraph.Text, charIndex, rules, WsOf(paragraph), out start, out end);
+        {
+            WordAt(paragraph.Text, charIndex, rules, WsOf(paragraph), out start, out end);
+            ClipToFormat(paragraph, charIndex, ref start, ref end);
+        }
+
+        /// <summary>FieldWorks' double-click stops at a change of writing system, spell-check property or character style, so a word that runs on across
+        /// such a change is selected a piece at a time (issue 116). Only the double-click does it: Ctrl+arrows, the whole-word find, the word of a context
+        /// request and the spell checker, which has its own answer for a word of several writing systems, take the whole word. Other properties (bold, size,
+        /// colour) do not stop it. The run's own properties are compared, as the host's styles are not known here.</summary>
+        static void ClipToFormat(Paragraph paragraph, int charIndex, ref int start, ref int end)
+        {
+            var runs = paragraph.Runs;
+            if (runs.Count < 2 || start >= end) return;
+            charIndex = Math.Max(0, Math.Min(paragraph.Length - 1, charIndex));
+            int pos = 0, at = -1, atStart = 0;
+            for (int i = 0; i < runs.Count; i++)
+            {
+                int next = pos + runs[i].Text.Length;
+                if (charIndex < next) { at = i; atStart = pos; break; }
+                pos = next;
+            }
+            if (at < 0) return;
+            int from = atStart, to = atStart + runs[at].Text.Length;
+            for (int i = at - 1, p = atStart; i >= 0 && SameWordFormat(runs[i], runs[at]); i--) { p -= runs[i].Text.Length; from = p; }
+            for (int i = at + 1; i < runs.Count && SameWordFormat(runs[i], runs[at]); i++) to += runs[i].Text.Length;
+            start = Math.Max(start, from);
+            end = Math.Min(end, to);
+        }
+
+        static bool SameWordFormat(Run a, Run b) =>
+            a.Ws == b.Ws && SpellCheckOf(a) == SpellCheckOf(b) && StyleOf(a) == StyleOf(b);
+
+        // An absent property is the normal spell checking and no character style.
+        static int SpellCheckOf(Run r) => r.Props.TryGetInt(TextPropertyNumbers.SpellCheck, out var v) ? v : TextPropertyNumbers.SpellCheckNormal;
+
+        static string StyleOf(Run r) => r.Props.TryGetStr(TextPropertyNumbers.NamedStyle, out var s) ? s : string.Empty;
 
         /// <summary>For each offset 0 to the text length, whether a word starts or ends there: the start and end of the text, and
         /// every cluster boundary where the class changes (word, white space, other) or an object sits. Offsets inside a cluster

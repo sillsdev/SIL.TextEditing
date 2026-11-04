@@ -214,7 +214,9 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   word breaking. It is also the host's: one rule (`IWordRules`: which code points form words in a writing system, and which join the words on
   each side of them) serves the double-click, Ctrl+Left and Right, the whole-word find, the word of a context request and the spell checker
   (set `RichTextField.WordRules`, or the rule of `SpellChecking` is used), so a writing system that makes a hyphen a letter makes "foo-bar" one word
-  everywhere. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
+  everywhere. The double-click (and a drag that goes by words) also stops where the writing system, the spell-check property or the character
+  style changes, as FieldWorks does, so a word that runs across such a change is selected a piece at a time; the other uses of the rule take
+  the whole word. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
 - **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2), and on
   both 11.3.17 and 12.1.2 the caret, hit testing and selection of a left-to-right run are wrong on a right-to-left paragraph's line
   of two or more runs, and likewise on a left-to-right paragraph's line of two or more runs with a right-to-left run in it (on 12 some of its ranges throw); an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by
