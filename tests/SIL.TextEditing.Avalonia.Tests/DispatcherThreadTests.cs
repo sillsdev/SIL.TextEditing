@@ -33,7 +33,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 Assert.Single(field.Editor.Document.Paragraphs);
 
                 edit(field)();                                                      // the UI thread's own edit goes through
-                Assert.NotEqual("abcd", field.Editor.Document.Paragraphs[0].Text + field.Editor.Document.Paragraphs.Count);
+                Assert.True(field.Editor.Document.Paragraphs[0].Text != "abcd" || field.Editor.Document.Paragraphs.Count != 1, name + ": the UI-thread edit changed nothing");
             }
         });
 
@@ -107,18 +107,25 @@ namespace SIL.TextEditing.Avalonia.Tests
                     Assert.Equal(new[] { secondThread }, scheduledOn);
                     scheduledOn.Clear();
                     ready.Set();
-                    asked.Wait();
+                    if (!asked.Wait(TimeSpan.FromSeconds(30))) throw new TimeoutException("the main thread never asked for the restart");
                     d.RunJobs();                    // the hand-off, if it was made to this dispatcher, runs here
                     d.RunJobs();                    // and is not posted again
                 }
                 catch (Exception e) { failure = e; ready.Set(); }
             });
+            thread.IsBackground = true;   // a test host must still exit if this test fails before releasing the thread
             thread.Start();
-            ready.Wait();
-            if (failure == null)
-                Headless.Run(() => restart.Invoke(field, null));   // the main UI thread asks for the restart; the field is not its own
-            asked.Set();
-            thread.Join();
+            try
+            {
+                Assert.True(ready.Wait(TimeSpan.FromSeconds(30)), "the second dispatcher's thread did not get ready");
+                if (failure == null)
+                    Headless.Run(() => restart.Invoke(field, null));   // the main UI thread asks for the restart; the field is not its own
+            }
+            finally
+            {
+                asked.Set();
+                Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "the second dispatcher's thread did not finish");
+            }
             if (failure != null) throw new Exception("on the second dispatcher: " + failure.Message, failure);
             Assert.Equal(new[] { secondThread }, scheduledOn);     // scheduled once, on the field's thread
         }
