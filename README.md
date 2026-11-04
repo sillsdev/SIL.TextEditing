@@ -143,6 +143,13 @@ that throws raises `SpellCheckerFailed` (written to `Trace` once per writing sys
 the application. A host that repairs the dictionary raises `DictionariesChanged` (or calls `RestartSpelling`), which tries that writing system again. The playground's "Spell checking" scenario shows it with a
 short English and French word list.
 
+What a host calls (the field restarts checking itself on an edit through the editor, `Apply`, `ExternalReplaceParagraph`, a change of
+`IsReadOnly` on the field or its editor, a word added or ignored, and a `DictionariesChanged` notice): after it changes the document
+directly, `RichTextField.RefreshFromDocument()`, which restarts checking too. A paragraph notices a change to its runs, a run's text, writing
+system or object data, a replaced property bag and a new style (`Paragraph.ChangeStamp`) and its marks go at the next draw, but the layout and a
+property bag changed in place are seen only after `RefreshFromDocument()`. After a style change that alters what is checked,
+`RestartSpelling()`. After repairing a failed dictionary, raise `DictionariesChanged`.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48

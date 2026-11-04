@@ -52,6 +52,9 @@ namespace SIL.TextEditing.Avalonia
         /// <see cref="System.Diagnostics.Trace"/>.</summary>
         internal Action<string>? SpellTraceSink { get; set; }
 
+        /// <summary>For a test: how many times checking has been restarted.</summary>
+        internal int SpellRestarts { get; private set; }
+
         /// <summary>For a test: how many checker wrappers the field has made (one per writing system and checker instance until a restart).</summary>
         internal int SpellWrappersCreated { get; private set; }
 
@@ -63,17 +66,25 @@ namespace SIL.TextEditing.Avalonia
         /// scroll viewer the field is in, else from its window, else a fixed span below the top.</summary>
         internal Func<(double Top, double Bottom)>? SpellVisibleSpan { get; set; }
 
-        /// <summary>Forgets every result and checks again as idle time allows: the dictionaries changed, the styles changed, or the
-        /// read-only state changed. Adding a word through <see cref="AddToDictionary"/> does this itself; the host's
-        /// <see cref="ISpellCheckHost.DictionariesChanged"/> does it for every field of the host. A writing system that failed is tried again.</summary>
+        /// <summary>Forgets every result and checks again as idle time allows. Call it when the styles changed or a checker's answers changed
+        /// without <see cref="ISpellCheckHost.DictionariesChanged"/> being raised. The field does it itself when a word is added
+        /// (<see cref="AddToDictionary"/>) or ignored, when the read-only state changes (<c>IsReadOnly</c> of the field or of its editor), when
+        /// the host raises <see cref="ISpellCheckHost.DictionariesChanged"/>, and in <see cref="RefreshFromDocument"/>. A writing system that failed is
+        /// tried again.
+        /// <para>What a host calls when it changes text itself, not through the editor: the paragraph notices a change to its runs, a run's
+        /// text, writing system or object data, a replaced property bag and a new style (<see cref="Paragraph.ChangeStamp"/>), so the marks of
+        /// that paragraph are dropped at the next draw or query and it is checked again; call <see cref="RefreshFromDocument"/> as well so the
+        /// layout follows the new text (it restarts spelling too). A property bag changed in place, a changed paragraph list, or changed styles
+        /// are not noticed: call <see cref="RefreshFromDocument"/> (or this, when only what is checked changed). Edits made through the editor,
+        /// <see cref="DocumentEditor.Apply"/> and <see cref="DocumentEditor.ExternalReplaceParagraph"/> need no call.</para></summary>
         public void RestartSpelling()
         {
+            SpellRestarts++;
             _spellFailed.Clear();
             (_spellGuard as GuardedHost)?.Forget();
             for (int i = 0; i < _info.Count; i++)
             {
                 _info[i].Marks = null;
-                _info[i].CheckedText = null;
                 _layouts[i]?.SetSpellingMarks(null);
             }
             InvalidateVisual();
@@ -95,7 +106,7 @@ namespace SIL.TextEditing.Avalonia
             var paragraph = Editor.Document.Paragraphs[i];
             var marks = SpellScanner.Check(paragraph, _spellGuard!, _styles, Editor.IsReadOnly, SpellLimit(i));
             _info[i].Marks = marks;
-            _info[i].CheckedText = paragraph.Text;
+            _info[i].CheckedStamp = paragraph.ChangeStamp;
             _layouts[i]?.SetSpellingMarks(marks);
             InvalidateVisual();
             return NextUncheckedVisible() < 0;
@@ -332,13 +343,20 @@ namespace SIL.TextEditing.Avalonia
             if (index < 0 || index >= _info.Count) return null;
             var info = _info[index];
             if (info.Marks == null) return null;
-            if (info.CheckedText != Editor.Document.Paragraphs[index].Text)
+            // A result is for the paragraph as it was when checked: any change the paragraph noticed, made through the editor or behind its back
+            // (Paragraph.ChangeStamp), makes it stale. Comparing a number is cheap, so the render path asks every time.
+            if (index >= Editor.Document.Paragraphs.Count || info.CheckedStamp != Editor.Document.Paragraphs[index].ChangeStamp)
             {
                 info.Marks = null;
-                info.CheckedText = null;
                 return null;
             }
             return info.Marks;
+        }
+
+        /// <summary>Called as a paragraph is drawn: a mark the layout still draws for a paragraph that has changed since (behind the editor's back) goes.</summary>
+        void DropStaleSpelling(int index, ParagraphLayout layout)
+        {
+            if (_spellHost != null && _info[index].Marks != null && LiveMarks(index) == null) layout.SetSpellingMarks(null);
         }
 
         void ApplySpelling(int index, ParagraphLayout layout)
@@ -355,11 +373,7 @@ namespace SIL.TextEditing.Avalonia
         {
             if (_spellHost == null) return;
             for (int i = 0; i < _info.Count && i < Editor.Document.Paragraphs.Count; i++)
-                if (_info[i].Marks != null && FormatOf(i).MaxLines > 0)
-                {
-                    _info[i].Marks = null;
-                    _info[i].CheckedText = null;
-                }
+                if (_info[i].Marks != null && FormatOf(i).MaxLines > 0) _info[i].Marks = null;
         }
 
         (double Top, double Bottom) VisibleSpan()
@@ -452,6 +466,13 @@ namespace SIL.TextEditing.Avalonia
         {
             if (_spellListening != null) _spellListening.DictionariesChanged -= OnDictionariesChanged;
             _spellListening = null;
+        }
+
+        /// <summary>The editor's read-only flag changed, on whatever thread changed it: checking starts over on the field's own.</summary>
+        void OnEditorReadOnlyChanged()
+        {
+            if (CheckAccess()) RestartSpelling();
+            else OwnDispatcher.Post(RestartSpelling, global::Avalonia.Threading.DispatcherPriority.Background);
         }
 
         void OnDictionariesChanged(object? sender, EventArgs e)

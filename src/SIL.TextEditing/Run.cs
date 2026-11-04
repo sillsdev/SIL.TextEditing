@@ -23,20 +23,20 @@ namespace SIL.TextEditing
             {
                 if (ReferenceEquals(_text, value)) return;
                 _text = value ?? throw new ArgumentNullException(nameof(value));
-                NotifyOwners();
+                NotifyOwners(true);
             }
         }
 
         // A run knows the lists of the paragraphs that hold it: the first strongly, any others (the same run in two paragraphs is rare)
         // weakly, so a paragraph that is dropped while its runs live on is not kept alive by them. A list is attached only while a
         // paragraph holds it.
-        void NotifyOwners()
+        void NotifyOwners(bool textChanged)
         {
-            _owner?.Changed();
+            _owner?.Changed(textChanged);
             if (_otherOwners == null) return;
             for (int i = _otherOwners.Count - 1; i >= 0; i--)
             {
-                if (_otherOwners[i].TryGetTarget(out var list)) list.Changed();
+                if (_otherOwners[i].TryGetTarget(out var list)) list.Changed(textChanged);
                 else _otherOwners.RemoveAt(i);
             }
             if (_otherOwners.Count == 0) _otherOwners = null;
@@ -76,10 +76,45 @@ namespace SIL.TextEditing
         /// <summary>For a test: how many paragraphs' lists this run is attached to.</summary>
         internal int OwnerCount => (_owner == null ? 0 : 1) + (_otherOwners == null ? 0 : _otherOwners.Count);
 
-        public string Ws { get; set; } = "en";
-        public PropertyBag Props { get; set; } = new PropertyBag();
+        string _ws = "en";
+        PropertyBag _props = new PropertyBag();
+        string? _objData;
+
+        /// <summary>The run's writing system. Changing it tells every paragraph that holds the run (<see cref="Paragraph.ChangeStamp"/>).</summary>
+        public string Ws
+        {
+            get => _ws;
+            set
+            {
+                if (_ws == value) return;
+                _ws = value;
+                NotifyOwners(false);
+            }
+        }
+
+        /// <summary>The run's property bag. Replacing it tells every paragraph that holds the run; changing the bag it holds, in place, is
+        /// not seen (call <c>RichTextField.RefreshFromDocument</c> afterwards).</summary>
+        public PropertyBag Props
+        {
+            get => _props;
+            set
+            {
+                _props = value;
+                NotifyOwners(false);
+            }
+        }
+
         /// <summary>Non-null makes this an atomic object run (an ORC); the text is then exactly U+FFFC.</summary>
-        public string? ObjData { get; set; }
+        public string? ObjData
+        {
+            get => _objData;
+            set
+            {
+                if (_objData == value) return;
+                _objData = value;
+                NotifyOwners(false);
+            }
+        }
 
         public bool IsObject => ObjData != null;
 

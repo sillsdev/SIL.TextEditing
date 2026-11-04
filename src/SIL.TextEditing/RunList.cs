@@ -100,7 +100,7 @@ namespace SIL.TextEditing
             Changed();
         }
 
-        internal void Changed() => _owner?.RunsChanged();
+        internal void Changed(bool textChanged = true) => _owner?.RunsChanged(textChanged);
 
         /// <summary>Walks the runs, counting each one read.</summary>
         public struct Enumerator : IEnumerator<Run>

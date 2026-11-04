@@ -11,21 +11,55 @@ namespace SIL.TextEditing
         /// <summary>The host's opaque key for this paragraph (in FieldWorks the StTxtPara GUID); null until the host assigns one.
         /// The field never interprets it: it only moves it by the split and join rules of <see cref="DocumentEditor"/>.</summary>
         public object? Key { get; set; }
-        public string Style { get; set; } = string.Empty;
+        string _style = string.Empty;
+        public string Style
+        {
+            get => _style;
+            set
+            {
+                if (_style == value) return;
+                _style = value;
+                Touch();
+            }
+        }
         /// <summary>Paragraph direction (ktptRightToLeft).</summary>
         public bool Rtl { get; set; }
         /// <summary>The writing system used for typing in an empty paragraph.</summary>
         public string DefaultWs { get; set; } = "en";
         /// <summary>The paragraph's own text properties (an ITsString paragraph's StyleRules), opaque like a run's bag: copied through
         /// every split, join and slice, never interpreted. <see cref="Style"/> and <see cref="Rtl"/> are the two the field reads.</summary>
-        public PropertyBag Props { get; set; } = new PropertyBag();
+        PropertyBag _props = new PropertyBag();
+        public PropertyBag Props
+        {
+            get => _props;
+            set
+            {
+                _props = value;
+                Touch();
+            }
+        }
 
         RunList _runs;
 
         public Paragraph()
         {
             _runs = new RunList(this);
+            _stamp = NextStamp();
         }
+
+        static long s_stamps;
+        long _stamp;
+
+        static long NextStamp() => System.Threading.Interlocked.Increment(ref s_stamps);
+
+        void Touch() => _stamp = NextStamp();
+
+        /// <summary>A number that is different whenever something the field draws or checks of this paragraph has changed: a run added,
+        /// removed or replaced, a run's text, writing system, object data or property bag replaced, the paragraph's style or property bag
+        /// replaced. No two paragraphs ever share one, so a result remembered with it cannot be taken for another paragraph's. What it does
+        /// not see: a property bag changed in place (<c>PropertyBag.SetInt</c> on a run's or the paragraph's own bag), and the paragraph
+        /// list of the document. A host that does either calls <c>RichTextField.RefreshFromDocument</c>.</summary>
+        public long ChangeStamp => _stamp;
 
         /// <summary>The paragraph's runs. Add, remove or change them directly if you like: the list and each run tell the paragraph,
         /// so <see cref="Length"/> and the run lookups stay right. Assigning a list that no paragraph holds adopts it; any other
@@ -51,7 +85,11 @@ namespace SIL.TextEditing
         // binary search each instead of a walk over the runs (issue 76).
         int[]? _starts;
 
-        internal void RunsChanged() => _starts = null;
+        internal void RunsChanged(bool textChanged = true)
+        {
+            if (textChanged) _starts = null;
+            Touch();
+        }
 
         int[] Starts()
         {

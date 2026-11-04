@@ -37,6 +37,11 @@ owner decisions.
   character style and the run's own properties, later layers winning, as FieldWorks' drawing engine layers its
   properties. FieldWorks' menu code disagrees: there the character style overrides the run's own value and the
   paragraph style is not read. The field has one answer for marks and menu and follows the first.
+- **Edits made behind the editor's back.** A paragraph keeps a change stamp (`Paragraph.ChangeStamp`) that moves when its runs, a run's text,
+  writing system, object data or property bag (replaced), or its style or property bag (replaced) change, and a result remembers the
+  stamp it was made for, so a direct change to the model is noticed without the host saying so, and the marks of that paragraph are
+  dropped. A property bag changed in place and a changed paragraph list are not seen: the host calls `RefreshFromDocument()`, which
+  restarts checking. A change of `DocumentEditor.IsReadOnly` raises `IsReadOnlyChanged`, which restarts checking whoever changed it.
 - **Results are dropped with their paragraph on an edit.** An edit replaces the paragraph's results with none until the
   next idle step, so a squiggle is never drawn on text it was not made for. They are not shifted: FieldWorks also
   checks a changed paragraph again from scratch. A result also stores the text it was made for and is ignored if the
