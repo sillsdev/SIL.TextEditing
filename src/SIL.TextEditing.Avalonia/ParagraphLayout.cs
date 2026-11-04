@@ -280,6 +280,18 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>True when the run has glyphs, so it can answer <see cref="Distance"/> and <see cref="HitFromDistance"/> (an object run has none).</summary>
         public bool HasGlyphs => Glyphs != null && _firstCluster != int.MaxValue;
 
+        /// <summary>True when the run holds nothing but spaces.</summary>
+        public bool IsSpaces
+        {
+            get
+            {
+                var text = Run.Text.Span;
+                for (int i = 0; i < text.Length; i++)
+                    if (text[i] != ' ') return false;
+                return text.Length > 0;
+            }
+        }
+
         /// <summary>True when the run's own direction is right to left (its characters run from its right edge to its left).</summary>
         public bool RightToLeft => Glyphs != null && !Glyphs.IsLeftToRight;
 
@@ -317,9 +329,16 @@ namespace SIL.TextEditing.Avalonia
             _offsets = offsets;
             _runs = ParagraphLayout.RunOffsets(line, offsets, out var raise, out var lower);
             HasOffsets = _runs != null;
-            if (HasOffsets || rightToLeft) _slots = ParagraphLayout.RunSlots(line);
-            // A right-to-left paragraph's line of several runs is read from the runs as they are drawn (see DistanceOf).
-            UsesRuns = rightToLeft && _slots != null && _slots.Count >= 2 && _slots.All(slot => slot.HasGlyphs);
+            var slots = ParagraphLayout.RunSlots(line);
+            // A line of several runs is read from the runs as they are drawn (see DistanceOf) when it is a right-to-left paragraph's or has a
+            // right-to-left run in it, whatever the paragraph's direction.
+            UsesRuns = slots.Count >= 2 && slots.All(slot => slot.HasGlyphs) && (rightToLeft || slots.Any(slot => slot.RightToLeft));
+            if (HasOffsets || UsesRuns) _slots = slots;
+            // The spaces a wrapped line ends with take the paragraph's direction (they hang at its end), whatever Avalonia 11.3 says of the run
+            // they are in; the caret and the mouse read such a run as running that way (see DistanceOf).
+            if (UsesRuns && slots[slots.Count - 1] is var tail && tail.Start + tail.Length == line.FirstTextSourceIndex + line.Length
+                && tail.IsSpaces && tail.RightToLeft != rightToLeft)
+                _hangingSlot = slots.Count - 1;
             Raise = raise;
             Lower = lower;
             Start = line.FirstTextSourceIndex;
@@ -365,9 +384,13 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>True when a run on the line has a baseline offset, so the line is drawn run by run (<see cref="Draw"/>).</summary>
         public bool HasOffsets { get; }
         /// <summary>True when the caret, the mouse and the selection on this line are read from its runs and not from Avalonia's line. Avalonia 11.3
-        /// and 12 both give the wrong place for a left-to-right run on a right-to-left paragraph's line of two or more runs (and throw for some
-        /// ranges), where the runs themselves, which are what is drawn, are right. See <see cref="DistanceOf"/>.</summary>
+        /// and 12 both give the wrong place for a left-to-right run on a right-to-left paragraph's line of two or more runs, and for a line of two or
+        /// more runs with a right-to-left run in it whatever the paragraph's direction (and throw for some ranges), where the runs themselves, which
+        /// are what is drawn, are right. See <see cref="DistanceOf"/>.</summary>
         public bool UsesRuns { get; }
+
+        /// <summary>The slot of the spaces the line ends with that Avalonia gives the opposite direction to the paragraph's, or -1.</summary>
+        readonly int _hangingSlot = -1;
 
         int SlotOf(int offset)
         {
@@ -384,7 +407,7 @@ namespace SIL.TextEditing.Avalonia
             int offset = hit.FirstCharacterIndex;
             int k = SlotOf(offset);
             if (hit.TrailingLength == 0 && k < 0) { k = SlotOf(offset - 1); }   // after the last character: the end of the run it is in
-            if (k >= 0 && _slots![k].Distance(offset, hit.TrailingLength) is double d) return _slots[k].X + d;
+            if (k >= 0 && _slots![k].Distance(offset, hit.TrailingLength) is double d) return _slots[k].X + (k == _hangingSlot ? _slots[k].Width - d : d);
             return Line.GetDistanceFromCharacterHit(hit);
         }
 
@@ -395,7 +418,8 @@ namespace SIL.TextEditing.Avalonia
             if (!UsesRuns) return Line.GetCharacterHitFromDistance(x);
             int k = 0;
             while (k < _slots!.Count - 1 && x >= _slots[k].X + _slots[k].Width) k++;
-            return _slots[k].HitFromDistance(x - _slots[k].X) ?? Line.GetCharacterHitFromDistance(x);
+            double within = x - _slots[k].X;
+            return _slots[k].HitFromDistance(k == _hangingSlot ? _slots[k].Width - within : within) ?? Line.GetCharacterHitFromDistance(x);
         }
         readonly OffsetMap? _offsets;
         readonly List<RunSlot>? _slots;
