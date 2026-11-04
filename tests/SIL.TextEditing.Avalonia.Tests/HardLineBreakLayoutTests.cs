@@ -437,10 +437,10 @@ namespace SIL.TextEditing.Avalonia.Tests
         [Fact]
         public void The_visible_end_is_not_an_editable_place_when_a_wrap_falls_on_the_boundary_of_locked_and_hidden_editable_text() => Headless.Run(() =>
         {
-            // 40 locked characters then 40 editable ones at MaxLines 1: from about 326 to 335 px the one line holds exactly the
+            // 40 locked characters then 40 editable ones at MaxLines 1: at some widths the one line holds exactly the
             // locked run, so the visible end is the start of the editable run, whose text is hidden.
             int found = 0;
-            for (int width = 326; width <= 335; width++)
+            for (int width = 200; width <= 700; width++)
             {
                 var p = new Paragraph { DefaultWs = "en" };
                 var locked = new Run { Ws = "en", Text = new string((char)97, 40) };
@@ -467,7 +467,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 field.Press(Key.Tab);
                 Assert.Equal(1, left);   // Tab leaves: the caret is not offered where nothing can be typed
             }
-            Assert.True(found > 0);   // the widths above still wrap on the boundary in the test font
+            Assert.True(found > 0);   // some width wraps on the boundary in the test font
         });
 
         static Paragraph Limit(string text, int maxLines)
