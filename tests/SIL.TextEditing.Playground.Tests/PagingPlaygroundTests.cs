@@ -52,7 +52,7 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
-        public void Shift_extends_the_selection_by_a_page_Ctrl_goes_to_the_corners_of_what_shows_and_the_ends_of_the_text_stop_it() => Headless.Run(() =>
+        public void Shift_extends_the_selection_by_a_page_Ctrl_pages_like_plain_and_the_ends_of_the_text_stop_it() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Long))
             {
@@ -65,15 +65,20 @@ namespace SIL.TextEditing.Playground.Tests
                 s.Press(Key.PageUp, KeyModifiers.Shift);
                 Assert.True(s.Editor.Caret.Paragraph <= anchor.Paragraph + 1);
 
-                // Ctrl goes to the corner of what shows instead of paging: the end of the last visible line, the start of the first.
+                // Ctrl, with or without Shift, pages exactly like PageDown and PageUp, as in FieldWorks.
                 s.Caret(10, 4);
-                var visible = s.Field.VisibleBounds;
+                s.Press(Key.PageDown);
+                var plain = s.Editor.Caret;
+                s.Caret(10, 4);
                 s.Press(Key.PageDown, KeyModifiers.Control);
+                Assert.Equal(plain, s.Editor.Caret);
                 Assert.False(s.Editor.HasSelection);
-                Assert.InRange(s.Field.CaretRect().Bottom, visible.Bottom - 60, visible.Bottom + 40);   // the last line may be cut off by the edge
+                s.Caret(10, 4);
+                s.Press(Key.PageDown, KeyModifiers.Control | KeyModifiers.Shift);
+                Assert.Equal(plain, s.Editor.Caret);
+                Assert.Equal(new TextPosition(10, 4), s.Editor.Anchor);
                 s.Press(Key.PageUp, KeyModifiers.Control | KeyModifiers.Shift);
-                Assert.True(s.Editor.HasSelection);
-                Assert.InRange(s.Field.CaretRect().Y, visible.Top - 1, visible.Top + 60);
+                Assert.True(s.Editor.Caret.Paragraph <= 11);
 
                 s.Caret(0, 3);
                 s.Press(Key.PageUp);

@@ -40,7 +40,7 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
-        /// <summary>PageUp and PageDown, plain or with Shift (Ctrl goes to the corners of what shows instead, see <see cref="MovePageEdge"/>): the caret goes up or down by the
+        /// <summary>PageUp and PageDown, plain or with Shift (Ctrl and Ctrl+Shift do the same): the caret goes up or down by the
         /// page height and keeps its horizontal place, stopping at the first or last line; with Shift the selection grows. The host
         /// is asked to scroll by the distance the caret moved.</summary>
         void MovePage(bool down, bool extend)
@@ -58,19 +58,6 @@ namespace SIL.TextEditing.Avalonia
             finally { _suppressScroll = false; }
             var after = CaretRect();
             RequestScroll(ScrollReason.Page, after, after.Y - before.Y);
-        }
-
-        /// <summary>Ctrl+PageUp and Ctrl+PageDown (with Shift, extending the selection): the caret goes to the top-left corner or the
-        /// bottom-right corner of what shows, which is the start of the first visible line or the end of the last (as FieldWorks does,
-        /// where these two keys do not page). Nothing scrolls.</summary>
-        void MovePageEdge(bool bottom, bool extend)
-        {
-            var visible = VisibleBounds;
-            var point = bottom ? new Point(visible.Right, Math.Max(visible.Top, visible.Bottom - 1)) : new Point(visible.Left, visible.Top);
-            var target = Locate(point);
-            _suppressScroll = true;
-            try { Move(target.Position, extend, false, target.Hit); }
-            finally { _suppressScroll = false; }
         }
 
         bool _suppressScroll;

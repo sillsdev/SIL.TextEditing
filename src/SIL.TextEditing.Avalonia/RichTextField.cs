@@ -655,8 +655,8 @@ namespace SIL.TextEditing.Avalonia
                 }
                 case Key.Up: MoveVertical(false, shift); return true;
                 case Key.F10 when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0 && ContextMenuRequested != null: RaiseContextMenuRequested(false, default); return true;
-                case Key.PageUp when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: if (ctrl) MovePageEdge(false, shift); else MovePage(false, shift); return true;
-                case Key.PageDown when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: if (ctrl) MovePageEdge(true, shift); else MovePage(true, shift); return true;
+                case Key.PageUp when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: MovePage(false, shift); return true;
+                case Key.PageDown when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: MovePage(true, shift); return true;
                 case Key.Down: MoveVertical(true, shift); return true;
                 case Key.Home:
                 {

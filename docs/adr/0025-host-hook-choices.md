@@ -84,8 +84,7 @@ Scrolling the view that shows the field is the host's (ADR 0021); the field move
 
 - **PageUp and PageDown move the caret by the field's visible height**, as FieldWorks moves it by the height of its window, and
   keep its place along the line (the caret's own horizontal place, not the remembered one Up and Down keep). Shift extends the
-  selection from the anchor. Ctrl+PageUp and Ctrl+PageDown (with Shift, extending) do not page: as in FieldWorks' root site they put the caret at the
-  top-left or bottom-right corner of what shows, the start of the first visible line or the end of the last, and scroll nothing. A page move
+  selection from the anchor. Ctrl and Ctrl+Shift page exactly like PageUp and PageDown, as in FieldWorks, whose Ctrl variant simply calls the plain one. (Its window class has code that would put the caret at the corners of what shows for Ctrl+PageUp and Ctrl+PageDown; whether that runs in a slice was not confirmed, so paging like the plain key is the default here.) A page move
   stops on the first or last line. With a range selected, the move starts from the end the caret is at; a default (FieldWorks
   measures from the lower end whichever it is). PageUp and PageDown never leave the field and the key is always consumed, even when the field fits (then
   the caret goes to its first or last line): FieldWorks' root site consumes it and its detail tree has no paging of its own, so a slice never hands the key on.
