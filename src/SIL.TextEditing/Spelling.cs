@@ -165,6 +165,37 @@ namespace SIL.TextEditing
         /// writing system, properties or object starts from these.</summary>
         public IReadOnlyList<Run> Parts { get; }
 
+        /// <summary>The writing systems of the word's text, each once, in the order they first appear (an embedded object's own writing system does
+        /// not count). More than one is what makes a word <see cref="SpellingProblem.Mixed"/> by writing system; FieldWorks then offers, besides the
+        /// spaces, one item per writing system that makes the whole word that writing system (<see cref="WithWholeWordIn"/>).</summary>
+        public IReadOnlyList<string> WritingSystems
+        {
+            get
+            {
+                var result = new List<string>();
+                foreach (var part in Parts)
+                    if (!part.IsObject && !result.Contains(part.Ws)) result.Add(part.Ws);
+                return result;
+            }
+        }
+
+        /// <summary>The parts with the whole word in writing system <paramref name="ws"/>: the text unchanged, every part's writing system set, each
+        /// part's other properties kept. This is FieldWorks' "make the whole word writing system X" for a word that mixes writing systems; pass it to
+        /// <c>RichTextField.ApplySpellingSuggestion</c>. Parts that become alike merge.</summary>
+        public List<Run> WithWholeWordIn(string ws)
+        {
+            if (ws == null) throw new ArgumentNullException(nameof(ws));
+            var result = new List<Run>();
+            foreach (var part in Parts)
+            {
+                var run = part.Clone();
+                run.Ws = ws;
+                if (result.Count > 0 && result[result.Count - 1].SameFormat(run)) result[result.Count - 1].Text += run.Text;
+                else result.Add(run);
+            }
+            return result;
+        }
+
         /// <summary>False for a problem that is not a misspelled word (<see cref="SpellingProblem.Mixed"/>, <see cref="SpellingProblem.Embedded"/>):
         /// "Add to dictionary" is then disabled, as FieldWorks does.</summary>
         public bool CanAddToDictionary => Problem == SpellingProblem.Misspelled && Checker != null;
@@ -327,6 +358,22 @@ namespace SIL.TextEditing
             return marks;
         }
 
+        /// <summary>The word the character at <paramref name="index"/> is part of, by the same rule the spell checker uses (the host's
+        /// <see cref="ISpellCheckHost.IsWordForming"/> for the writing system of each character, digits, and <see cref="ISpellCheckHost.JoinsWords"/>), as
+        /// FieldWorks' views use the writing system's rule for a word under the pointer: so the word of a context request and the squiggled word are
+        /// one definition. An embedded object ends the word here (the spell checker's word may have one in it, <see cref="SpellingSuggestions"/>).
+        /// False, with an empty range at the index, when the character is not part of a word.</summary>
+        public static bool TryWordAt(Paragraph paragraph, int index, ISpellCheckHost host, out int start, out int end)
+        {
+            start = end = Math.Max(0, Math.Min(paragraph.Length, index));
+            if (index < 0 || index >= paragraph.Length) return false;
+            var scan = new Window(paragraph, host, null, false, false);
+            if (!scan.NextWord(scan.WordStart(index), out int a, out int b) || index < a || index >= b) return false;
+            start = a;
+            end = b;
+            return true;
+        }
+
         /// <summary>The mark at an offset (the word the offset is in or at the end of), with the suggestions for the menu, or null when the
         /// offset is not in a marked word. Only the word at the offset is looked at: the work is that of one word however long the paragraph is.</summary>
         public static SpellingSuggestions? SuggestionsAt(Paragraph paragraph, int paragraphIndex, int offset, ISpellCheckHost host, IStyleResolver? styles = null, bool readOnly = false, int limit = int.MaxValue)
@@ -355,13 +402,17 @@ namespace SIL.TextEditing
             readonly ISpellCheckHost _host;
             readonly IStyleResolver? _styles;
             readonly bool _readOnly;
+            readonly bool _objectsInWords;
             readonly string _text;
             readonly Dictionary<int, bool> _checkedRuns = new Dictionary<int, bool>();
             // The run the last character asked about is in, so the next one rarely needs a search.
             int _runIndex = -1, _runStart, _runEnd;
 
-            public Window(Paragraph paragraph, ISpellCheckHost host, IStyleResolver? styles, bool readOnly)
+            /// <param name="objectsInWords">True (the spell checker's reading) when an embedded object is word-forming, so a word that has one in it is
+            /// found whole and is its own problem; false (a double-click or context request's reading) when an object ends a word.</param>
+            public Window(Paragraph paragraph, ISpellCheckHost host, IStyleResolver? styles, bool readOnly, bool objectsInWords = true)
             {
+                _objectsInWords = objectsInWords;
                 _paragraph = paragraph;
                 _host = host;
                 _styles = styles;
@@ -409,7 +460,7 @@ namespace SIL.TextEditing
 
             bool WordForming(int index, int cp)
             {
-                if (cp == Run.ObjectReplacement) return true;
+                if (cp == Run.ObjectReplacement) return _objectsInWords;
                 return IsNumber(cp) || _host.IsWordForming(WsAt(index), cp);
             }
 

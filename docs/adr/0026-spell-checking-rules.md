@@ -29,7 +29,15 @@ owner decisions.
 - **Insert missing spaces.** For a mixed or embedded word the host calls `SpellingSuggestions.WithMissingSpaces()` and
   `RichTextField.ApplySpellingSuggestion(suggestions, runs)`: a space goes between parts that a dictionary cannot judge
   together, each part keeps its writing system and properties, and an object stays. A string replacement is for a
-  misspelling (or to make a mixed word one writing system) and is refused for an embedded word.
+  misspelling and is refused for an embedded word.
+- **Make the whole word writing system X.** For a word with text in more than one writing system, FieldWorks also offers one item per writing
+  system that makes the whole word that writing system, keeping each part's other properties; the text does not change, so the dictionary of
+  that writing system judges it next. The host builds these items from `SpellingSuggestions.WritingSystems` and `WithWholeWordIn(ws)` and applies
+  them with `ApplySpellingSuggestion(suggestions, runs)`.
+- **The word under the pointer.** FieldWorks takes it by the writing system's own word-forming test (by default letters, combining marks and
+  modifier symbols, and digits) for each character, so an underscore, a hyphen and other punctuation end it, and an embedded object ends the
+  word it selects. The field's context request does the same (`SpellScanner.TryWordAt`, with the host's `IsWordForming` while spell checking is on), so
+  the word of a request is the squiggled word.
 - **Red squiggle, no change to the model.** The marks are drawn like the squiggle underline and are not text properties.
 
 **Defaults (ours; not confirmed in FieldWorks)**
@@ -67,14 +75,26 @@ owner decisions.
   object, is not a word to mark: a lone object, an object between spaces and a footnote marker get no squiggle. FieldWorks
   counts the object and U+FEFF as word-forming and asks the dictionary about them, which the field does not. A word with an object
   next to text is `Embedded` and is not asked.
+- **One word definition for the other word rules.** The double-click, Ctrl+Left and Right and the whole-word find (`WordBreaks`) use the defaults
+  (`SpellScanner.DefaultIsWordForming`, digits, the apostrophes and joiners that stay inside a word) so that they agree with the spell checker.
+  FieldWorks gives a double-click and its Ctrl+arrow word moves the writing system's rule too; the field gives them the defaults only: with a host,
+  only the context request and the marks follow the host's word rules. The whole-word find's use of the same rule is ours (FieldWorks' was not
+  read), and so is a zero-width joiner or non-joiner staying with the grapheme cluster before it. The spell checker's word goes through an
+  embedded object (FieldWorks widens its menu word the same way) and is `Embedded`, so `ContextInfo.Spelling` can reach further than `ContextInfo.Word`.
+- **`SpellingSuggestions.WritingSystems` leaves out an object's writing system.** FieldWorks counts every run's, an object's included; an
+  object in another writing system alone makes the word `Embedded`, not `Mixed`, so the field does not offer the whole-word items for it.
+- **Insert missing spaces splits at every difference.** FieldWorks puts spaces only where the writing system changes when a word has several, and
+  where the spell-check property changes or an object stands otherwise. `WithMissingSpaces()` does all of them at once: a space wherever the
+  writing system, the spell-check or editable property differs or an object is next to text, so the result is words a dictionary can judge.
 - **Choosing a suggestion keeps the first run's properties.** The string `ApplySpellingSuggestion` replaces the word with a run
   in the word's writing system carrying the first run's properties (FieldWorks' replacement keeps only the writing
   system). Either overload is one undo step of its own, refused when the text can no longer be edited, is hidden by a line
   limit, or is not the word the menu was made for. The caret ends after the replacement.
 - **The menu is the host's.** The field offers `SpellingSuggestionsAt(position)` as the spelling part of the context
   information ADR 0021 describes, and a context request carries it: `ContextInfo.Spelling` is the `SpellingSuggestions` object (the host
-  needs it to apply, add or ignore) and `ContextInfo.SpellingSuggestions` its strings. The word the checker judged can differ from
-  `ContextInfo.Word`, which uses the double-click rule. Building the menu and its wording are the host's.
+  needs it to apply, add or ignore) and `ContextInfo.SpellingSuggestions` its strings. `ContextInfo.Word` and the marked word are one definition
+  (see above), except that the marked word has no unchecked ends and may have an object in it. A pointer over the space beside a marked word, or over an
+  object alone, gets no spelling; a caret at the end of the word does. Building the menu and its wording are the host's.
 - **A host base class, and one wrapper per checker.** `SpellCheckHostBase` implements the interface from `GetChecker` alone, with the default
   word rules and a `RaiseDictionariesChanged()` safe from any thread. The field wraps each checker once (it still asks the host every
   time, and makes a new wrapper only when the host answers with another checker), until a restart.

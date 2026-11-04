@@ -145,12 +145,16 @@ namespace SIL.TextEditing
         string? _text;
         long _textStamp;
 
+        /// <summary>For a test: how many times <see cref="Text"/> has been asked for, so a test can count that work instead of timing it.</summary>
+        internal long TextReads { get; private set; }
+
         /// <summary>The paragraph's text. One run's text is that run's string; several are joined once and the result kept until the paragraph changes
         /// (<see cref="ChangeStamp"/>), so asking again is free.</summary>
         public string Text
         {
             get
             {
+                TextReads++;
                 if (Runs.Count == 1) return Runs[0].Text;
                 if (_text != null && _textStamp == _stamp) return _text;
                 var sb = new StringBuilder();

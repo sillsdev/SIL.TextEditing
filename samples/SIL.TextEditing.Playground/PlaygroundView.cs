@@ -47,6 +47,8 @@ namespace SIL.TextEditing.Playground
             public const string SpellShow = "SpellShowButton";
             public const string SpellReplace = "SpellReplaceButton";
             public const string SpellSpaces = "SpellSpacesButton";
+            public const string SpellWholeFirst = "SpellWholeFirstButton";
+            public const string SpellWholeLast = "SpellWholeLastButton";
             public const string SpellAdd = "SpellAddButton";
             public const string SpellIgnore = "SpellIgnoreButton";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
@@ -226,6 +228,8 @@ namespace SIL.TextEditing.Playground
             toolbar.Children.Add(Tool(Names.SpellShow, "Spelling at caret", "What the context menu would offer for the marked word at the caret: the word, why it is marked and the suggestions", () => ShowSpelling()));
             toolbar.Children.Add(Tool(Names.SpellReplace, "Use first suggestion", "Replace the marked word at the caret with the first suggestion (one undo step)", () => ReplaceSpelling()));
             toolbar.Children.Add(Tool(Names.SpellSpaces, "Insert missing spaces", "For a word that mixes writing systems or holds an object: put a space between the parts, each part keeping its own writing system", () => SpacesSpelling()));
+            toolbar.Children.Add(Tool(Names.SpellWholeFirst, "Whole word, first writing system", "For a word that mixes writing systems: make the whole word the first writing system in it, as FieldWorks' menu item does", () => WholeWordSpelling(false)));
+            toolbar.Children.Add(Tool(Names.SpellWholeLast, "Whole word, last writing system", "For a word that mixes writing systems: make the whole word the last writing system in it", () => WholeWordSpelling(true)));
             toolbar.Children.Add(Tool(Names.SpellAdd, "Add to dictionary", "Add the marked word at the caret to its dictionary", () => AddSpelling(false)));
             toolbar.Children.Add(Tool(Names.SpellIgnore, "Ignore", "Ignore the marked word at the caret", () => AddSpelling(true)));
 
@@ -632,6 +636,15 @@ namespace SIL.TextEditing.Playground
             var at = SpellingAtCaret("insert spaces");
             if (at == null) return;
             Log("insert spaces: '" + at.Word + "': " + (_active.Field.ApplySpellingSuggestion(at, at.WithMissingSpaces()) ? "done" : "refused"));
+        }
+
+        void WholeWordSpelling(bool last)
+        {
+            var at = SpellingAtCaret("whole word");
+            if (at == null) return;
+            if (at.WritingSystems.Count < 2) { Log("whole word: '" + at.Word + "' is in one writing system"); return; }
+            var ws = last ? at.WritingSystems[at.WritingSystems.Count - 1] : at.WritingSystems[0];
+            Log("whole word: '" + at.Word + "' -> " + ws + ": " + (_active.Field.ApplySpellingSuggestion(at, at.WithWholeWordIn(ws)) ? "done" : "refused"));
         }
 
         void AddSpelling(bool ignore)

@@ -10,7 +10,10 @@ namespace SIL.TextEditing
         /// <summary>The place asked about: the character under the pointer, or the caret.</summary>
         public TextPosition Position { get; internal set; }
 
-        /// <summary>The word at the place, or the empty string when it is on white space, punctuation or an embedded object.</summary>
+        /// <summary>The word at the place, or the empty string when it is on white space, punctuation or an embedded object. It is a word by the spell
+        /// checker's rule when the field has one (the host's word-forming characters for each writing system, digits, and the apostrophes and joiners that
+        /// stay inside a word) and by the same rule's defaults when not, so an underscore or a hyphen ends it in both, as in FieldWorks. An embedded object
+        /// ends it here; the marked word of <see cref="Spelling"/> can have an object in it and so reach further.</summary>
         public string Word { get; internal set; } = string.Empty;
 
         /// <summary>The word's range; empty (at <see cref="Position"/>) when there is no word.</summary>

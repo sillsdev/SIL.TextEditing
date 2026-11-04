@@ -35,6 +35,8 @@ namespace SIL.TextEditing.Avalonia
                 StopListening();
                 _spellHost = value;
                 _spellGuard = value == null ? null : new GuardedHost(this, value);
+                // A context request names the word by the spell checker's rule while there is one, so it is the word that is squiggled.
+                Editor.WordFinder = value == null ? (Func<Paragraph, int, (int Start, int End)?>?)null : (paragraph, index) => SpellScanner.TryWordAt(paragraph, index, _spellGuard!, out int a, out int b) ? (a, b) : ((int, int)?)null;
                 if (_onScreen) StartListening();
                 RestartSpelling();
             }

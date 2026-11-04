@@ -245,6 +245,27 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void The_whole_word_buttons_make_a_mixed_word_one_writing_system_and_leave_a_word_in_one_alone() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Spelling))
+            {
+                Headless.Pump();
+                s.Caret(2, s.ParagraphText(2).IndexOf("Glued", StringComparison.Ordinal) + 2);
+                s.Click(PlaygroundView.Names.SpellWholeLast);
+                Assert.Contains("whole word: 'Gluedmots' -> fr: done", s.Log);
+                Assert.Contains("A word in Gluedmots is blue", s.ParagraphText(2));   // the text is the same; only the writing system changed
+                Assert.Equal("fr", s.Editor.Document.Paragraphs[2].RunAfter(s.ParagraphText(2).IndexOf("Glued", StringComparison.Ordinal) + 2, out _)!.Ws);
+                Headless.Pump();
+                Assert.Empty(Words(s, 2, SpellingProblem.Mixed));
+                s.Click(PlaygroundView.Names.Undo);
+                Assert.Equal("en", s.Editor.Document.Paragraphs[2].RunAfter(s.ParagraphText(2).IndexOf("Glued", StringComparison.Ordinal) + 2, out _)!.Ws);
+                s.Click(PlaygroundView.Names.SpellWholeFirst);
+                Assert.Contains("whole word: 'Gluedmots' -> en: done", s.Log);
+                Assert.Equal("en", s.Editor.Document.Paragraphs[2].RunAfter(s.ParagraphText(2).IndexOf("mots", StringComparison.Ordinal) + 1, out _)!.Ws);
+            }
+        });
+
+        [Fact]
         public void The_insert_missing_spaces_button_keeps_the_object_of_an_embedded_word() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Spelling))

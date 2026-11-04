@@ -6,6 +6,22 @@ namespace SIL.TextEditing
     // Context-menu information (ADR 0021): the editor describes a place; the field raises the event and the host builds the menu.
     public sealed partial class DocumentEditor
     {
+        /// <summary>Finds the word at a character of a paragraph for <see cref="DescribeContext"/>: the paragraph, the index, and the word's range, or
+        /// null when the character is not part of a word. Null (the default) uses <see cref="WordBreaks"/>, whose rule agrees with the spell checker's
+        /// defaults. A field with spell checking sets it to the spell checker's rule, so the word of a context request is the squiggled word; it is the
+        /// field's to set, so a host that sets <c>SpellChecking</c> or clears it does not have its own overwritten.</summary>
+        internal Func<Paragraph, int, (int Start, int End)?>? WordFinder { get; set; }
+
+        bool TryWordAt(Paragraph paragraph, string text, int index, out int start, out int end)
+        {
+            var finder = WordFinder;
+            if (finder == null) return WordBreaks.TryWordAt(text, index, out start, out end);
+            var found = finder(paragraph, index);
+            start = found?.Start ?? Math.Max(0, Math.Min(text.Length, index));
+            end = found?.End ?? start;
+            return found != null;
+        }
+
         /// <summary>Describes the place at <paramref name="position"/> for a context menu. With <paramref name="atCaret"/> the
         /// place is an insertion point (a keyboard request): the character after it counts, and when that is not part of a word or
         /// an object, the one before it. Otherwise it is the character at the position (the one under the pointer).</summary>
@@ -20,11 +36,11 @@ namespace SIL.TextEditing
             // The character the place means: at the offset, or for an insertion point the one before when none follows.
             int ch = !onText ? -1 : offset < text.Length ? offset : text.Length > 0 ? text.Length - 1 : -1;
             int word0 = 0, word1 = 0;
-            bool onWord = ch >= 0 && WordBreaks.TryWordAt(text, ch, out word0, out word1);
+            bool onWord = ch >= 0 && TryWordAt(para, text, ch, out word0, out word1);
             if (!onWord && atCaret && offset > 0 && offset <= text.Length)
             {
                 ch = offset - 1;
-                onWord = WordBreaks.TryWordAt(text, ch, out word0, out word1);
+                onWord = TryWordAt(para, text, ch, out word0, out word1);
             }
             if (onWord)
             {
