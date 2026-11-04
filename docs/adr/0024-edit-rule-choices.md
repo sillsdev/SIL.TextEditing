@@ -90,6 +90,16 @@ one, and can change without superseding anything.
   field, because the joined text would vanish. Read from FieldWorks' Backspace at the start of a paragraph, which moves the
   paragraph's text into the one above and looks at editability, not at truncation; the combination itself was not run
   there. Default, not an owner decision.
+- **The writing-system event is complete for a host that switches keyboards (ADR 0008).** `ActiveWsChanged` carries the old and
+  the new writing system and is raised once per change, never when nothing changed: when the caret moves into text of another
+  writing system, when an edit, an undo or `SetActiveWs` (the writing-system toolbar) changes it, and when a selection's
+  first writing system changes. FieldWorks sets the keyboard for the first writing system a selection covers, not for the end
+  the caret is at, so selecting forward from English into French changes nothing and the field matches that. It is also raised
+  when the field gains focus, with the old and new both the writing system at the caret, because the keyboard in effect then
+  belongs to whatever had focus before (FieldWorks sets the keyboard for the selection on focus too). The one difference from
+  FieldWorks is ours: its views do not switch the keyboard while they lack focus, the field still reports a change while it lacks
+  focus, and the host ignores one from a field that is not the focused one. The old and new being equal on focus gain, and
+  reporting while unfocused, are defaults, not owner decisions.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

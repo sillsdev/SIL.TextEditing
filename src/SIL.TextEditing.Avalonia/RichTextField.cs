@@ -68,7 +68,7 @@ namespace SIL.TextEditing.Avalonia
             Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count && FormatOf(p).MaxLines > 0 ? VisibleLength(p) : int.MaxValue;
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
-            GotFocus += (o, e) => InvalidateVisual();
+            GotFocus += (o, e) => { InvalidateVisual(); ActiveWsChanged?.Invoke(Editor.ActiveWs, Editor.ActiveWs); };
             LostFocus += (o, e) => { Editor.CloseUndoGroup(); InvalidateVisual(); };
             Editor.Committed += d => RestartPauseTimer();
             ActualThemeVariantChanged += (o, e) => InvalidateVisual();
@@ -138,7 +138,15 @@ namespace SIL.TextEditing.Avalonia
         public string? Preedit => _preedit;
         public TextInputMethodClient ImeClient => _ime;
 
-        /// <summary>Raised synchronously when the active writing system changes: old, new.</summary>
+        /// <summary>Tells the host which writing system's keyboard to switch to (ADR 0008; the field never touches keyboards).
+        /// Raised synchronously, with the old and the new writing system, once per change and never when nothing changed: when the
+        /// caret moves into text of another writing system, when a selection's first writing system changes (FieldWorks uses the
+        /// first writing system a selection covers, not the end the caret is at), when an edit, an undo or <see cref="DocumentEditor.SetActiveWs"/>
+        /// (the writing-system toolbar) changes it. It is also raised when the field gains focus, with the old and new both the
+        /// writing system at the caret, because the keyboard then in effect belongs to whatever had focus before and the
+        /// writing system here may not have changed. The field raises it whether or not it has focus, as FieldWorks' views
+        /// do not: a host switches the keyboard only for the field the user is in (the one that last gained focus), and ignores
+        /// a change reported by any other.</summary>
         public event Action<string, string>? ActiveWsChanged;
         /// <summary>Raised in single-paragraph mode when Enter is pressed (Shift+Enter is not passed on: it inserts a hard line break): the host decides what it means, as a
         /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it

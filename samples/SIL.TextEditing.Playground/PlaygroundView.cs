@@ -322,7 +322,7 @@ namespace SIL.TextEditing.Playground
             {
                 if (_active != session) return;
                 UpdateWsLabel();
-                Log("caret ws " + o + " -> " + n + ": would switch keyboard to " + n);
+                Log(o == n ? "focus gained, ws " + n + ": would switch keyboard to " + n : "caret ws " + o + " -> " + n + ": would switch keyboard to " + n);
             };
             field.LeaveRequested += (o, e) =>
             {
