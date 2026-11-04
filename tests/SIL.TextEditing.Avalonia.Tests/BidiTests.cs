@@ -12,7 +12,7 @@ namespace SIL.TextEditing.Avalonia.Tests
     /// Visual caret stops, hit testing and selection rectangles over mixed left-to-right and right-to-left
     /// text, with expected values derived by hand from the bidi algorithm. Two Avalonia faults are pinned here as known
     /// failures so a fix shows up as a failing test (and the workaround can go): hit testing in a right-to-left
-    /// paragraph on Avalonia 11.3, and inline objects in right-to-left text on both generations.
+    /// paragraph on Avalonia 11.3 (the layout reads such a line from its runs), and inline objects in right-to-left text on both generations.
     /// </summary>
     public class BidiTests
     {
@@ -111,18 +111,35 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
-        public void Hit_testing_in_a_right_to_left_paragraph() => Headless.Run(() =>
+        public void Hit_testing_in_a_right_to_left_paragraph_is_exact_on_both_avalonia_lines() => Headless.Run(() =>
         {
             var field = Build(Rtl);
             var layout = field.ParagraphLayoutFor(0);
-            var bad = HitTestMismatches(field, Rtl, layout.VisualStops(layout.Lines[0]));
-            if (Headless.AvaloniaMajor >= 12) Assert.Empty(bad);
-            else
+            Assert.Empty(HitTestMismatches(field, Rtl, layout.VisualStops(layout.Lines[0])));
+        });
+
+        [Fact]
+        public void Avalonia_11_3_hit_testing_in_a_right_to_left_paragraph_is_wrong_so_the_layout_reads_the_runs_instead() => Headless.Run(() =>
+        {
+            var field = Build(Rtl);
+            var layout = field.ParagraphLayoutFor(0);
+            var li = layout.Lines[0];
+            Assert.True(li.UsesRuns, "the layout reads this line from its runs");
+            var stops = layout.VisualStops(li);
+            int wrong = 0;
+            for (int k = 0; k < Rtl.Visual.Length; k++)
             {
-                // Known Avalonia 11.3.17 fault: a cluster of Latin letters inside the Arabic run maps to offsets +2.
-                // Spike measurement: 4 of 20 wrong. When this starts passing, drop the workaround note in the README.
-                Assert.NotEmpty(bad);
+                int i = Rtl.Visual[k];
+                double xl = stops[k].X, xr = stops[k + 1].X;
+                var left = li.Line.GetCharacterHitFromDistance(xl + (xr - xl) * 0.25);
+                var right = li.Line.GetCharacterHitFromDistance(xl + (xr - xl) * 0.75);
+                if (left.FirstCharacterIndex + left.TrailingLength != (Rtl.RtlChar[i] ? i + 1 : i)) wrong++;
+                if (right.FirstCharacterIndex + right.TrailingLength != (Rtl.RtlChar[i] ? i : i + 1)) wrong++;
             }
+            // Known Avalonia 11.3.17 fault: a cluster of Latin letters inside the Arabic run maps to offsets +2 (4 of 20 wrong in the spike).
+            // Fixed in 12. When 11.3 goes (ADR 0009), the layout's reading of the runs for this fault goes with this test.
+            if (Headless.AvaloniaMajor >= 12) Assert.Equal(0, wrong);
+            else Assert.NotEqual(0, wrong);
         });
 
         [Theory, MemberData(nameof(Cases))]
@@ -182,6 +199,37 @@ namespace SIL.TextEditing.Avalonia.Tests
             // If this fails, Avalonia fixed it: make ObjectAsGlyph default off and delete the workaround.
             var offsets = OrcStopOffsets(false, out _);
             Assert.False(StrictlyDescending(offsets), string.Join(" ", offsets));
+        });
+
+        public static IEnumerable<object[]> MixedLines()
+        {
+            foreach (var text in new[]
+            {
+                "ab عربي cd",
+                "ab عربي cd عربي ef",
+                "The quick عربي fox (جمل) jumps over the lazy dog while the five boxing wizards jump quickly",
+                "هذا نص عربي with some English words وكلمات عربية أخرى in the middle of the line and نهاية الفقرة هنا جملة طويلة",
+            })
+                foreach (var rtl in new[] { false, true })
+                    foreach (var width in new[] { 200.0, 300, 520 })
+                        yield return new object[] { text, rtl, width };
+        }
+
+        [Theory, MemberData(nameof(MixedLines))]
+        public void Hit_testing_at_the_x_of_a_stop_gives_a_caret_at_that_stop_whichever_of_the_offsets_that_place_has_it_returns(string text, bool rtl, double width) => Headless.Run(() =>
+        {
+            // At a boundary between directions one place on the screen is two offsets (after the last character of one run, before the first
+            // of the next), so a click there may answer with either; the caret it gives (offset with its hit) must be at the click.
+            var p = Para("en", "en", text);
+            p.Rtl = rtl;
+            var layout = Fixtures.Field(Doc(p), width).ParagraphLayoutFor(0);
+            foreach (var li in layout.Lines)
+                foreach (var stop in layout.VisualStops(li))
+                {
+                    var hit = layout.HitTestDetailed(new Point(stop.X, li.Y + 2));
+                    var caret = layout.CaretRect(hit.Offset, false, hit.CaretHit);
+                    Assert.True(Math.Abs(caret.X - stop.X) < 1, "a click at " + stop.X + " (the stop of offset " + stop.Offset + ") gave offset " + hit.Offset + ", whose caret is at " + caret.X);
+                }
         });
     }
 }

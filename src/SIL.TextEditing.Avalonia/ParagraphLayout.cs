@@ -271,12 +271,27 @@ namespace SIL.TextEditing.Avalonia
         public int Length { get; }
         public double Width => Run.Size.Width;
 
+        /// <summary>True when the run has glyphs, so it can answer <see cref="Distance"/> and <see cref="HitFromDistance"/> (an object run has none).</summary>
+        public bool HasGlyphs => Glyphs != null && _firstCluster != int.MaxValue;
+
+        /// <summary>True when the run's own direction is right to left (its characters run from its right edge to its left).</summary>
+        public bool RightToLeft => Glyphs != null && !Glyphs.IsLeftToRight;
+
         /// <summary>The distance from the run's origin to the leading edge of the character at the paragraph text <paramref name="index"/>
-        /// (the run's whole width at its end), or null when the run cannot say.</summary>
-        public double? Distance(int index)
+        /// (the run's whole width at its end), or, with a <paramref name="trailing"/> length, to the trailing edge of the character after it has been
+        /// passed by that many characters; null when the run cannot say.</summary>
+        public double? Distance(int index, int trailing = 0)
         {
-            if (Glyphs == null || _firstCluster == int.MaxValue || index < Start || index > Start + Length) return null;
-            return Glyphs.GetDistanceFromCharacterHit(new CharacterHit(_firstCluster + index - Start));
+            if (!HasGlyphs || index < Start || index > Start + Length) return null;
+            return Glyphs!.GetDistanceFromCharacterHit(new CharacterHit(_firstCluster + index - Start, trailing));
+        }
+
+        /// <summary>The caret hit (in paragraph text offsets) at a distance from the run's origin, or null when the run cannot say.</summary>
+        public CharacterHit? HitFromDistance(double distance)
+        {
+            if (!HasGlyphs) return null;
+            var hit = Glyphs!.GetCharacterHitFromDistance(distance, out _);
+            return new CharacterHit(hit.FirstCharacterIndex - _firstCluster + Start, hit.TrailingLength);
         }
     }
     public sealed class LineInfo
@@ -286,7 +301,7 @@ namespace SIL.TextEditing.Avalonia
         {
         }
 
-        internal LineInfo(TextLine line, double y, double x, double height, double baselineInSlot, OffsetMap? offsets)
+        internal LineInfo(TextLine line, double y, double x, double height, double baselineInSlot, OffsetMap? offsets, bool rightToLeft = false)
         {
             Line = line;
             Y = y;
@@ -296,7 +311,9 @@ namespace SIL.TextEditing.Avalonia
             _offsets = offsets;
             _runs = ParagraphLayout.RunOffsets(line, offsets, out var raise, out var lower);
             HasOffsets = _runs != null;
-            if (HasOffsets) _slots = ParagraphLayout.RunSlots(line);
+            if (HasOffsets || rightToLeft) _slots = ParagraphLayout.RunSlots(line);
+            // A right-to-left paragraph's line of several runs is read from the runs as they are drawn (see DistanceOf).
+            UsesRuns = rightToLeft && _slots != null && _slots.Count >= 2 && _slots.All(slot => slot.HasGlyphs);
             Raise = raise;
             Lower = lower;
             Start = line.FirstTextSourceIndex;
@@ -341,6 +358,39 @@ namespace SIL.TextEditing.Avalonia
         readonly double _baselineInSlot;
         /// <summary>True when a run on the line has a baseline offset, so the line is drawn run by run (<see cref="Draw"/>).</summary>
         public bool HasOffsets { get; }
+        /// <summary>True when the caret, the mouse and the selection on this line are read from its runs and not from Avalonia's line. Avalonia 11.3
+        /// and 12 both give the wrong place for a left-to-right run on a right-to-left paragraph's line of two or more runs (and throw for some
+        /// ranges), where the runs themselves, which are what is drawn, are right. See <see cref="DistanceOf"/>.</summary>
+        public bool UsesRuns { get; }
+
+        int SlotOf(int offset)
+        {
+            for (int i = 0; i < _slots!.Count; i++)
+                if (offset >= _slots[i].Start && offset < _slots[i].Start + _slots[i].Length) return i;
+            return -1;
+        }
+
+        /// <summary>The x from the line's origin of a caret hit, as <c>TextLine.GetDistanceFromCharacterHit</c> says it, but on a line that
+        /// <see cref="UsesRuns"/> from the run the character is in.</summary>
+        internal double DistanceOf(CharacterHit hit)
+        {
+            if (!UsesRuns) return Line.GetDistanceFromCharacterHit(hit);
+            int offset = hit.FirstCharacterIndex;
+            int k = SlotOf(offset);
+            if (hit.TrailingLength == 0 && k < 0) { k = SlotOf(offset - 1); }   // after the last character: the end of the run it is in
+            if (k >= 0 && _slots![k].Distance(offset, hit.TrailingLength) is double d) return _slots[k].X + d;
+            return Line.GetDistanceFromCharacterHit(hit);
+        }
+
+        /// <summary>The caret hit at an x from the line's origin, as <c>TextLine.GetCharacterHitFromDistance</c> says it, but on a line that
+        /// <see cref="UsesRuns"/> from the run the point is over.</summary>
+        internal CharacterHit HitAt(double x)
+        {
+            if (!UsesRuns) return Line.GetCharacterHitFromDistance(x);
+            int k = 0;
+            while (k < _slots!.Count - 1 && x >= _slots[k].X + _slots[k].Width) k++;
+            return _slots[k].HitFromDistance(x - _slots[k].X) ?? Line.GetCharacterHitFromDistance(x);
+        }
         readonly OffsetMap? _offsets;
         readonly List<RunSlot>? _slots;
         Justification? _justification;
@@ -415,7 +465,7 @@ namespace SIL.TextEditing.Avalonia
         internal List<KeyValuePair<Rect, double>> Pieces(int from, int to)
         {
             var result = new List<KeyValuePair<Rect, double>>();
-            if (_offsets != null && _slots != null)
+            if (_slots != null && (HasOffsets || UsesRuns))
             {
                 // A line with shifted runs is read run by run, from the runs as they are drawn (see ParagraphLayout.RunSlots).
                 foreach (var slot in _slots)
@@ -432,7 +482,7 @@ namespace SIL.TextEditing.Avalonia
                             right = Math.Max(p.Value, q.Value);
                         }
                     }
-                    result.Add(new KeyValuePair<Rect, double>(Shown(new Rect(slot.X + left, 0, right - left, Line.Height)), _offsets.At(slot.Start)));
+                    result.Add(new KeyValuePair<Rect, double>(Shown(new Rect(slot.X + left, 0, right - left, Line.Height)), _offsets?.At(slot.Start) ?? 0));
                 }
                 return result;
             }
@@ -793,7 +843,7 @@ namespace SIL.TextEditing.Avalonia
                 }
                 double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
                 if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = ExactFraction(line);
-                var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets) { Available = usedWidth };
+                var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl) { Available = usedWidth };
                 layout.Lines.Add(shown);
                 if (pf.Align == 5 && index + line.Length < source.Text.Length) layout.Justify(shown, usedWidth);
                 y += slot;
@@ -886,11 +936,18 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (EffectiveText[i] != ' ') continue;
                 double left = double.MaxValue, right = double.MinValue;
-                foreach (var tb in li.Line.GetTextBounds(i, 1))
-                {
-                    left = Math.Min(left, tb.Rectangle.X);
-                    right = Math.Max(right, tb.Rectangle.Right);
-                }
+                if (li.UsesRuns)
+                    foreach (var piece in li.Pieces(i, i + 1))
+                    {
+                        left = Math.Min(left, piece.Key.X - li.X);
+                        right = Math.Max(right, piece.Key.Right - li.X);
+                    }
+                else
+                    foreach (var tb in li.Line.GetTextBounds(i, 1))
+                    {
+                        left = Math.Min(left, tb.Rectangle.X);
+                        right = Math.Max(right, tb.Rectangle.Right);
+                    }
                 if (right - left > 0.01) spaces.Add(new KeyValuePair<double, double>(left, right));
             }
             if (spaces.Count == 0) return;
@@ -1316,7 +1373,7 @@ namespace SIL.TextEditing.Avalonia
         /// or the last letter, whichever is further; its offset is unchanged.</summary>
         double CaretX(LineInfo li, CharacterHit h)
         {
-            double x = li.X + li.Map(li.Line.GetDistanceFromCharacterHit(h));
+            double x = li.X + li.Map(li.DistanceOf(h));
             int o = h.FirstCharacterIndex + h.TrailingLength;
             if (li.IsEmpty || li.Available <= 0 || li == Lines[Lines.Count - 1]) return x;
             int core = TextBeforeTrailingSpaces(li);
@@ -1361,7 +1418,7 @@ namespace SIL.TextEditing.Avalonia
             }
             if (li.IsEmpty)
                 return new HitResult { Offset = Paragraph.Length, CaretHit = new CharacterHit(li.Start), Character = Paragraph.Length };   // past the last character: the empty line after a trailing break holds none
-            var h = li.Line.GetCharacterHitFromDistance(li.Unmap(point.X - li.X));
+            var h = li.HitAt(li.Unmap(point.X - li.X));
             int e = h.FirstCharacterIndex + h.TrailingLength;
             int max = TextEnd(li);
             bool last = li == Lines[Lines.Count - 1];
@@ -1444,6 +1501,19 @@ namespace SIL.TextEditing.Avalonia
             var h = new CharacterHit(line.Start);
             int guard = 0;
             int max = TextEnd(line);
+            if (line.UsesRuns)
+            {
+                // Every boundary between characters is two places: the leading edge of the character after it and the trailing edge of the one before.
+                for (int o = line.Start; o <= max && guard++ < 10000;)
+                {
+                    candidates.Add(new Stop { Hit = new CharacterHit(o), Offset = o, X = CaretX(line, new CharacterHit(o)) });
+                    int before = o > line.Start ? GraphemeClusters.Previous(EffectiveText, o) : o;
+                    if (before < o) { var trailing = new CharacterHit(before, o - before); candidates.Add(new Stop { Hit = trailing, Offset = o, X = CaretX(line, trailing) }); }
+                    int after = o < max ? GraphemeClusters.Next(EffectiveText, o) : max + 1;
+                    o = after > o ? Math.Min(after, o < max ? max : after) : max + 1;
+                }
+            }
+            else
             while (guard++ < 10000)
             {
                 int o = h.FirstCharacterIndex + h.TrailingLength;
