@@ -80,6 +80,8 @@ namespace SIL.TextEditing.Markdown
         public const string UnsupportedMarkup = "gdr.syntax.unsupported-markup";
         /// <summary>Added: an attribute block that breaks the grammar of spec 3.3, or a value that does not fit its key.</summary>
         public const string MalformedAttribute = "gdr.syntax.malformed-attribute";
+        /// <summary>Added: a block, line or table too deeply nested or too large for the parser (Markdig's limit). Its lines are kept as plain text.</summary>
+        public const string TooDeep = "gdr.syntax.too-deep";
         public const string WsUnknown = "gdr.ws.unknown";
         public const string LinkNotFound = "gdr.link.not-found";
         public const string StyleUnknown = "gdr.style.unknown";

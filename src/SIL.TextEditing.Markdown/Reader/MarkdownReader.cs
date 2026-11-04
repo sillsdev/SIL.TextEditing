@@ -86,27 +86,145 @@ namespace SIL.TextEditing.Markdown.Reader
         {
             var fences = new List<Fence>();
             string blanked = ScanFences(fences);
-            var document = Markdig.Markdown.Parse(blanked, NotationExtension.Document, _context.NewParserContext());
+            var fenceStarts = new HashSet<int>();
+            foreach (var fence in fences) fenceStarts.Add(fence.Start);
+            var tooBig = new List<int[]>();
+            var document = TryParse(blanked, NotationExtension.Document, _context);
+            if (document == null)
+            {
+                // Some block is beyond Markdig's limits. Find the blocks that are, keep their lines as text, and read the rest as usual.
+                blanked = BlankChunks(blanked, fenceStarts, tooBig, probe: true);
+                document = TryParse(blanked, NotationExtension.Document, _context);
+                if (document == null)
+                {
+                    // Every block reads alone but the whole does not: nothing is left to read as structure.
+                    tooBig.Clear();
+                    blanked = BlankChunks(blanked, fenceStarts, tooBig, probe: false);
+                    document = TryParse(blanked, NotationExtension.Document, _context) ?? new Markdig.Syntax.MarkdownDocument();
+                }
+            }
             _context.EndParse();
             var items = new List<KeyValuePair<int, object>>();
             foreach (var block in document) items.Add(new KeyValuePair<int, object>(block.Span.Start, block));
             foreach (var fence in fences) items.Add(new KeyValuePair<int, object>(fence.Start, fence));
+            foreach (var chunk in tooBig)
+            {
+                ReportTooDeep(chunk[0], FirstLineEnd(chunk[0], chunk[1]));
+                items.Add(new KeyValuePair<int, object>(chunk[0], chunk));
+            }
             items.Sort((a, b) => a.Key.CompareTo(b.Key));
-            var fenceStarts = new HashSet<int>();
-            foreach (var fence in fences) fenceStarts.Add(fence.Start);
             foreach (var item in items)
             {
                 if (item.Value is Fence fenceBlock) ReadFence(fenceBlock);
+                else if (item.Value is int[] chunk) ReadLiteralLines(chunk[0], chunk[1]);
                 else if (item.Value is ThematicBreakBlock && fenceStarts.Contains(item.Key)) continue; // a blanked fence, see Interrupt
                 else ReadBlock((Block)item.Value, blanked);
             }
+        }
+
+        // ---------------------------------------------------------------- Markdig's limits
+
+        /// <summary>True for what Markdig throws when text nests too deeply or is too large for it (its depth limit), or when the stack is
+        /// nearly used up. The notation's own parsers and the host's callbacks do not throw these.</summary>
+        static bool IsParseLimit(Exception e)
+            => e is InsufficientExecutionStackException
+               || (e is ArgumentException && e.Message.IndexOf("too deeply nested", StringComparison.Ordinal) >= 0);
+
+        /// <summary>Reads the text with Markdig; null when it is beyond Markdig's limits. The findings a parse that did not finish made are dropped.</summary>
+        static Markdig.Syntax.MarkdownDocument? TryParse(string text, Markdig.MarkdownPipeline pipeline, ReaderContext context)
+        {
+            int mark = context.Count;
+            try
+            {
+                return Markdig.Markdown.Parse(text, pipeline, context.NewParserContext());
+            }
+            catch (Exception e) when (IsParseLimit(e))
+            {
+                context.Truncate(mark);
+                return null;
+            }
+        }
+
+        const string TooDeepMessage = "This text is nested too deeply or is too large to read. Split it into smaller paragraphs, lists or tables. Its lines are kept as plain text.";
+
+        void ReportTooDeep(int start, int end) => _context.Report(MarkdownDiagnosticIds.TooDeep, MarkdownSeverity.Error, TooDeepMessage, start, end);
+
+        int FirstLineEnd(int start, int end)
+        {
+            int i = start;
+            while (i < end && _source[i] != '\n' && _source[i] != '\r') i++;
+            return i;
+        }
+
+        Run LiteralRun(string text) => new Run { Text = text, Ws = _options.WritingSystems.DefaultAnalysis };
+
+        /// <summary>The lines of [start, end) as paragraphs of plain text, the way a block that cannot be read is kept.</summary>
+        void ReadLiteralLines(int start, int end)
+        {
+            _context.Base = 0;
+            int i = start;
+            while (i < end)
+            {
+                int lineEnd = i;
+                while (lineEnd < end && _source[lineEnd] != '\n' && _source[lineEnd] != '\r') lineEnd++;
+                if (lineEnd > i) _paragraphs.Add(MakeParagraph(Names.Normal, new PropertyBag(), new List<Run> { LiteralRun(_source.Substring(i, lineEnd - i)) }, null));
+                i = lineEnd < end && _source[lineEnd] == '\r' && lineEnd + 1 < end && _source[lineEnd + 1] == '\n' ? lineEnd + 2 : lineEnd + 1;
+            }
+        }
+
+        /// <summary>Splits the text into blocks at its blank lines (and at the lines that stand for fences) and returns it with the blocks Markdig
+        /// cannot read blanked out, same length, so every offset stays the source's. With <paramref name="probe"/> false every block is blanked.
+        /// The blocks blanked are added to <paramref name="chunks"/> as {start, end} of their lines.</summary>
+        string BlankChunks(string text, HashSet<int> fenceStarts, List<int[]> chunks, bool probe)
+        {
+            var blanked = new StringBuilder(text);
+            int chunkStart = -1, chunkEnd = -1;
+            int pos = 0;
+            while (pos < text.Length)
+            {
+                int lineEnd = pos;
+                while (lineEnd < text.Length && text[lineEnd] != '\n' && text[lineEnd] != '\r') lineEnd++;
+                int next = lineEnd;
+                if (next < text.Length) next += (text[next] == '\r' && next + 1 < text.Length && text[next + 1] == '\n') ? 2 : 1;
+                int first = pos;
+                while (first < lineEnd && (text[first] == ' ' || text[first] == '\t')) first++;
+                bool boundary = first == lineEnd || fenceStarts.Contains(first);
+                if (!boundary)
+                {
+                    if (chunkStart < 0) chunkStart = pos;
+                    chunkEnd = lineEnd;
+                }
+                else FlushChunk(text, blanked, chunks, probe, ref chunkStart, chunkEnd);
+                pos = next;
+            }
+            FlushChunk(text, blanked, chunks, probe, ref chunkStart, chunkEnd);
+            return blanked.ToString();
+        }
+
+        void FlushChunk(string text, StringBuilder blanked, List<int[]> chunks, bool probe, ref int chunkStart, int chunkEnd)
+        {
+            if (chunkStart < 0) return;
+            int start = chunkStart;
+            chunkStart = -1;
+            if (probe)
+            {
+                string chunk = text.Substring(start, chunkEnd - start);
+                if (TryParse(chunk, NotationExtension.Document, new ReaderContext(_options, chunk)) != null) return;
+            }
+            chunks.Add(new[] { start, chunkEnd });
+            Blank(blanked, start, chunkEnd);
         }
 
         List<Run> ReadInlineText()
         {
             string text = _source;
             _context.Base = 0;
-            var document = Markdig.Markdown.Parse(text, NotationExtension.Document, _context.NewParserContext());
+            var document = TryParse(text, NotationExtension.Document, _context);
+            if (document == null)
+            {
+                ReportTooDeep(0, FirstLineEnd(0, text.Length));
+                return text.Length == 0 ? new List<Run>() : new List<Run> { LiteralRun(text) };
+            }
             var runs = new List<Run>();
             bool first = true;
             foreach (var block in document)
@@ -285,7 +403,14 @@ namespace SIL.TextEditing.Markdown.Reader
                 _paragraphs.Add(MakeParagraph(style, props, new List<Run>(), null));
                 return;
             }
-            var document = Markdig.Markdown.Parse(text, NotationExtension.InlineOnly, _context.NewParserContext());
+            var document = TryParse(text, NotationExtension.InlineOnly, _context);
+            if (document == null)
+            {
+                ReportTooDeep(start, end);
+                _context.Base = 0;
+                _paragraphs.Add(MakeParagraph(style, props, new List<Run> { LiteralRun(text) }, null));
+                return;
+            }
             var runs = new List<Run>();
             foreach (var block in document)
             {

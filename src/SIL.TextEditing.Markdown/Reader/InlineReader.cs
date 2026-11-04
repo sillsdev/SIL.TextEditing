@@ -80,10 +80,19 @@ namespace SIL.TextEditing.Markdown.Reader
             return fmt.Vernacular ? _options.WritingSystems.DefaultVernacular : _options.WritingSystems.DefaultAnalysis;
         }
 
-        void Walk(ContainerInline container, Fmt fmt)
+        /// <summary>Reads the inlines under <paramref name="root"/> in document order. The walk keeps its own stack instead of calling itself,
+        /// so how deeply the text nests (three thousand open brackets, say) cannot overflow the thread's stack.</summary>
+        void Walk(ContainerInline root, Fmt rootFmt)
         {
-            for (Inline? child = container.FirstChild; child != null; child = child.NextSibling)
+            var pending = new Stack<KeyValuePair<Inline?, Fmt>>();
+            pending.Push(new KeyValuePair<Inline?, Fmt>(root.FirstChild, rootFmt));
+            while (pending.Count > 0)
             {
+                var entry = pending.Pop();
+                Inline? child = entry.Key;
+                if (child == null) continue;
+                Fmt fmt = entry.Value;
+                pending.Push(new KeyValuePair<Inline?, Fmt>(child.NextSibling, fmt)); // what follows this child, after everything inside it
                 switch (child)
                 {
                     case LiteralInline literal:
@@ -100,14 +109,14 @@ namespace SIL.TextEditing.Markdown.Reader
                         var inner = fmt.Clone();
                         int number = emphasis.DelimiterCount >= 2 ? TextPropertyNumbers.Bold : TextPropertyNumbers.Italic;
                         inner.Props.IntProps[number] = new IntPropValue(PropertyKeys.VarEnum, TextPropertyNumbers.ToggleOn);
-                        Walk(emphasis, inner);
+                        pending.Push(new KeyValuePair<Inline?, Fmt>(emphasis.FirstChild, inner));
                         break;
                     }
                     case LineBreakInline lineBreak:
                         Add(lineBreak.IsHard && lineBreak.IsBackslash ? Chars.LineSeparatorText : " ", fmt);
                         break;
                     case SpanInline span:
-                        ReadSpan(span, fmt);
+                        pending.Push(new KeyValuePair<Inline?, Fmt>(span.FirstChild, ReadSpan(span, fmt)));
                         break;
                     case NameLinkInline nameLink:
                         ReadNameLink(nameLink, fmt);
@@ -115,11 +124,14 @@ namespace SIL.TextEditing.Markdown.Reader
                     case AttrsInline _:
                         break; // consumed by the link before it
                     case LinkInline link:
-                        ReadLink(link, fmt);
+                    {
+                        var inner = ReadLink(link, fmt);
+                        if (inner != null) pending.Push(new KeyValuePair<Inline?, Fmt>(link.FirstChild, inner));
                         break;
+                    }
                     case Markdig.Extensions.Tables.PipeTableDelimiterInline pipe:
                         Add("|", fmt);
-                        Walk(pipe, fmt);
+                        pending.Push(new KeyValuePair<Inline?, Fmt>(pipe.FirstChild, fmt));
                         break;
                     case CodeInline code:
                         Unsupported(code.Span.Start, code.Span.End, "A code span is not supported. Escape the backtick as \\`.");
@@ -135,10 +147,10 @@ namespace SIL.TextEditing.Markdown.Reader
                         break;
                     case DelimiterInline delimiter:
                         Add(delimiter.ToLiteral(), fmt);
-                        Walk(delimiter, fmt);
+                        pending.Push(new KeyValuePair<Inline?, Fmt>(delimiter.FirstChild, fmt));
                         break;
                     case ContainerInline other:
-                        Walk(other, fmt);
+                        pending.Push(new KeyValuePair<Inline?, Fmt>(other.FirstChild, fmt));
                         break;
                     default:
                         break;
@@ -166,11 +178,11 @@ namespace SIL.TextEditing.Markdown.Reader
 
         // -------------------------------------------------------------- spans and links
 
-        void ReadSpan(SpanInline span, Fmt fmt)
+        /// <summary>The formatting of the text inside a span.</summary>
+        Fmt ReadSpan(SpanInline span, Fmt fmt)
         {
             // The text form [text]{link=...} is placed on the whole span: from the opening bracket to the closing brace.
-            var inner = ApplyAttrs(span.Attrs, fmt, new ObjectForm { Start = span.OpenAt, End = span.Attrs.End - 1 });
-            Walk(span, inner);
+            return ApplyAttrs(span.Attrs, fmt, new ObjectForm { Start = span.OpenAt, End = span.Attrs.End - 1 });
         }
 
         void ReadNameLink(NameLinkInline link, Fmt fmt)
@@ -180,31 +192,30 @@ namespace SIL.TextEditing.Markdown.Reader
             Add(link.Name, inner);
         }
 
-        void ReadLink(LinkInline link, Fmt fmt)
+        /// <summary>Reads a link or picture; returns the formatting of the text inside it, or null when there is none to read.</summary>
+        Fmt? ReadLink(LinkInline link, Fmt fmt)
         {
             AttrBlock? attrs = (link.NextSibling as AttrsInline)?.Attrs;
             if (link.IsAutoLink)
             {
                 Unsupported(link.Span.Start, link.Span.End, "An autolink is not supported. Escape the < as \\<.");
                 Add(Source(link.Span.Start, link.Span.End), fmt);
-                return;
+                return null;
             }
             if (link.IsImage)
             {
                 var form = new ObjectForm { IsPicture = true, Url = link.Url, Start = link.Span.Start, End = link.Span.End };
                 var picture = attrs == null ? Finish(fmt.Clone(), form, null) : ApplyAttrs(attrs, fmt, form);
                 Add(Run.ObjectReplacement.ToString(), picture);
-                return;
+                return null;
             }
             if (link.IsShortcut)
             {
                 Unsupported(link.Span.Start, link.Span.End, "A reference link is not supported. Escape the [ as \\[.");
-                Walk(link, fmt);
-                return;
+                return fmt;
             }
             var linkForm = new ObjectForm { Url = link.Url ?? string.Empty, Start = link.Span.Start, End = link.Span.End };
-            var inner = attrs == null ? Finish(fmt.Clone(), linkForm, null) : ApplyAttrs(attrs, fmt, linkForm);
-            Walk(link, inner);
+            return attrs == null ? Finish(fmt.Clone(), linkForm, null) : ApplyAttrs(attrs, fmt, linkForm);
         }
 
         /// <summary>What the syntax around an attribute block says about the object the run carries.</summary>

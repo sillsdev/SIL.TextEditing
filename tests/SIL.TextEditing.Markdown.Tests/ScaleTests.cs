@@ -1,5 +1,8 @@
 using System;
 using System.Linq;
+using System.Runtime.ExceptionServices;
+using System.Text;
+using System.Threading;
 using Xunit;
 
 namespace SIL.TextEditing.Markdown.Tests
@@ -28,6 +31,203 @@ namespace SIL.TextEditing.Markdown.Tests
             var result = MarkdownConverter.Parse(text);
             Assert.Equal(new[] { 1, 5, 9 }, result.Diagnostics.Select(d => d.Line).ToArray());
             Assert.Equal(5, result.Document.Paragraphs.Count);
+        }
+
+        // ------------------------------------------------------------ hostile and very large input: findings, never a crash
+
+        /// <summary>Runs on a thread with the default 1 MB stack, so a recursion that grows with the input fails whatever stack the test runner has.</summary>
+        static T OnSmallStack<T>(Func<T> work)
+        {
+            T result = default!;
+            Exception? error = null;
+            var thread = new Thread(() =>
+            {
+                try { result = work(); }
+                catch (Exception e) { error = e; }
+            }, 1024 * 1024);
+            thread.Start();
+            thread.Join();
+            if (error != null) ExceptionDispatchInfo.Capture(error).Throw();
+            return result;
+        }
+
+        static string Repeat(string text, int count) => string.Concat(Enumerable.Repeat(text, count));
+
+        static MarkdownParseResult ParseSafely(string markdown) => OnSmallStack(() => MarkdownConverter.Parse(markdown));
+
+        static string AllText(MarkdownParseResult result) => string.Join("\n", result.Document.Paragraphs.Select(p => p.Text));
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void ThreeThousandUnmatchedBracketsAreText()
+        {
+            string text = Repeat("[", 3000);
+            var result = ParseSafely(text);
+            Assert.Equal(text, AllText(result));
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void ThreeThousandNestedSpansAreRead()
+        {
+            var result = ParseSafely(Repeat("[", 3000) + "x" + Repeat("]{v}", 3000));
+            Assert.False(result.HasErrors);
+            Assert.Equal("x", AllText(result));
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void ThreeThousandNestedEmphasesAreRead()
+        {
+            var result = ParseSafely(Repeat("*a ", 3000) + "x" + Repeat("* ", 3000));
+            Assert.NotEmpty(result.Document.Paragraphs);
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void ThreeThousandUnmatchedBracketsInAFenceLineAndATableCellAreText()
+        {
+            string brackets = Repeat("[", 3000);
+            var fence = ParseSafely("::: {style=S}\n" + brackets + "\n:::");
+            Assert.Equal(brackets, AllText(fence));
+            var table = ParseSafely("| a |\n| --- |\n| " + brackets + " |");
+            Assert.Equal("a\n" + brackets, AllText(table));
+        }
+
+        static void AssertTooDeep(MarkdownParseResult result, string firstLine)
+        {
+            var finding = Assert.Single(result.Diagnostics, d => d.Id == MarkdownDiagnosticIds.TooDeep);
+            Assert.Equal(MarkdownSeverity.Error, finding.Severity);
+            Assert.Equal(1, finding.Line);
+            Assert.Equal(1, finding.Column);
+            Assert.Equal(firstLine, finding.Observed);
+            Assert.Contains("Split", finding.Message);
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void OneHundredAndThirtyNestedQuotesAreOneFindingAndLiteralText()
+        {
+            string line = Repeat("> ", 130) + "x";
+            var result = ParseSafely(line);
+            AssertTooDeep(result, line);
+            Assert.Equal(line, AllText(result));
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void AListNestedOneHundredDeepIsOneFindingAndLiteralText()
+        {
+            string text = string.Join("\n", Enumerable.Range(0, 100).Select(i => new string(' ', 2 * i) + "- x"));
+            var result = ParseSafely(text);
+            Assert.Contains(result.Diagnostics, d => d.Severity == MarkdownSeverity.Error);
+            Assert.Contains("x", AllText(result));
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void ATableOfFiveThousandRowsIsOneFindingAndItsLinesAreText()
+        {
+            string text = "| a | b |\n| --- | --- |\n" + Repeat("| c | d |\n", 5000);
+            var result = ParseSafely(text);
+            AssertTooDeep(result, "| a | b |");
+            Assert.Equal(5002, result.Document.Paragraphs.Count);
+            Assert.Equal("| a | b |", result.Document.Paragraphs[0].Text);
+            Assert.Equal("| c | d |", result.Document.Paragraphs[5001].Text);
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void TenThousandEmphasesInOneParagraphAreOneFindingAndLiteralText()
+        {
+            string line = Repeat("*a* ", 10_000).TrimEnd();
+            var result = ParseSafely(line);
+            AssertTooDeep(result, line);
+            Assert.Equal(line, AllText(result));
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void ABlockThatIsTooBigDoesNotSpoilTheBlocksAroundIt()
+        {
+            string big = Repeat("*a* ", 10_000).TrimEnd();
+            var result = ParseSafely("# Before\n\n" + big + "\n\n- after **bold**\n\n[x]{wss=1}");
+            Assert.Equal(new[] { "Heading 1", "Normal", "Bulleted List", "Normal" }, result.Document.Paragraphs.Select(p => p.Style).ToArray());
+            Assert.Equal("after bold", result.Document.Paragraphs[2].Text);
+            Assert.Equal(new[] { MarkdownDiagnosticIds.TooDeep, "gdr.syntax.unknown-attribute" }, result.Diagnostics.Select(d => d.Id).ToArray());
+            Assert.Equal(3, result.Diagnostics[0].Line);
+            Assert.Equal(big, result.Diagnostics[0].Observed);
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void TenThousandEmphasesInAFenceLineAndInTheAbstractAreFindingsToo()
+        {
+            string line = Repeat("*a* ", 10_000).TrimEnd();
+            var fence = ParseSafely("::: {style=S}\n" + line + "\n:::");
+            var finding = Assert.Single(fence.Diagnostics, d => d.Id == MarkdownDiagnosticIds.TooDeep);
+            Assert.Equal(2, finding.Line);
+            Assert.Equal(line, AllText(fence));
+            var inline = OnSmallStack(() => MarkdownConverter.ParseInline(line));
+            Assert.Single(inline.Diagnostics, d => d.Id == MarkdownDiagnosticIds.TooDeep);
+            Assert.Equal(line, string.Concat(inline.Runs.Select(r => r.Text)));
+        }
+
+        // The writer reads back what it writes, so it meets the same limits on its own output. It always returns text that reads back.
+        static void AssertWritesAndReadsBack(params Paragraph[] paragraphs)
+        {
+            var document = B.Doc(paragraphs);
+            string markdown = OnSmallStack(() => MarkdownConverter.ToMarkdown(document));
+            var back = OnSmallStack(() => MarkdownConverter.Parse(markdown));
+            Assert.DoesNotContain(back.Diagnostics, d => d.Severity == MarkdownSeverity.Error);
+            Assert.True(MarkdownConverter.AreEquivalent(document.Paragraphs, back.Document.Paragraphs));
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void TextOfThreeThousandBracketsAroundASpanClosingIsWrittenAndReadsBack()
+            => AssertWritesAndReadsBack(B.Plain(Repeat("[", 3000) + "x" + Repeat("]{v}", 3000)));
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void FiveThousandUnmatchedEmphasisOpenersAreWrittenAndReadBack()
+            => AssertWritesAndReadsBack(B.Plain(Repeat("*a ", 5000) + "x"));
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void AValidTableOfFiveThousandRowsIsWrittenAsAFenceAndReadsBack()
+        {
+            var paragraphs = new Paragraph[5001];
+            paragraphs[0] = B.P("GDR Table Header", B.En("a\tb"));
+            for (int i = 1; i < paragraphs.Length; i++) paragraphs[i] = B.P("GDR Table Row", B.En("c\td"));
+            AssertWritesAndReadsBack(paragraphs);
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void TenThousandBoldRunsInOneParagraphAreWrittenAndReadBack()
+        {
+            var runs = new Run[10_000];
+            for (int i = 0; i < runs.Length; i++) runs[i] = i % 2 == 0 ? B.BoldRun("en", "a" + i) : B.En(" b" + i + " ");
+            AssertWritesAndReadsBack(B.P("Normal", runs));
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void TwentyThousandRunsInOneParagraphAreWrittenAndReadBack()
+        {
+            var runs = new Run[20_000];
+            for (int i = 0; i < runs.Length; i++) runs[i] = i % 4 == 0 ? B.BoldRun("en", "a" + i) : i % 4 == 1 ? B.R("ceb", "b" + i) : i % 4 == 2 ? B.ItalicRun("en", "c" + i) : B.En(" d" + i + " ");
+            AssertWritesAndReadsBack(B.P("Normal", runs));
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void TwentyThousandRunsInOneParagraphWithoutMarksAreRead()
+        {
+            string text = Repeat("[a]{v} b ", 10_000);
+            var result = ParseSafely(text);
+            Assert.False(result.HasErrors);
         }
     }
 }

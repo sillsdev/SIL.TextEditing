@@ -35,6 +35,16 @@ namespace SIL.TextEditing.Markdown.Reader
             }
         }
 
+        /// <summary>How many findings there are now; <see cref="Truncate"/> goes back to such a count.</summary>
+        public int Count => _diagnostics.Count;
+
+        /// <summary>Forgets the findings made after the first <paramref name="count"/>: a parse that did not finish may have made some, and
+        /// the parse is done again.</summary>
+        public void Truncate(int count)
+        {
+            if (count < _diagnostics.Count) _diagnostics.RemoveRange(count, _diagnostics.Count - count);
+        }
+
         // The findings Markdig's parsers made while it read the whole text, in order of where they start, and the ones dropped since.
         MarkdownDiagnostic[]? _parsed;
         HashSet<MarkdownDiagnostic>? _removed;
