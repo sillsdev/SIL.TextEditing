@@ -22,8 +22,11 @@ namespace SIL.TextEditing.Avalonia
         readonly IBrush? _squiggle;
         readonly double _offset;
 
-        public RunTextProperties(Typeface typeface, double size, IBrush foreground, TextDecorationCollection? decorations, CultureInfo culture, FontFeatureCollection? features, IBrush? background = null, BaselineAlignment baseline = BaselineAlignment.Baseline, IBrush? squiggle = null, double offset = 0)
+        public RunTextProperties(Typeface typeface, double size, IBrush foreground, TextDecorationCollection? decorations, CultureInfo culture, FontFeatureCollection? features, IBrush? background = null, BaselineAlignment baseline = BaselineAlignment.Baseline, IBrush? squiggle = null, double offset = 0, int lineKind = 0, IBrush? lineBrush = null, bool lineFontThickness = false)
         {
+            LineKind = lineKind;
+            LineBrush = lineBrush;
+            LineFontThickness = lineFontThickness;
             _squiggle = squiggle;
             _offset = offset;
             _background = background;
@@ -46,6 +49,14 @@ namespace SIL.TextEditing.Avalonia
         public IBrush? Squiggle => _squiggle;
         /// <summary>How far the run's baseline is raised above the line's (negative: lowered), in pixels. Avalonia is not given it: the layout shifts the run when it draws it.</summary>
         public double Offset => _offset;
+        /// <summary>The run's underline or strikethrough as a FieldWorks underline type (1 dotted, 2 dashed, 3 single, 4 double, 5 strikethrough), 0 for none
+        /// (the squiggle is <see cref="Squiggle"/>). The decoration itself is in <see cref="TextDecorations"/> unless the paragraph draws its own
+        /// (<see cref="ParagraphLayout.DrawDecorations"/>), when that is null.</summary>
+        public int LineKind { get; }
+        /// <summary>The colour of the decoration (the under colour, else the text's).</summary>
+        public IBrush? LineBrush { get; }
+        /// <summary>True for a single underline in the font's own thickness (one with no under colour set); the others are a pixel thick.</summary>
+        public bool LineFontThickness { get; }
         public override IBrush? BackgroundBrush => null;
         public override BaselineAlignment BaselineAlignment => _baseline;
         public override CultureInfo? CultureInfo => _culture;
@@ -165,28 +176,19 @@ namespace SIL.TextEditing.Avalonia
     /// mouse and the drawing.</summary>
     sealed class Justification
     {
-        public Justification(List<KeyValuePair<double, double>> spaces, double extra, bool rightAnchor, bool decorated)
+        public Justification(List<KeyValuePair<double, double>> spaces, double extra, bool rightAnchor)
         {
             Spaces = spaces;
             Extra = extra;
             RightAnchor = rightAnchor;
-            Decorated = decorated;
         }
 
         public List<KeyValuePair<double, double>> Spaces { get; }
         public double Extra { get; }
         public bool RightAnchor { get; }
 
-        /// <summary>True when a run of the line has a text decoration, which the stretched spaces must carry on.</summary>
-        public bool Decorated { get; }
-
-        /// <summary>How much of a space, at each of its edges, is left to the letters beside it when the line is drawn: half of it, or all
-        /// of it but a middle strip of a pixel (or half of a narrower space) when the strip is drawn (<see cref="Decorated"/>).</summary>
-        public double Guard(int space)
-        {
-            double width = Spaces[space].Value - Spaces[space].Key;
-            return Decorated ? (width - Math.Min(1, width / 2)) / 2 : width / 2;
-        }
+        /// <summary>How much of a space, at each of its edges, is left to the letters beside it when the line is drawn: half of it.</summary>
+        public double Guard(int space) => (Spaces[space].Value - Spaces[space].Key) / 2;
 
         /// <summary>The stretched x of a natural x: each space to the anchor's far side adds <see cref="Extra"/>, and one the x is inside adds its share.</summary>
         public double Map(double x)
@@ -249,17 +251,15 @@ namespace SIL.TextEditing.Avalonia
         }
     }
 
-    /// <summary>A run of a line: where it is drawn (x from the line's origin) and the text it holds (<c>Start</c> and <c>Length</c>; when it is
-    /// not <c>Exact</c>, Start is only some place inside the run).</summary>
+    /// <summary>A run of a line: where it is drawn (x from the line's origin) and the text it holds (<c>Start</c> and <c>Length</c>).</summary>
     readonly struct RunSlot
     {
-        public RunSlot(DrawableTextRun run, double x, int start, int length, bool exact)
+        public RunSlot(DrawableTextRun run, double x, int start, int length)
         {
             Run = run;
             X = x;
             Start = start;
             Length = length;
-            Exact = exact;
             // A glyph run numbers its characters from where its own text began, which is not always where the paragraph's text did: the
             // first of the run's characters is the lowest cluster number it has.
             Glyphs = (run as ShapedTextRun)?.GlyphRun;
@@ -275,15 +275,41 @@ namespace SIL.TextEditing.Avalonia
         public double X { get; }
         public int Start { get; }
         public int Length { get; }
-        public bool Exact { get; }
         public double Width => Run.Size.Width;
 
-        /// <summary>The distance from the run's origin to the leading edge of the character at the paragraph text <paramref name="index"/>
-        /// (the run's whole width at its end), or null when the run cannot say.</summary>
-        public double? Distance(int index)
+        /// <summary>True when the run has glyphs, so it can answer <see cref="Distance"/> and <see cref="HitFromDistance"/> (an object run has none).</summary>
+        public bool HasGlyphs => Glyphs != null && _firstCluster != int.MaxValue;
+
+        /// <summary>True when the run holds nothing but spaces.</summary>
+        public bool IsSpaces
         {
-            if (!Exact || Glyphs == null || _firstCluster == int.MaxValue || index < Start || index > Start + Length) return null;
-            return Glyphs.GetDistanceFromCharacterHit(new CharacterHit(_firstCluster + index - Start));
+            get
+            {
+                var text = Run.Text.Span;
+                for (int i = 0; i < text.Length; i++)
+                    if (text[i] != ' ') return false;
+                return text.Length > 0;
+            }
+        }
+
+        /// <summary>True when the run's own direction is right to left (its characters run from its right edge to its left).</summary>
+        public bool RightToLeft => Glyphs != null && !Glyphs.IsLeftToRight;
+
+        /// <summary>The distance from the run's origin to the leading edge of the character at the paragraph text <paramref name="index"/>
+        /// (the run's whole width at its end), or, with a <paramref name="trailing"/> length, to the trailing edge of the character after it has been
+        /// passed by that many characters; null when the run cannot say.</summary>
+        public double? Distance(int index, int trailing = 0)
+        {
+            if (!HasGlyphs || index < Start || index > Start + Length) return null;
+            return Glyphs!.GetDistanceFromCharacterHit(new CharacterHit(_firstCluster + index - Start, trailing));
+        }
+
+        /// <summary>The caret hit (in paragraph text offsets) at a distance from the run's origin, or null when the run cannot say.</summary>
+        public CharacterHit? HitFromDistance(double distance)
+        {
+            if (!HasGlyphs) return null;
+            var hit = Glyphs!.GetCharacterHitFromDistance(distance, out _);
+            return new CharacterHit(hit.FirstCharacterIndex - _firstCluster + Start, hit.TrailingLength);
         }
     }
     public sealed class LineInfo
@@ -293,7 +319,7 @@ namespace SIL.TextEditing.Avalonia
         {
         }
 
-        internal LineInfo(TextLine line, double y, double x, double height, double baselineInSlot, OffsetMap? offsets)
+        internal LineInfo(TextLine line, double y, double x, double height, double baselineInSlot, OffsetMap? offsets, bool rightToLeft = false)
         {
             Line = line;
             Y = y;
@@ -303,7 +329,16 @@ namespace SIL.TextEditing.Avalonia
             _offsets = offsets;
             _runs = ParagraphLayout.RunOffsets(line, offsets, out var raise, out var lower);
             HasOffsets = _runs != null;
-            if (HasOffsets) _slots = ParagraphLayout.RunSlots(line);
+            var slots = ParagraphLayout.RunSlots(line);
+            // A line of several runs is read from the runs as they are drawn (see DistanceOf) when it is a right-to-left paragraph's or has a
+            // right-to-left run in it, whatever the paragraph's direction.
+            UsesRuns = slots.Count >= 2 && slots.All(slot => slot.HasGlyphs) && (rightToLeft || slots.Any(slot => slot.RightToLeft));
+            if (HasOffsets || UsesRuns) _slots = slots;
+            // The spaces a wrapped line ends with take the paragraph's direction (they hang at its end), whatever Avalonia 11.3 says of the run
+            // they are in; the caret and the mouse read such a run as running that way (see DistanceOf).
+            if (UsesRuns && slots[slots.Count - 1] is var tail && tail.Start + tail.Length == line.FirstTextSourceIndex + line.Length
+                && tail.IsSpaces && tail.RightToLeft != rightToLeft)
+                _hangingSlot = slots.Count - 1;
             Raise = raise;
             Lower = lower;
             Start = line.FirstTextSourceIndex;
@@ -346,6 +381,44 @@ namespace SIL.TextEditing.Avalonia
         readonly double _baselineInSlot;
         /// <summary>True when a run on the line has a baseline offset, so the line is drawn run by run (<see cref="Draw"/>).</summary>
         public bool HasOffsets { get; }
+        /// <summary>True when the caret, the mouse and the selection on this line are read from its runs and not from Avalonia's line. Avalonia 11.3
+        /// and 12 both give the wrong place for a left-to-right run on a right-to-left paragraph's line of two or more runs, and for a line of two or
+        /// more runs with a right-to-left run in it whatever the paragraph's direction (and throw for some ranges), where the runs themselves, which
+        /// are what is drawn, are right. See <see cref="DistanceOf"/>.</summary>
+        public bool UsesRuns { get; }
+
+        /// <summary>The slot of the spaces the line ends with that Avalonia gives the opposite direction to the paragraph's, or -1.</summary>
+        readonly int _hangingSlot = -1;
+
+        int SlotOf(int offset)
+        {
+            for (int i = 0; i < _slots!.Count; i++)
+                if (offset >= _slots[i].Start && offset < _slots[i].Start + _slots[i].Length) return i;
+            return -1;
+        }
+
+        /// <summary>The x from the line's origin of a caret hit, as <c>TextLine.GetDistanceFromCharacterHit</c> says it, but on a line that
+        /// <see cref="UsesRuns"/> from the run the character is in.</summary>
+        internal double DistanceOf(CharacterHit hit)
+        {
+            if (!UsesRuns) return Line.GetDistanceFromCharacterHit(hit);
+            int offset = hit.FirstCharacterIndex;
+            int k = SlotOf(offset);
+            if (hit.TrailingLength == 0 && k < 0) { k = SlotOf(offset - 1); }   // after the last character: the end of the run it is in
+            if (k >= 0 && _slots![k].Distance(offset, hit.TrailingLength) is double d) return _slots[k].X + (k == _hangingSlot ? _slots[k].Width - d : d);
+            return Line.GetDistanceFromCharacterHit(hit);
+        }
+
+        /// <summary>The caret hit at an x from the line's origin, as <c>TextLine.GetCharacterHitFromDistance</c> says it, but on a line that
+        /// <see cref="UsesRuns"/> from the run the point is over.</summary>
+        internal CharacterHit HitAt(double x)
+        {
+            if (!UsesRuns) return Line.GetCharacterHitFromDistance(x);
+            int k = 0;
+            while (k < _slots!.Count - 1 && x >= _slots[k].X + _slots[k].Width) k++;
+            double within = x - _slots[k].X;
+            return _slots[k].HitFromDistance(k == _hangingSlot ? _slots[k].Width - within : within) ?? Line.GetCharacterHitFromDistance(x);
+        }
         readonly OffsetMap? _offsets;
         readonly List<RunSlot>? _slots;
         Justification? _justification;
@@ -372,8 +445,8 @@ namespace SIL.TextEditing.Avalonia
             if (_justification == null) { DrawNatural(context, top); return; }
             // A justified line is Avalonia's line drawn in pieces: each word is the whole line clipped to it and moved to where it now is. A
             // letter's ink can reach past its advance (the hook of a "j", italics), into the space beside it, so a word's piece takes the half of
-            // the space on its side, unstretched, and the ink stays with its letter. A line with a text decoration (an underline) also draws the
-            // narrow middle of each space, clipped and stretched, so the decoration runs on through it.
+            // the space on its side, unstretched, and the ink stays with its letter. The stretched middle of a space is blank: a justified
+            // paragraph draws its own underlines and strikethrough across the stretched text (see ParagraphLayout.DrawDecorations).
             const double Far = 100000;
             var j = _justification;
             int n = j.Spaces.Count;
@@ -385,12 +458,7 @@ namespace SIL.TextEditing.Avalonia
                 if (end > previous)
                     DrawPiece(context, top, previous, end, Matrix.CreateTranslation(j.RightAnchor ? -j.Extra * (n - k) : j.Extra * k, 0));
                 if (k == n) break;
-                double a = j.Spaces[k].Key + guard, b = j.Spaces[k].Value - guard;
-                if (!j.Decorated) { previous = b; continue; }
-                double scale = (b - a + j.Extra) / (b - a);
-                double from = j.RightAnchor ? X + b : X + a, to = j.RightAnchor ? X + b - j.Extra * (n - 1 - k) : X + a + j.Extra * k;
-                DrawPiece(context, top, a, b, Matrix.CreateTranslation(-from, 0) * Matrix.CreateScale(scale, 1) * Matrix.CreateTranslation(to, 0));
-                previous = b;
+                previous = end;
             }
         }
 
@@ -425,14 +493,13 @@ namespace SIL.TextEditing.Avalonia
         internal List<KeyValuePair<Rect, double>> Pieces(int from, int to)
         {
             var result = new List<KeyValuePair<Rect, double>>();
-            if (_offsets != null && _slots != null)
+            if (_slots != null && (HasOffsets || UsesRuns))
             {
                 // A line with shifted runs is read run by run, from the runs as they are drawn (see ParagraphLayout.RunSlots).
                 foreach (var slot in _slots)
                 {
                     int a = Math.Max(from, slot.Start), b = Math.Min(to, slot.Start + slot.Length);
-                    if (!slot.Exact) { a = slot.Start; b = slot.Start + 1; if (from > a || to < b) continue; }
-                    else if (b <= a) continue;
+                    if (b <= a) continue;
                     double left = 0, right = slot.Width;
                     if (a > slot.Start || b < slot.Start + slot.Length)
                     {
@@ -443,7 +510,7 @@ namespace SIL.TextEditing.Avalonia
                             right = Math.Max(p.Value, q.Value);
                         }
                     }
-                    result.Add(new KeyValuePair<Rect, double>(Shown(new Rect(slot.X + left, 0, right - left, Line.Height)), _offsets.At(slot.Start)));
+                    result.Add(new KeyValuePair<Rect, double>(Shown(new Rect(slot.X + left, 0, right - left, Line.Height)), _offsets?.At(slot.Start) ?? 0));
                 }
                 return result;
             }
@@ -510,14 +577,15 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Builds the text run properties for a run: the writing system's font and size, then the paragraph style,
         /// character style and the run's own properties, resolved through <paramref name="styles"/>.</summary>
-        static RunTextProperties MakeProperties(Paragraph paragraph, Run run, WritingSystemRegistry writingSystems, IBrush foreground, IStyleResolver? styles, bool preedit = false)
+        static RunTextProperties MakeProperties(Paragraph paragraph, Run run, WritingSystemRegistry writingSystems, IBrush foreground, IStyleResolver? styles, bool preedit = false, bool ownDecorations = false)
         {
             var ws = writingSystems.Get(run.Ws);
             var f = FormatResolver.ResolveChar(paragraph, run, styles, ws.Size);
-            return MakeProperties(f, ws, run.Ws, foreground, preedit);
+            return MakeProperties(f, ws, run.Ws, foreground, preedit, ownDecorations);
         }
 
-        static RunTextProperties MakeProperties(CharFormat f, WritingSystemInfo ws, string wsTag, IBrush foreground, bool preedit = false)
+        /// <param name="ownDecorations">True when the paragraph draws the run's underline or strikethrough itself (<see cref="DrawDecorations"/>), so Avalonia is not given it.</param>
+        static RunTextProperties MakeProperties(CharFormat f, WritingSystemInfo ws, string wsTag, IBrush foreground, bool preedit = false, bool ownDecorations = false)
         {
             var weight = (FontWeight)f.Weight;
             var style = f.Italic ? FontStyle.Italic : FontStyle.Normal;
@@ -537,9 +605,11 @@ namespace SIL.TextEditing.Avalonia
             try { culture = CultureInfo.GetCultureInfo(wsTag); }
             catch (CultureNotFoundException) { culture = CultureInfo.InvariantCulture; }
             IBrush text = ColorBrush(f.ForeColor) ?? foreground;
-            var decorations = preedit ? Decorations(3, null, text) : Decorations(f.Underline, f.UnderColor, text);
+            int lineKind = preedit ? 3 : f.Underline >= 1 && f.Underline <= 5 ? f.Underline : 0;
+            var lineBrush = lineKind == 0 ? null : (preedit ? null : ColorBrush(f.UnderColor)) ?? text;
+            var decorations = ownDecorations ? null : preedit ? Decorations(3, null, text) : Decorations(f.Underline, f.UnderColor, text);
             var baseline = f.Superscript == 1 ? BaselineAlignment.Superscript : f.Superscript == 2 ? BaselineAlignment.Subscript : BaselineAlignment.Baseline;
-            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null, preedit ? 0 : f.OffsetPt);
+            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null, preedit ? 0 : f.OffsetPt, lineKind, lineBrush, lineKind == 3 && (preedit || ColorBrush(f.UnderColor) == null));
         }
 
         /// <summary>Where a run's top is below the top of its line, as Avalonia draws it: baselines aligned, a superscript at the top, a subscript at the bottom.</summary>
@@ -565,16 +635,15 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (!(run is DrawableTextRun d)) continue;
                 int start;
-                bool exact = true;
                 if (d is ObjectRun o) start = o.SourceIndex;
-                else if (d.Text.Length > 0 && System.Runtime.InteropServices.MemoryMarshal.TryGetString(d.Text, out _, out start, out _)) { }
-                else
+                else if (!(d.Text.Length > 0 && System.Runtime.InteropServices.MemoryMarshal.TryGetString(d.Text, out _, out start, out _)))
                 {
-                    // Not a slice of the paragraph text: the character under the run's middle, which is somewhere in the run.
-                    start = line.GetCharacterHitFromDistance(x + d.Size.Width / 2).FirstCharacterIndex;
-                    exact = false;
+                    // Every run the formatter returns is an object run or a slice of the paragraph text, which the source hands it as a slice of
+                    // one string (RunSlotTests): a run with no place in the text would be one Avalonia made itself, and has no text to find.
+                    x += d.Size.Width;
+                    continue;
                 }
-                result.Add(new RunSlot(d, x, start, run.Length, exact));
+                result.Add(new RunSlot(d, x, start, run.Length));
                 x += d.Size.Width;
             }
             return result;
@@ -650,6 +719,10 @@ namespace SIL.TextEditing.Avalonia
         public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null, double previousSpaceAfter = 0)
         {
             var layout = new ParagraphLayout(paragraph, width);
+            var pf = ResolveFormat(paragraph, writingSystems, styles);
+            // A justified paragraph is drawn in pieces, so it draws its own underlines and strikethrough across them (DrawDecorations).
+            bool ownDecorations = pf.Align == 5;
+            layout._ownDecorations = ownDecorations;
             layout.PreviousSpaceAfter = previousSpaceAfter;
             layout.LabelText = label ?? string.Empty;
             var source = new ParagraphSource { ObjectImage = objectImage, ObjectAsGlyph = objectAsGlyph };
@@ -665,14 +738,14 @@ namespace SIL.TextEditing.Avalonia
                 if (t.Length == 0) return;
                 int a = sb.Length;
                 sb.Append(t);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, ownDecorations) });
             }
 
             void AddPreedit()
             {
                 int a = sb.Length;
                 sb.Append(preedit);
-                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, preeditRun, writingSystems, foreground, styles, true) });
+                source.Segments.Add(new ParagraphSource.Segment { Start = a, End = sb.Length, Properties = MakeProperties(paragraph, preeditRun, writingSystems, foreground, styles, true, ownDecorations) });
                 preeditDone = true;
             }
 
@@ -690,7 +763,7 @@ namespace SIL.TextEditing.Avalonia
                 {
                     int s0 = sb.Length;
                     sb.Append(objectAsGlyph ? " " : r.Text);
-                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles), IsObject = true, Data = r.ObjData });
+                    source.Segments.Add(new ParagraphSource.Segment { Start = s0, End = sb.Length, Properties = MakeProperties(paragraph, r, writingSystems, foreground, styles, false, ownDecorations), IsObject = true, Data = r.ObjData });
                 }
                 else AddSegment(r.Text, r);
                 pos += r.Text.Length;
@@ -705,13 +778,13 @@ namespace SIL.TextEditing.Avalonia
                 if (seg.IsObject || !(seg.Properties is RunTextProperties rp)) continue;
                 if (rp.Back != null) layout._backgrounds.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(seg.Start, new KeyValuePair<int, IBrush>(seg.End, rp.Back)));
                 if (rp.Offset != 0) layout._offsets.Add(seg.Start, seg.End, rp.Offset);
+                if (rp.LineKind != 0) layout._decorations.Add(new DecorationRange { Start = seg.Start, End = seg.End, Properties = rp });
                 if (rp.Squiggle != null) layout._squiggles.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(seg.Start, new KeyValuePair<int, IBrush>(seg.End, rp.Squiggle)));
             }
 
             var defaultRun = paragraph.Runs.Count > 0 ? paragraph.Runs[0] : new Run { Ws = paragraph.DefaultWs };
-            var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles);
+            var defaultProperties = MakeProperties(paragraph, defaultRun, writingSystems, foreground, styles, false, ownDecorations);
             var baseWs = writingSystems.Get(defaultRun.Ws);
-            var pf = ResolveFormat(paragraph, writingSystems, styles);
             layout.Format = pf;
             layout.ApplyBox(pf, width, paragraph.Rtl, foreground);
             if (pf.BulNumScheme != 0)
@@ -750,7 +823,7 @@ namespace SIL.TextEditing.Avalonia
                     using (var metrics = TextFormatter.Current.FormatLine(spaceSource, 0, w, paragraphProperties, null))
                         if (metrics != null && metrics.Height > 0)
                         {
-                            layout._exactAscentFraction = metrics.Baseline / metrics.Height;
+                            layout._exactAscentFraction = ExactFraction(metrics);
                             layout.EmptyLineTop = layout.TopInset + layout.BaselineIn(slot) - metrics.Baseline;
                             lineHeight = metrics.Height;
                         }
@@ -797,8 +870,8 @@ namespace SIL.TextEditing.Avalonia
                     }
                 }
                 double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
-                if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = line.Baseline / line.Height;
-                var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets);
+                if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = ExactFraction(line);
+                var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl);
                 layout.Lines.Add(shown);
                 if (pf.Align == 5 && index + line.Length < source.Text.Length) layout.Justify(shown, usedWidth);
                 y += slot;
@@ -848,7 +921,8 @@ namespace SIL.TextEditing.Avalonia
             foreach (var li in Lines)
                 foreach (var bg in _backgrounds)
                 {
-                    int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, TextEnd(li));
+                    // The spaces a wrapped line ends with hang outside its text and are not painted (the paragraph's last line is all text).
+                    int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, li == Lines[Lines.Count - 1] ? TextEnd(li) : TextBeforeTrailingSpaces(li));
                     if (b <= a) continue;
                     foreach (var piece in li.Pieces(a, b))
                         context.DrawRectangle(bg.Value.Value, null, new Rect(piece.Key.X, top + li.TextY + piece.Key.Y - piece.Value, piece.Key.Width, piece.Key.Height));
@@ -890,16 +964,23 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (EffectiveText[i] != ' ') continue;
                 double left = double.MaxValue, right = double.MinValue;
-                foreach (var tb in li.Line.GetTextBounds(i, 1))
-                {
-                    left = Math.Min(left, tb.Rectangle.X);
-                    right = Math.Max(right, tb.Rectangle.Right);
-                }
+                if (li.UsesRuns)
+                    foreach (var piece in li.Pieces(i, i + 1))
+                    {
+                        left = Math.Min(left, piece.Key.X - li.X);
+                        right = Math.Max(right, piece.Key.Right - li.X);
+                    }
+                else
+                    foreach (var tb in li.Line.GetTextBounds(i, 1))
+                    {
+                        left = Math.Min(left, tb.Rectangle.X);
+                        right = Math.Max(right, tb.Rectangle.Right);
+                    }
                 if (right - left > 0.01) spaces.Add(new KeyValuePair<double, double>(left, right));
             }
             if (spaces.Count == 0) return;
             spaces.Sort((p, q) => p.Key.CompareTo(q.Key));
-            li.Justify(new Justification(spaces, slack / spaces.Count, Rtl, li.Line.TextRuns.Any(r => r.Properties?.TextDecorations?.Count > 0)));
+            li.Justify(new Justification(spaces, slack / spaces.Count, Rtl));
         }
 
         /// <summary>The room a line needs for its shifted runs, above and below its own height.</summary>
@@ -907,6 +988,69 @@ namespace SIL.TextEditing.Avalonia
         {
             RunOffsets(line, offsets, out var raise, out var lower);
             return raise + lower;
+        }
+
+        /// <summary>A run's underline or strikethrough that the paragraph draws itself: its text range (effective offsets) and how it looks.</summary>
+        sealed class DecorationRange
+        {
+            public int Start, End;
+            public RunTextProperties Properties = null!;
+        }
+
+        readonly List<DecorationRange> _decorations = new List<DecorationRange>();
+        bool _ownDecorations;
+
+        /// <summary>Where a run's baseline is from the top of its line: the line's, unless the run is a superscript (top aligned) or subscript (bottom
+        /// aligned), whose own font decides.</summary>
+        static double RunBaseline(TextLine line, RunTextProperties run)
+        {
+            var metrics = run.Typeface.GlyphTypeface?.Metrics;
+            if (run.BaselineAlignment == BaselineAlignment.Baseline || metrics == null || metrics.Value.DesignEmHeight <= 0) return line.Baseline;
+            double scale = run.FontRenderingEmSize / metrics.Value.DesignEmHeight;
+            double ascent = (-metrics.Value.Ascent + metrics.Value.LineGap / 2.0) * scale, height = (metrics.Value.Descent - metrics.Value.Ascent + metrics.Value.LineGap) * scale;
+            return run.BaselineAlignment == BaselineAlignment.Superscript ? ascent : line.Height - height + ascent;
+        }
+
+        /// <summary>Draws the underlines and strikethrough of a justified paragraph (its decorations are not given to Avalonia, which would draw them in
+        /// the pieces a stretched line is drawn in, restarting a dotted or dashed pattern at each and scaling it in the stretched spaces). Each is a line
+        /// (two for a double underline) across the whole stretched extent of its run on the line, in the position and pattern Avalonia draws on a line that
+        /// is not stretched; it stops before the spaces a wrapped line ends with. <paramref name="top"/> is the paragraph's top in the control.</summary>
+        public void DrawDecorations(DrawingContext context, double top)
+        {
+            if (!_ownDecorations || _decorations.Count == 0) return;
+            for (int i = 0; i < Lines.Count; i++)
+            {
+                var li = Lines[i];
+                if (li.IsEmpty) continue;
+                int end = i == Lines.Count - 1 ? TextEnd(li) : TextBeforeTrailingSpaces(li);
+                foreach (var decoration in _decorations)
+                {
+                    int a = Math.Max(decoration.Start, li.Start), b = Math.Min(decoration.End, end);
+                    if (b <= a) continue;
+                    // Boxes that touch are one line, so a pattern runs on across them.
+                    var pieces = li.Pieces(a, b).OrderBy(p => p.Key.X).ToList();
+                    for (int k = 0; k < pieces.Count; k++)
+                    {
+                        double left = pieces[k].Key.X, right = pieces[k].Key.Right, offset = pieces[k].Value;
+                        while (k + 1 < pieces.Count && pieces[k + 1].Value == offset && pieces[k + 1].Key.X <= right + 0.75) right = Math.Max(right, pieces[++k].Key.Right);
+                        if (right - left < 0.5) continue;
+                        DrawDecorationLine(context, decoration.Properties, left, right, top + li.TextY + RunBaseline(li.Line, decoration.Properties) - offset);
+                    }
+                }
+            }
+        }
+
+        static void DrawDecorationLine(DrawingContext context, RunTextProperties run, double left, double right, double baseline)
+        {
+            var metrics = run.Typeface.GlyphTypeface?.Metrics;
+            if (metrics == null || metrics.Value.DesignEmHeight <= 0 || run.LineBrush == null) return;
+            double scale = run.FontRenderingEmSize / metrics.Value.DesignEmHeight;
+            double y = baseline + (run.LineKind == 5 ? metrics.Value.StrikethroughPosition : metrics.Value.UnderlinePosition) * scale;
+            double thickness = run.LineFontThickness ? Math.Max(metrics.Value.UnderlineThickness * scale, 0.5) : 1;
+            DashStyle? dashes = run.LineKind == 1 ? new DashStyle(new double[] { 2, 2 }, 0) : run.LineKind == 2 ? new DashStyle(new double[] { 6, 3 }, 0) : null;
+            var pen = new Pen(run.LineBrush, thickness, dashes);
+            context.DrawLine(pen, new Point(left, y), new Point(right, y));
+            if (run.LineKind == 4) context.DrawLine(pen, new Point(left, y + 2), new Point(right, y + 2));
         }
 
         // Runs with a squiggle underline: start, then end and brush (effective offsets).
@@ -1020,7 +1164,7 @@ namespace SIL.TextEditing.Avalonia
             double taken = firstIndent + _labelWidth;
             if (label != null && source.Text.Length > 0 && taken > w)
             {
-                _labelLineHeight = SlotHeight(label.Height);
+                _labelLineHeight = label.Height;
                 _firstWidth = w;
                 _firstX = ContentLeft;
                 return;
@@ -1029,7 +1173,7 @@ namespace SIL.TextEditing.Avalonia
             _firstX = ContentLeft + (Rtl ? 0 : taken);
         }
 
-        /// <summary>The height of the line a too-wide bullet or number takes alone above the text, or 0 when it sits beside the first line.</summary>
+        /// <summary>The height of the line a too-wide bullet or number takes alone above the text (the label text's own height, whatever the line height rule), or 0 when it sits beside the first line.</summary>
         double _labelLineHeight;
 
         /// <summary>The space above the first line (space before, margin, border, padding) and below the last.</summary>
@@ -1051,6 +1195,26 @@ namespace SIL.TextEditing.Avalonia
                 case 5: return TextAlignment.Start;
                 default: return TextAlignment.Start;
             }
+        }
+
+        /// <summary>The share of a text's height that is above its baseline which an exact line height keeps on every line: the one most of the first
+        /// line's characters are in, each run's share cut to a whole per cent (the first of equally popular ones winning). It is taken from the line
+        /// once and used for every line, so the baselines are one slot apart.</summary>
+        static double ExactFraction(TextLine line)
+        {
+            var shaped = line.TextRuns.OfType<ShapedTextRun>()
+                .Select((run, order) => new { Percent = run.Size.Height > 0 ? (int)(run.Baseline * 100 / run.Size.Height) : 0, run.Length, order })
+                .ToList();
+            if (shaped.Count == 0) return line.Height > 0 ? Math.Floor(line.Baseline * 100 / line.Height) / 100 : double.NaN;
+            // Each share with the characters in it, and where in the line it had them all: the last run of it that has any (or its first run).
+            var shares = shaped.GroupBy(run => run.Percent)
+                .Select(group => new
+                {
+                    Percent = group.Key,
+                    Characters = group.Sum(run => run.Length),
+                    Complete = group.Where(run => run.Length > 0).Select(run => run.order).DefaultIfEmpty(group.First().order).Max(),
+                });
+            return shares.OrderByDescending(share => share.Characters).ThenBy(share => share.Complete).First().Percent / 100.0;
         }
 
         /// <summary>Under an exact line height, the share of the text's height that is above its baseline, taken from the first line and used
@@ -1131,7 +1295,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 var label = LabelLine(LabelText);
                 if (label == null) return default;
-                double lineTop = _labelLineHeight > 0 ? TopInset + (double.IsNaN(_exactAscentFraction) ? _labelLineHeight - label.Height : BaselineIn(_labelLineHeight) - label.Baseline) : Lines.Count > 0 ? Lines[0].TextY : EmptyLineTop;
+                double lineTop = _labelLineHeight > 0 ? TopInset : Lines.Count > 0 ? Lines[0].TextY : EmptyLineTop;
                 double width = label.WidthIncludingTrailingWhitespace;
                 double x = Rtl ? ContentLeft + ContentWidth - Format.FirstIndent - width : ContentLeft + Format.FirstIndent;
                 return new Rect(x, lineTop, width, label.Height);
@@ -1167,6 +1331,14 @@ namespace SIL.TextEditing.Avalonia
             // A hard line break ends its line but is not text on it: the caret before the break is at the end of this line, the
             // caret after it at the start of the next.
             if (end > line.Start && EffectiveText[end - 1] == HardLineBreak) end--;
+            return end;
+        }
+
+        /// <summary>The end of a line's text without the spaces it ends with (the ones a wrap leaves hanging past its last letter).</summary>
+        int TextBeforeTrailingSpaces(LineInfo line)
+        {
+            int end = TextEnd(line);
+            while (end > line.Start && EffectiveText[end - 1] == ' ') end--;
             return end;
         }
 
@@ -1221,9 +1393,21 @@ namespace SIL.TextEditing.Avalonia
             if (li.IsEmpty) return new Rect(li.EmptyCaretX, li.TextY, 1, li.Line.Height);
             var h = hit.HasValue && hit.Value.FirstCharacterIndex + hit.Value.TrailingLength == e ? hit.Value : new CharacterHit(e);
             if (h.TrailingLength == 0 && e > li.Start && e == TextEnd(li) && e < li.End && EffectiveText[e] == HardLineBreak) h = TrailingHit(e);   // before the break: after the last character of the line
-            double x = li.Map(li.Line.GetDistanceFromCharacterHit(h));
-            return new Rect(li.X + x, li.TextY - CaretOffset(li, e), 1, li.Line.Height);
+            return new Rect(CaretX(li, h), li.TextY - CaretOffset(li, e), CaretWidth, li.Line.Height);
         }
+
+        /// <summary>Where a caret hit is drawn on a line, in paragraph coordinates. A caret in the spaces a wrapped line ends with (End puts it
+        /// after them) is drawn one space width further out for each, as FieldWorks does, even past the text area; it stops at the edge of
+        /// the control so that it is always seen.</summary>
+        double CaretX(LineInfo li, CharacterHit h)
+        {
+            double x = li.X + li.Map(li.DistanceOf(h));
+            if (li.IsEmpty || double.IsInfinity(LayoutWidth)) return x;
+            return Math.Max(0, Math.Min(x, LayoutWidth - CaretWidth));
+        }
+
+        /// <summary>The width of the caret as the field draws it.</summary>
+        internal const double CaretWidth = 1.5;
 
         /// <summary>How far a caret at the effective offset is raised: it follows the character before it (the one it would extend), or the one
         /// after it at the start of a line.</summary>
@@ -1258,7 +1442,7 @@ namespace SIL.TextEditing.Avalonia
             }
             if (li.IsEmpty)
                 return new HitResult { Offset = Paragraph.Length, CaretHit = new CharacterHit(li.Start), Character = Paragraph.Length };   // past the last character: the empty line after a trailing break holds none
-            var h = li.Line.GetCharacterHitFromDistance(li.Unmap(point.X - li.X));
+            var h = li.HitAt(li.Unmap(point.X - li.X));
             int e = h.FirstCharacterIndex + h.TrailingLength;
             int max = TextEnd(li);
             bool last = li == Lines[Lines.Count - 1];
@@ -1341,11 +1525,24 @@ namespace SIL.TextEditing.Avalonia
             var h = new CharacterHit(line.Start);
             int guard = 0;
             int max = TextEnd(line);
+            if (line.UsesRuns)
+            {
+                // Every boundary between characters is two places: the leading edge of the character after it and the trailing edge of the one before.
+                for (int o = line.Start; o <= max && guard++ < 10000;)
+                {
+                    candidates.Add(new Stop { Hit = new CharacterHit(o), Offset = o, X = CaretX(line, new CharacterHit(o)) });
+                    int before = o > line.Start ? GraphemeClusters.Previous(EffectiveText, o) : o;
+                    if (before < o) { var trailing = new CharacterHit(before, o - before); candidates.Add(new Stop { Hit = trailing, Offset = o, X = CaretX(line, trailing) }); }
+                    int after = o < max ? GraphemeClusters.Next(EffectiveText, o) : max + 1;
+                    o = after > o ? Math.Min(after, o < max ? max : after) : max + 1;
+                }
+            }
+            else
             while (guard++ < 10000)
             {
                 int o = h.FirstCharacterIndex + h.TrailingLength;
-                candidates.Add(new Stop { Hit = new CharacterHit(o), Offset = o, X = line.X + line.Map(line.Line.GetDistanceFromCharacterHit(new CharacterHit(o))) });
-                if (h.TrailingLength > 0) candidates.Add(new Stop { Hit = h, Offset = o, X = line.X + line.Map(line.Line.GetDistanceFromCharacterHit(h)) });
+                candidates.Add(new Stop { Hit = new CharacterHit(o), Offset = o, X = CaretX(line, new CharacterHit(o)) });
+                if (h.TrailingLength > 0) candidates.Add(new Stop { Hit = h, Offset = o, X = CaretX(line, h) });
                 var n = line.Line.GetNextCaretCharacterHit(h);
                 int no = n.FirstCharacterIndex + n.TrailingLength;
                 if (no <= o || no > max) break;

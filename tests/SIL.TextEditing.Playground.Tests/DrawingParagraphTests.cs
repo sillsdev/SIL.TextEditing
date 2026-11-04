@@ -223,7 +223,7 @@ namespace SIL.TextEditing.Playground.Tests
                 foreach (var li in d.Lines) Assert.Equal(44.8, li.Height, 3);
                 var e = s.Field.ParagraphLayoutFor(Exact);
                 foreach (var li in e.Lines) Assert.Equal(30, li.Height, 3);
-                foreach (var li in e.Lines) Assert.Equal(li.Y + e.Lines[0].Line.Baseline / e.Lines[0].Line.Height * 30, li.TextY + li.Line.Baseline, 3);   // the baseline keeps the text's own proportion of the slot
+                foreach (var li in e.Lines) Assert.Equal(li.Y + System.Math.Floor(e.Lines[0].Line.Baseline / e.Lines[0].Line.Height * 100) / 100 * 30, li.TextY + li.Line.Baseline, 3);   // the baseline keeps the text's own proportion of the slot
                 // Hit testing and the caret follow the slot: a point low in the first slot is still the first line.
                 var hit = e.HitTestDetailed(new Point(10, e.Lines[0].Y + 29));
                 Assert.True(hit.Offset < e.Lines[1].Start);
@@ -676,7 +676,7 @@ namespace SIL.TextEditing.Playground.Tests
                 foreach (var li in pl.Lines) Assert.Equal(10, li.Height, 3);
                 Assert.True(pl.Lines[0].Line.Height > 15, "the text is taller than its slot");
                 // The baseline sits at the proportion of the slot that the font's ascent is of the text's height, so lines are one slot apart.
-                double fraction = pl.Lines[0].Line.Baseline / pl.Lines[0].Line.Height;
+                double fraction = System.Math.Floor(pl.Lines[0].Line.Baseline / pl.Lines[0].Line.Height * 100) / 100;   // cut to a whole per cent
                 foreach (var li in pl.Lines) Assert.Equal(li.Y + fraction * 10, li.TextY + li.Line.Baseline, 3);
                 Assert.Equal(10, pl.Lines[1].TextY + pl.Lines[1].Line.Baseline - (pl.Lines[0].TextY + pl.Lines[0].Line.Baseline), 3);
                 // The caret keeps the text's own height and sits on the text.
