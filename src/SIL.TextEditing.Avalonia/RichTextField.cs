@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Input.TextInput;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
+using Avalonia.Platform;
 
 namespace SIL.TextEditing.Avalonia
 {
@@ -73,9 +74,8 @@ namespace SIL.TextEditing.Avalonia
             Editor.Committed += d => RestartPauseTimer();
             ActualThemeVariantChanged += (o, e) =>
             {
-                // Text, border and (unset) page colours are resolved when a paragraph is laid out, so an unset foreground needs the layouts again.
-                if (_foreground == null) InvalidateAllLayouts();
-                else InvalidateVisual();
+                // The default text colour is one brush the layouts share, changed in place: a theme change is a redraw, not a layout of every paragraph.
+                RefreshSystemColours();
             };
         }
 
@@ -124,11 +124,35 @@ namespace SIL.TextEditing.Avalonia
         }
         IBrush? _foreground, _background;
 
+        // The default text colour, which the text is laid out with until the host sets one. It is one brush the field owns and changes in place
+        // when the theme or the system's colours change, so that a change costs a redraw and not a layout of every paragraph.
+        SolidColorBrush? _themeForeground;
+        bool _themeForegroundStale = true;
+
+        /// <summary>The brush the text is laid out with: the host's colour, else the field's own default.</summary>
+        IBrush LayoutForeground => _foreground ?? DefaultForeground();
+
+        SolidColorBrush DefaultForeground()
+        {
+            _themeForeground ??= new SolidColorBrush();
+            if (_themeForegroundStale)
+            {
+                var resolved = ResolveCaretBrush();
+                _themeForeground.Color = resolved is ISolidColorBrush solid ? solid.Color : Colors.Black;
+                _themeForeground.Opacity = resolved.Opacity;
+                _themeForegroundStale = false;
+            }
+            return _themeForeground;
+        }
+
         /// <summary>The colour of text and of a border with no colour of its own. Until the host sets one it is the theme's text colour (the
-        /// same resource as the caret), so a theme change redraws the text; a colour the host sets is kept as it is.</summary>
+        /// same resource as the caret), or in a high contrast theme the system's window text colour, and it follows a change of either without
+        /// the text being laid out again. A colour the host sets is kept as it is, under any theme: a host that sets only this on a dark theme
+        /// draws it on the theme's dark page, so it sets <see cref="Background"/> as well (or not either). <see cref="ResetForeground"/> goes
+        /// back to following the theme. Read, it is the brush the text is drawn with.</summary>
         public IBrush Foreground
         {
-            get => _foreground ?? ResolveCaretBrush();
+            get => LayoutForeground;
             set
             {
                 _foreground = value;
@@ -136,8 +160,9 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
-        /// <summary>The page colour. Until the host sets one it is the theme's window colour (white when there is no theme), so light text
-        /// taken from a dark theme is not drawn on white.</summary>
+        /// <summary>The page colour. Until the host sets one it is the theme's window colour (white when there is no theme), or in a high contrast
+        /// theme the system's window colour, so light text taken from a dark theme is not drawn on white. A colour the host sets is kept as it is
+        /// (see <see cref="Foreground"/>); <see cref="ResetBackground"/> goes back to following the theme.</summary>
         public IBrush Background
         {
             get => _background ?? ResolveBackgroundBrush();
@@ -146,6 +171,29 @@ namespace SIL.TextEditing.Avalonia
                 _background = value;
                 InvalidateVisual();
             }
+        }
+
+        /// <summary>Goes back to following the theme for the text colour, after the host has set <see cref="Foreground"/>.</summary>
+        public void ResetForeground()
+        {
+            _foreground = null;
+            _themeForegroundStale = true;
+            InvalidateAllLayouts();
+        }
+
+        /// <summary>Goes back to following the theme for the page colour, after the host has set <see cref="Background"/>.</summary>
+        public void ResetBackground()
+        {
+            _background = null;
+            InvalidateVisual();
+        }
+
+        /// <summary>Takes the system's colours and high contrast setting again. The field does this by itself when the platform says they changed.</summary>
+        internal void RefreshSystemColours()
+        {
+            _themeForegroundStale = true;
+            DefaultForeground();
+            InvalidateVisual();
         }
         public bool ShowCaretAlways { get; set; }
         /// <summary>A field-level read-only flag (forwards to <see cref="DocumentEditor.IsReadOnly"/>): selection and copy
@@ -449,16 +497,26 @@ namespace SIL.TextEditing.Avalonia
         internal Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
 
         bool _onScreen;
+        IPlatformSettings? _platformSettings;
+
+        void OnPlatformColoursChanged(object? sender, PlatformColorValues values) =>
+            global::Avalonia.Threading.Dispatcher.UIThread.Post(RefreshSystemColours);
+
 
         protected override void OnAttachedToVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
         {
             _onScreen = true;
+            _platformSettings = global::Avalonia.Application.Current?.PlatformSettings;
+            if (_platformSettings != null) _platformSettings.ColorValuesChanged += OnPlatformColoursChanged;
+            RefreshSystemColours();   // the theme and the system may have changed while the field was away
             base.OnAttachedToVisualTree(e);
         }
 
         protected override void OnDetachedFromVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
         {
             _onScreen = false;
+            if (_platformSettings != null) _platformSettings.ColorValuesChanged -= OnPlatformColoursChanged;
+            _platformSettings = null;
             _pauseTimer?.Stop();
             Editor.CloseUndoGroup();
             base.OnDetachedFromVisualTree(e);
@@ -1018,17 +1076,22 @@ namespace SIL.TextEditing.Avalonia
 
         // ------------------------------------------------ system colours
 
-        /// <summary>The selection fill: the theme or system highlight resource, else light sky blue.</summary>
-        public IBrush ResolveSelectionBrush() =>
+        /// <summary>The selection fill: in a high contrast theme the system highlight colour, else the theme or system highlight resource, else light sky blue.</summary>
+        public IBrush ResolveSelectionBrush() => SystemBrush(SystemColour.Highlight) ??
             ThemeBrush(Brushes.LightSkyBlue, "TextControlSelectionHighlightColor", "SystemControlHighlightAccentBrush", "SystemColorHighlightColor");
 
-        /// <summary>The caret fill: the theme or system text-colour resource, else black.</summary>
-        public IBrush ResolveCaretBrush() =>
+        /// <summary>The caret fill and default text colour: in a high contrast theme the system window text colour, else the theme or system text-colour resource, else black.</summary>
+        public IBrush ResolveCaretBrush() => SystemBrush(SystemColour.WindowText) ??
             ThemeBrush(Brushes.Black, "TextControlForeground", "SystemControlForegroundBaseHighBrush", "SystemColorWindowTextColor");
 
-        /// <summary>The page fill: the theme or system window-colour resource, else white.</summary>
-        public IBrush ResolveBackgroundBrush() =>
+        /// <summary>The page fill: in a high contrast theme the system window colour, else the theme or system window-colour resource, else white.</summary>
+        public IBrush ResolveBackgroundBrush() => SystemBrush(SystemColour.Window) ??
             ThemeBrush(Brushes.White, "SystemControlBackgroundAltHighBrush", "SystemAltHighColor", "SystemColorWindowColor");
+
+        /// <summary>The system's colour of a kind as a brush while the system is in a high contrast theme, else null (Avalonia's themes have no high contrast
+        /// variant: they would give black on white, where FieldWorks draws in the system's window text and window colours).</summary>
+        static IBrush? SystemBrush(SystemColour kind) =>
+            SystemColours.IsHighContrast() && SystemColours.Get(kind) is Color color ? new SolidColorBrush(color) : null;
 
         /// <summary>The first of the named theme or system resources that is a colour or brush; else the fallback look.</summary>
         IBrush ThemeBrush(IBrush fallback, params string[] keys)

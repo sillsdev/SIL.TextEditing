@@ -94,5 +94,118 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(border.G > 100 && border.R < 60, "green border " + border);
             window.Close();
         });
+
+        [Fact]
+        public void A_theme_change_does_not_lay_the_paragraphs_out_again() => Headless.Run(() =>
+        {
+            // The default text colour is resolved when the text is drawn, so a switch costs a redraw and not a layout of every paragraph.
+            var (window, field) = Themed();
+            var layout = field.ParagraphLayoutFor(0);
+            window.RequestedThemeVariant = ThemeVariant.Dark;
+            Headless.Pump();
+            Assert.Same(layout, field.ParagraphLayoutFor(0));
+            var text = Ink(Fixtures.Render(field), 30);
+            Assert.True(text.B > 200 && text.R < 60, "the text is drawn in the dark theme's colour " + text);
+            window.RequestedThemeVariant = ThemeVariant.Light;
+            Headless.Pump();
+            Assert.Same(layout, field.ParagraphLayoutFor(0));
+            text = Ink(Fixtures.Render(field), 30);
+            Assert.True(text.R > 200 && text.B < 60, "and back in the light theme's " + text);
+            window.Close();
+        });
+
+        /// <summary>Runs a body with the system saying it is in a high contrast theme with yellow text on a black page and a blue highlight.</summary>
+        static void InHighContrast(System.Action body)
+        {
+            var isOn = SystemColours.IsHighContrast;
+            var get = SystemColours.Get;
+            SystemColours.IsHighContrast = () => true;
+            SystemColours.Get = kind => kind == SystemColour.WindowText ? Color.Parse("#FFFF00") : kind == SystemColour.Window ? Color.Parse("#000000") : Color.Parse("#1AEBFF");
+            try { body(); }
+            finally { SystemColours.IsHighContrast = isOn; SystemColours.Get = get; }
+        }
+
+        [Fact]
+        public void In_high_contrast_the_default_text_and_page_are_the_system_window_text_and_window_colours() => Headless.Run(() => InHighContrast(() =>
+        {
+            var (window, field) = Themed();
+            var shot = Fixtures.Render(field);
+            Assert.Equal(Color.Parse("#000000"), shot.Pixel(290, 40));
+            var text = Ink(shot, 30);
+            Assert.True(text.R > 200 && text.G > 200 && text.B < 60, "yellow text, not the theme's " + text);
+            var border = shot.Pixel(100, 1);
+            Assert.True(border.R > 200 && border.G > 200 && border.B < 60, "and the border with no colour of its own " + border);
+            Assert.Equal(Color.Parse("#1AEBFF"), ((ISolidColorBrush)field.ResolveSelectionBrush()).Color);
+            window.Close();
+        }));
+
+        [Fact]
+        public void A_change_to_or_from_high_contrast_redraws_the_default_colours_without_laying_the_text_out_again() => Headless.Run(() =>
+        {
+            var (window, field) = Themed();
+            var layout = field.ParagraphLayoutFor(0);
+            var before = Ink(Fixtures.Render(field), 30);
+            Assert.True(before.R > 200 && before.B < 60 && before.G < 60, "red theme text " + before);
+            InHighContrast(() =>
+            {
+                field.RefreshSystemColours();
+                Headless.Pump();
+                var shot = Fixtures.Render(field);
+                Assert.Equal(Color.Parse("#000000"), shot.Pixel(290, 40));
+                var text = Ink(shot, 30);
+                Assert.True(text.G > 200, "yellow text " + text);
+            });
+            field.RefreshSystemColours();
+            Headless.Pump();
+            var after = Ink(Fixtures.Render(field), 30);
+            Assert.True(after.R > 200 && after.G < 60, "red again " + after);
+            Assert.Same(layout, field.ParagraphLayoutFor(0));
+            window.Close();
+        });
+
+        [Fact]
+        public void A_foreground_or_background_the_host_set_is_the_hosts_in_high_contrast_too() => Headless.Run(() => InHighContrast(() =>
+        {
+            var (window, field) = Themed();
+            field.Foreground = Brushes.Green;
+            field.Background = Brushes.White;
+            var shot = Fixtures.Render(field);
+            Assert.Equal(Colors.White, shot.Pixel(290, 40));
+            var border = shot.Pixel(100, 1);
+            Assert.True(border.G > 100 && border.R < 60 && border.B < 60, "the border stays green: " + border);
+            window.Close();
+        }));
+
+        [Fact]
+        public void Resetting_the_foreground_or_the_background_goes_back_to_following_the_theme() => Headless.Run(() =>
+        {
+            var (window, field) = Themed();
+            field.Foreground = Brushes.Green;
+            field.Background = Brushes.White;
+            window.RequestedThemeVariant = ThemeVariant.Dark;
+            Headless.Pump();
+            field.ResetForeground();
+            field.ResetBackground();
+            Headless.Pump();
+            var shot = Fixtures.Render(field);
+            Assert.Equal(Color.Parse("#202020"), shot.Pixel(290, 40));
+            var text = Ink(shot, 30);
+            Assert.True(text.B > 200 && text.R < 60, "the dark theme's text " + text);
+            window.Close();
+        });
+
+        [Fact]
+        public void A_host_that_sets_only_the_foreground_keeps_the_themes_page() => Headless.Run(() =>
+        {
+            // The contract (README): a colour the host sets is kept, and the other follows the theme, so a black foreground on a dark theme is
+            // black on the dark page. A host that sets one sets the other, or resets it.
+            var (window, field) = Themed();
+            window.RequestedThemeVariant = ThemeVariant.Dark;
+            Headless.Pump();
+            field.Foreground = Brushes.Black;
+            var shot = Fixtures.Render(field);
+            Assert.Equal(Color.Parse("#202020"), shot.Pixel(290, 40));
+            window.Close();
+        });
     }
 }

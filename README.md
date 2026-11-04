@@ -98,6 +98,17 @@ follows changes of writing system, so a click into text of the same writing syst
 default keyboard, subscribe to the field's `LostFocus` and switch when focus has moved to a control of your own application
 that is not a field. The field raises nothing when it loses focus.
 
+## Colours and themes
+
+Until the host sets `Foreground` (text, and a border with no colour of its own) and `Background` (the page), the field takes them from the
+theme: the text colour the caret uses and the theme's window colour, and in a Windows high contrast theme the system's window text and window
+colours, as FieldWorks does (the selection takes the system highlight). The text keeps one default brush that the field changes in place when
+the theme or the system's colours change, so a theme switch redraws the text and does not lay out the paragraphs again.
+
+A colour the host sets is kept as it is under every theme, high contrast included. So a host that sets one sets the other, or neither: a host
+that sets only `Foreground = Black` on a dark theme gets black text on the theme's dark page. `ResetForeground()` and `ResetBackground()` go back
+to following the theme. A run's own colours (text property 8 and 9) are the document's and do not change with the theme.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
