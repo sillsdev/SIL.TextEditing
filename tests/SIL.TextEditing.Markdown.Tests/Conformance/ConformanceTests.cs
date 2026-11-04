@@ -169,7 +169,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
 
         static MarkdownOptions Options(MarkdownLinkForm form)
         {
-            var c = new ConformanceCase { Project = (Dictionary<string, object?>)Json.Obj(Json.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(ConformanceLoader.Directory, "projects.json"))))["standard"]! };
+            var c = new ConformanceCase { Project = (Dictionary<string, object?>)Json.Obj(Json.Parse(ConformanceLoader.ReadText(System.IO.Path.Combine(ConformanceLoader.Directory, "projects.json"))))["standard"]! };
             var options = ConformanceTests.OptionsFor(c, out _);
             options.WriteFrontMatter = false;
             options.LinkForm = form;
@@ -220,6 +220,41 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             string written = MarkdownConverter.ToMarkdown(model.Document, options);
             var actual = PandocModel.Convert(PandocRunner.ToJson(written), options);
             ConformanceTests.AssertParagraphs(model.Document.Paragraphs, actual, "Pandoc, reading form " + form + ":\n" + written);
+        }
+    }
+}
+namespace SIL.TextEditing.Markdown.Tests.Conformance
+{
+    public class FixtureLineEndingTests
+    {
+        [Fact]
+        public void AFixtureFileCheckedOutWithCrlfReadsAsTheSameCases()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fwmd-crlf-" + System.Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            try
+            {
+                foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json"))
+                {
+                    string lf = ConformanceLoader.ReadText(path);
+                    string copy = System.IO.Path.Combine(dir, System.IO.Path.GetFileName(path));
+                    System.IO.File.WriteAllText(copy, lf.Replace("\n", "\r\n")); // what autocrlf does to the checkout
+                    Assert.Equal(lf, ConformanceLoader.ReadText(copy));
+                    Assert.DoesNotContain("\r", ConformanceLoader.ReadText(copy));
+                }
+            }
+            finally { System.IO.Directory.Delete(dir, true); }
+        }
+
+        [Fact]
+        public void TheCasesThatHoldARawLineEndInAStringStillCompareWithLf()
+        {
+            // "an ampersand is written..." and "toggle values..." have a line end inside the JSON string; the canonical text the writer produces ends in LF.
+            foreach (string name in new[] { "an ampersand is written as a reference only where it would read as one", "toggle values on off invert" })
+            {
+                var c = ConformanceLoader.All().Single(x => x.Name == name);
+                Assert.DoesNotContain("\r", c.Canonical ?? string.Empty);
+            }
         }
     }
 }

@@ -52,7 +52,12 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
     {
         static List<ConformanceCase>? _all;
 
-        public static string Directory => Path.Combine(AppContext.BaseDirectory, "conformance");
+        /// <summary>A fixture file's text with LF line ends, whatever the checkout did to it: the canonical Markdown the fixtures hold uses LF (spec 6.1), and a raw line end inside a JSON string is part of that text.</summary>
+        /// <summary>A fixture file's text with LF line ends, whatever the checkout did to it: the canonical Markdown the fixtures hold uses LF (spec 6.1), and a raw line end
+        /// inside a JSON string is part of that text.</summary>
+        public static string ReadText(string path) => File.ReadAllText(path).Replace("\r\n", "\n").Replace("\r", "\n");
+
+        public static string Directory =>Path.Combine(AppContext.BaseDirectory, "conformance");
 
         public static IReadOnlyList<ConformanceCase> All()
         {
@@ -61,7 +66,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             foreach (string path in System.IO.Directory.GetFiles(Directory, "*.json").OrderBy(p => p, StringComparer.Ordinal))
             {
                 if (Path.GetFileName(path) == "projects.json") continue;
-                var list = Json.Arr(Json.Parse(File.ReadAllText(path)));
+                var list = Json.Arr(Json.Parse(ReadText(path)));
                 foreach (var item in list) cases.Add(Load(Path.GetFileName(path), Json.Obj(item)));
             }
             var duplicate = cases.GroupBy(c => c.Id).FirstOrDefault(g => g.Count() > 1);
@@ -120,7 +125,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
 
         /// <summary>The named projects of <c>projects.json</c>, which a case names in its <c>project</c> field instead of repeating.</summary>
         static Dictionary<string, object?> Projects()
-            => _projects ?? (_projects = Json.Obj(Json.Parse(File.ReadAllText(Path.Combine(Directory, "projects.json")))));
+            => _projects ?? (_projects = Json.Obj(Json.Parse(ReadText(Path.Combine(Directory, "projects.json")))));
 
         /// <summary>A run's object data: spelled out (<c>objData</c>), or as <c>link</c> (a project link: the <c>silfw://</c> URL FieldWorks stores, built from the GUID,
         /// tool and optional tag, or given whole as <c>url</c>), or as <c>picture</c> (the GUID of a picture the project holds).</summary>
