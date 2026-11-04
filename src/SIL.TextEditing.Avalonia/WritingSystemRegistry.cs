@@ -14,7 +14,8 @@ namespace SIL.TextEditing.Avalonia
             Size = 16;
         }
 
-        /// <summary>Plain 16 point fallback. It touches no libpalaso type, so a field needs no SLDR to show text.</summary>
+        /// <summary>Plain 16 point fallback. It touches no libpalaso type, so a field needs no SLDR to show text. Provenance: our own readable default, not a
+        /// FieldWorks value (FieldWorks' view engine starts from 10 pt, and a libpalaso writing system gives at least 10 pt); a host registers its writing systems.</summary>
         internal static WritingSystemInfo Fallback(string id) => new WritingSystemInfo(id);
 
         internal WritingSystemInfo(WritingSystemDefinition ws)

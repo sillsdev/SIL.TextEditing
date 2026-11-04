@@ -18,6 +18,9 @@ namespace SIL.TextEditing
     /// <summary>The character formatting of one run after styles and the run's own properties are applied.</summary>
     public sealed class CharFormat
     {
+        /// <summary>The size of superscript and subscript text against its line: two thirds. Provenance: this is the value FieldWorks falls back to when a
+        /// font gives no superscript or subscript size; FieldWorks first reads the size (and the raise or drop) from the font's own OS/2 table, which the field
+        /// does not do yet, so a font that has them draws larger or smaller there. Observed behaviour; the code is ours.</summary>
         public const double DefaultSuperscriptScale = 2.0 / 3.0;
 
         /// <summary>CSS-style weight 100 to 900; 400 is normal and 700 bold.</summary>
@@ -130,6 +133,10 @@ namespace SIL.TextEditing
         }
 
         // Named sizes, in 1/1000 point: xx-small to xx-large; then "smaller" and "larger" step through the same table.
+        // Provenance: FieldWorks' named font size values are 5, 7, 9, 12, 14, 18 and 24 pt (enumeration numbers 0 to 6, then smaller 7 and larger 8), a
+        // persisted compatibility table like a property number. "Smaller" is the largest named size below the current size, else two thirds of it. "Larger" is
+        // meant to be the smallest named size above the current one, else half as much again, as FieldWorks' own comment says; its loop counts the wrong way
+        // and reads past its table for sizes under 18 pt, so what it gives there is undefined and the field follows the comment, not the loop.
         static readonly int[] NamedSizes = { 5000, 7000, 9000, 12000, 14000, 18000, 24000 };
 
         void ApplySize(int v, int variation)
@@ -212,6 +219,8 @@ namespace SIL.TextEditing
                     case TextPropertyNumbers.LineHeight:
                         if (var == TextPropertyNumbers.VariationRelative)
                         {
+                            // Provenance: a relative line height (a share of 10000) is that share of 1.4 times the font size of the paragraph's base writing
+                            // system, as FieldWorks works it out: it has no font metrics there and takes the height a line needs as 40 % more than the size.
                             LineHeight = baseSizePt * 1.4 * v / 10000.0;
                             ExactLineHeight = false;
                         }

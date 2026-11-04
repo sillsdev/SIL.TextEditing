@@ -1030,7 +1030,7 @@ namespace SIL.TextEditing.Avalonia
                 double fontSize = defaultProperties.FontRenderingEmSize;
                 double lineHeight = glyphTypeface != null
                     ? (glyphTypeface.Metrics.Descent - glyphTypeface.Metrics.Ascent + glyphTypeface.Metrics.LineGap) / (double)glyphTypeface.Metrics.DesignEmHeight * fontSize
-                    : fontSize * 1.3;
+                    : fontSize * 1.3;   // our own fallback for a font with no metrics, not a FieldWorks value
                 if (lineHeight <= 0) lineHeight = fontSize * 1.3;
                 var spaceSource = new ParagraphSource { Text = " " };
                 spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
@@ -1573,7 +1573,7 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>Works out the margin, border and padding boxes from the format. Leading is the right side in a right-to-left paragraph.
-        /// A hanging first indent is added to the leading padding, as FieldWorks does, so the first line starts at the padding edge.</summary>
+        /// A hanging first indent is added to the leading padding, as FieldWorks does (its leading padding is the style's plus any negative first indent), so the first line starts at the padding edge.</summary>
         void ApplyBox(ParaFormat pf, double width, bool rtl, IBrush foreground)
         {
             double total = double.IsInfinity(width) ? 100000 : Math.Max(width, 10);
