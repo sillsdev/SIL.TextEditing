@@ -36,7 +36,23 @@ namespace SIL.TextEditing
             if (para.Length == 0) return true;
             var before = para.RunBefore(p.Offset, out _);
             var after = para.RunAfter(p.Offset, out _);
-            return (before != null && AllowsEditing(before)) || (after != null && AllowsEditing(after));
+            if (before != null && AllowsEditing(before)) return true;
+            // Text a line limit hides is not a place to edit, so the run after the visible end does not count: a point whose only
+            // editable neighbour is hidden is not editable (ADR 0024).
+            return after != null && AllowsEditing(after) && !IsHiddenFrom(p.Paragraph, p.Offset);
+        }
+
+        /// <summary>True when the text from <paramref name="offset"/> on is hidden by the line limit. A lone break that ends the
+        /// paragraph is not hidden text: it sits on the last visible line, only the empty line after it is hidden, so the caret
+        /// stops before it and typing there works (ADR 0024).</summary>
+        bool IsHiddenFrom(int paragraph, int offset)
+        {
+            int limit = LimitOf(paragraph);
+            if (offset < limit) return false;
+            if (offset != limit) return true;
+            var runs = Document.Paragraphs[paragraph].Runs;
+            var last = runs.Count > 0 ? runs[runs.Count - 1].Text : string.Empty;
+            return !(last.Length > 0 && last[last.Length - 1] == LineSeparator && Document.Paragraphs[paragraph].Length == limit + 1);
         }
 
         /// <summary>True when every character in [a, b) is in an editable run (a collapsed range asks about the point), and
@@ -118,7 +134,7 @@ namespace SIL.TextEditing
                 int limit = LimitOf(pi);
                 void Add(int s, int e)
                 {
-                    if (s <= limit) places.Add((new TextPosition(pi, s), new TextPosition(pi, Math.Min(e, limit))));
+                    if (!IsHiddenFrom(pi, s)) places.Add((new TextPosition(pi, s), new TextPosition(pi, Math.Min(e, limit))));
                 }
                 if (para.Length == 0) { places.Add((new TextPosition(pi, 0), new TextPosition(pi, 0))); continue; }
                 int start = -1, end = -1, pos = 0;

@@ -71,6 +71,9 @@ one, and can change without superseding anything.
   text, so the field does the same. Its layout code was read for this; the combination itself (a locked break at the
   limit hiding the only editable text) was not run there. Not showing the line or leaving the break uncounted would
   differ from FieldWorks, so a host that wants that text reachable must not put it behind a locked break at the limit.
+  The same holds when a wrap, not a break, puts the visible end on the boundary of a locked run and the hidden editable
+  run after it (issue #38): the visible end has no editable neighbour that can be seen, so it is not an editable place,
+  the caret is not offered there and Tab leaves. A lone break that ends the paragraph is not hidden text (above).
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

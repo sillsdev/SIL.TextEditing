@@ -434,6 +434,42 @@ namespace SIL.TextEditing.Avalonia.Tests
                 }
         });
 
+        [Fact]
+        public void The_visible_end_is_not_an_editable_place_when_a_wrap_falls_on_the_boundary_of_locked_and_hidden_editable_text() => Headless.Run(() =>
+        {
+            // 40 locked characters then 40 editable ones at MaxLines 1: from about 326 to 335 px the one line holds exactly the
+            // locked run, so the visible end is the start of the editable run, whose text is hidden.
+            int found = 0;
+            for (int width = 326; width <= 335; width++)
+            {
+                var p = new Paragraph { DefaultWs = "en" };
+                var locked = new Run { Ws = "en", Text = new string((char)97, 40) };
+                locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+                p.Runs.Add(locked);
+                p.Runs.Add(new Run { Ws = "en", Text = new string((char)98, 40) });
+                p.Props.SetInt(TextPropertyNumbers.MaxLines, 1);
+                var field = Fixtures.Field(Doc(p), width);
+                var pl = field.ParagraphLayoutFor(0);
+                if (!pl.Truncated || pl.VisibleEnd != 40) continue;   // the wrap is somewhere else at this width
+                found++;
+                var visibleEnd = new TextPosition(0, 40);
+                Assert.False(field.Editor.IsEditableAt(visibleEnd), $"width {width}");
+                Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Next, out _), $"width {width}");
+                Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Last, out _), $"width {width}");
+                field.Editor.SetCaret(new TextPosition(0, 0));
+                Assert.Equal(new TextPosition(0, 0), field.Editor.Caret);   // no editable place to move to
+                field.Editor.SetCaret(visibleEnd);
+                Assert.False(field.Editor.CanEdit);
+                field.Type("x");
+                Assert.Equal(80, field.Editor.Document.Paragraphs[0].Length);
+                int left = 0;
+                field.LeaveRequested += (s, e) => { left++; e.Handled = true; };
+                field.Press(Key.Tab);
+                Assert.Equal(1, left);   // Tab leaves: the caret is not offered where nothing can be typed
+            }
+            Assert.True(found > 0);   // the widths above still wrap on the boundary in the test font
+        });
+
         static Paragraph Limit(string text, int maxLines)
         {
             var p = Para("en", "en", text);
