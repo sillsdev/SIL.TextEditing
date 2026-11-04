@@ -47,20 +47,88 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        const int ArabicJustified = 34;
+
         [Fact]
-        public void Justify_is_not_drawn_because_Avalonia_exposes_no_public_justifier_so_lines_stay_at_the_leading_edge() => Headless.Run(() =>
+        public void Justified_lines_but_the_last_reach_both_edges_of_the_text_area_and_the_last_stays_at_the_leading_edge_in_both_directions() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Paragraphs))
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 8000))
             {
-                var j = s.Field.ParagraphLayoutFor(Justified);
-                Assert.Equal(5, j.Format.Align);
-                Assert.True(j.Lines.Count > 2);
-                foreach (var li in j.Lines) Assert.Equal(0, Left(li), 1);
-                // When Avalonia makes InterWordJustification public (or the formatter justifies), lines but the last reach the edge: draw it then.
-                Assert.True(j.Lines[0].Line.Width < j.ContentWidth - 1);
+                var shot = new Shot(s);
+                foreach (int p in new[] { Justified, ArabicJustified })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    Assert.Equal(5, pl.Format.Align);
+                    Assert.True(pl.Lines.Count > 2, "paragraph " + p);
+                    double top = s.Field.ParagraphTop(p), left = pl.ContentLeft, right = pl.ContentLeft + pl.ContentWidth;
+                    for (int i = 0; i < pl.Lines.Count; i++)
+                    {
+                        var li = pl.Lines[i];
+                        var columns = shot.InkColumns(0, shot.Width, top + li.TextY + 1, top + li.TextY + li.Line.Height - 1);
+                        Assert.NotEmpty(columns);
+                        if (i < pl.Lines.Count - 1)
+                        {
+                            Assert.InRange(columns.Min(), left - 1, left + 8);   // (a few pixels of side bearing)
+                            Assert.InRange(columns.Max(), right - 8, right + 1);
+                        }
+                        else if (pl.Rtl)
+                        {
+                            Assert.InRange(columns.Max(), right - 8, right + 1);   // the last line of a right-to-left paragraph starts at the right edge
+                            Assert.True(columns.Min() > left + 20, "and does not reach the left edge");
+                        }
+                        else
+                        {
+                            Assert.InRange(columns.Min(), left - 1, left + 8);   // (a few pixels of side bearing)
+                            Assert.True(columns.Max() < right - 20, "and does not reach the right edge");
+                        }
+                    }
+                }
             }
         });
 
+        [Fact]
+        public void An_underline_runs_on_through_the_stretched_spaces_of_a_justified_line() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 8000))
+            {
+                foreach (var run in s.Editor.Document.Paragraphs[Justified].Runs) run.Props.SetInt(TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSingle, 0);
+                s.Field.RefreshFromDocument();
+                Headless.Pump();
+                var pl = s.Field.ParagraphLayoutFor(Justified);
+                var shot = new Shot(s);
+                double top = s.Field.ParagraphTop(Justified);
+                var li = pl.Lines[0];
+                // The row of the underline is the one under the baseline with the most ink.
+                int baseline = (int)System.Math.Round(top + li.TextY + li.Line.Baseline), best = 0, row = -1;
+                for (int y = baseline + 1; y < baseline + 8; y++)
+                {
+                    int n = 0;
+                    for (int x = (int)pl.ContentLeft; x < (int)(pl.ContentLeft + pl.ContentWidth); x++) if (shot.IsInk(x, y, 200)) n++;
+                    if (n > best) { best = n; row = y; }
+                }
+                Assert.True(row > 0);
+                int width = (int)pl.ContentWidth;
+                Assert.True(best >= width * 0.97, "the underline is " + best + " of " + width + " pixels wide, so it runs through the stretched spaces");
+            }
+        });
+
+        [Fact]
+        public void Mouse_clicks_and_the_caret_agree_with_the_stretched_lines_of_a_justified_paragraph() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 8000))
+            {
+                foreach (int p in new[] { Justified, ArabicJustified })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    foreach (var li in pl.Lines)
+                        foreach (int offset in new[] { li.Start + 1, (li.Start + pl.TextEnd(li)) / 2, pl.TextEnd(li) - 2 })
+                        {
+                            s.MouseClick(Edge(s, p, offset));
+                            Assert.Equal(new TextPosition(p, offset), s.Editor.Caret);
+                        }
+                }
+            }
+        });
         [Fact]
         public void An_arabic_paragraph_leads_from_the_right_and_a_hanging_indent_hangs_on_the_right() => Headless.Run(() =>
         {

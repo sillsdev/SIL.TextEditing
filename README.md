@@ -94,8 +94,10 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
   strikethrough, and the squiggle, which the layout draws itself as a zigzag below the baseline), superscript and subscript, font size (absolute, relative, named), font
   family and per-run font features; for a paragraph, alignment, first-line and hanging indents, margins, space before
   and after, line height, paragraph colour, borders and padding, a line limit, bullets and numbers. A run's baseline offset is drawn by drawing the run
-  ourselves, shifted: the line's slot makes room for it and the caret, selection and squiggle follow it. Not drawn: justification (Avalonia's
-  justifier is internal, so a justified paragraph is laid out against the leading edge). Pagination properties and the rest are carried untouched.
+  ourselves, shifted: the line's slot makes room for it and the caret, selection and squiggle follow it. A justified paragraph is stretched by
+  the field itself (Avalonia's justifier is internal): each line but the last shares its slack equally among its interior
+  spaces, so it reaches both edges of the text area; the last line stays at the leading edge, as in FieldWorks. The caret, selection,
+  mouse and run backgrounds follow the stretched text, and each stretched line is drawn piece by piece. Pagination properties and the rest are carried untouched.
   Lengths in points are drawn as device-independent pixels, as font sizes are.
   Text a line limit hides stays in the model but cannot be reached: the caret, Right, End, Up/Down and mouse stop at the end of
   the last line shown, as FieldWorks puts an insertion point in truncated text at the last visible position. Typing, Delete, Enter, paste

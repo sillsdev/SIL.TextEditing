@@ -69,7 +69,7 @@ Engine entry: `VwPropertyStore::put_IntProperty` (V/VwPropertyStore.cpp:1177, ca
 
 | Feature | Legacy source and behaviour | FA | TE | Size |
 |---|---|---|---|---|
-| ktptAlign (17): Leading, Left, Center, Right, Trailing, Justify (not on last line) | :1185; V/VwTextBoxes.cpp:3252-3275; enum KRN:653-663 | NO | NO (TextAlignment.Start, ParagraphLayout.cs:52) | M |
+| ktptAlign (17): Leading, Left, Center, Right, Trailing, Justify (not on last line) | :1185; V/VwTextBoxes.cpp:3252-3275; enum KRN:653-663 | NO | YES: leading, left, centre, right, trailing; justify stretches every line but the last (ParagraphLayout Justification) | M |
 | ktptFirstIndent (18) negative = hanging | :1460; V/VwTextBoxes.cpp:1252,7136; negative handled as pad V/VwTextBoxes.cpp:9394 | NO | NO (Indent=>0, ParagraphLayout.cs:57) | M |
 | ktptLeadingIndent / ktptMarginLeading (19) | :1417; V/VwSimpleBoxes.cpp:679,1087,1165 | NO | NO | M |
 | ktptTrailingIndent / ktptMarginTrailing (20) | :1421 | NO | NO | M |
@@ -346,7 +346,7 @@ U+FFFC (ORC) carries `ktptObjData`: first char = kodt type, rest = payload (KRN:
 | Valid insertion points (no IP inside a cluster/ligature) | V/lib/UniscribeSegment.cpp:1508 `IsValidInsertionPoint`, 2477 `FindValidIPBackward`/`Forward` | YES | YES (shaper stops) | M |
 | Combining marks and NFC/NFD: layout in NFC, offsets mapped back | V/lib/NfcOffsetMap.h; UniscribeSegment.cpp:1605-1700 `OffsetInNfc`, `OffsetToOrig` | N/A | PARTIAL: no normalisation; offsets are UTF-16 of stored text | M |
 | Line breaking per ws locale (ICU) | V/lib/LgLineBreaker.cpp:77-115 | NO | NO (Avalonia default breaker) | M |
-| Justification stretch (kashida/inter-word) | V/lib/UniscribeSegment.cpp:3737 `NumStretchableGlyphs`, 3760 `StretchGlyphs` | NO | NO | M |
+| Justification stretch (kashida/inter-word) | V/lib/UniscribeSegment.cpp:3737 `NumStretchableGlyphs`, 3760 `StretchGlyphs` | NO | PARTIAL: inter-word stretch only (equal share per interior space), no kashida | M |
 | Surrogate pairs / grapheme clusters / Indic conjuncts | V/VwSelection.cpp:3938-4000 | PARTIAL | YES (`GraphemeClusters` incl. GB9c, TE/M/GraphemeClusters.cs) | M |
 | Vertical orientation | SRS/OrientationManager.cs | NO | NO | L |
 

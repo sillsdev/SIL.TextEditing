@@ -278,7 +278,8 @@ namespace SIL.TextEditing.Playground
                 ArabicStyled("Centered", ArabicSentence + ArabicSentence), ArabicStyled("List Bullet", "نقطة: " + ArabicSentence),
                 Styled("List Wide Label", "Wonderful words follow a label too wide for a narrow field."), ArabicStyled("List Wide Label", "المعلومات المهمة تأتي بعد عنوان عريض."),
                 Styled("Exact 10", "xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx"),
-                ArabicStyled("Two Lines Only", ArabicSentence + ArabicSentence + ArabicSentence));
+                ArabicStyled("Two Lines Only", ArabicSentence + ArabicSentence + ArabicSentence),
+                ArabicStyled("Justified", ArabicSentence + ArabicSentence + ArabicSentence));
         }
 
         static Run Fonts(string family)
