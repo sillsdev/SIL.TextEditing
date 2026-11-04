@@ -120,8 +120,23 @@ namespace SIL.TextEditing.Avalonia.Tests
             Headless.Pump();
             await Wait(300);
             Assert.False(field.Editor.HasOpenUndoGroup);   // leaving closed the step; the callback saw an off-screen field and started no timer
+            Assert.False(PauseTimerRunning(field));
+
+            // The step is open again while the field is off screen, so only the on-screen check keeps the callback from starting a timer.
+            field.Type("z");
+            Assert.True(field.Editor.HasOpenUndoGroup);
+            field.Editor.TypingPause = System.TimeSpan.FromSeconds(30);
+            await System.Threading.Tasks.Task.Run(() => restart.Invoke(field, null));
+            Headless.Pump();
+            Assert.False(PauseTimerRunning(field));
             window.Close();
         });
+
+        static bool PauseTimerRunning(RichTextField field)
+        {
+            var timer = typeof(RichTextField).GetField("_pauseTimer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(field) as global::Avalonia.Threading.DispatcherTimer;
+            return timer != null && timer.IsEnabled;
+        }
 
         [Fact]
         public void Cut_on_text_that_may_not_be_edited_does_nothing_but_Copy_still_works() => Headless.Run(async () =>
