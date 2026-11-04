@@ -27,15 +27,20 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>How far the baseline moves, as a share of the size of the text beside it: up for a superscript, down for a subscript.</summary>
         public double OffsetScale { get; }
 
+        /// <summary>The smallest size, against the size beside it, that is taken as a font's own: a fifth.</summary>
+        const double MinimumScale = 0.2;
+
         /// <summary>The fallback size: two thirds.</summary>
         public const double FallbackSizeScale = CharFormat.DefaultSuperscriptScale;
 
         /// <summary>The placement from the values of a font's OS/2 table (<paramref name="size"/> and <paramref name="offset"/> of the script asked for, in the
-        /// font's design units, zero for none) and the height of the font in the same units. A value of zero, or no height, is a font that does not say.</summary>
+        /// font's design units, zero for none) and the height of the font in the same units. A value of zero or less, or one that cannot be right, or no height, is a font that does not say.</summary>
         public static ScriptPlacement From(int size, int offset, int fontHeight, bool superscript)
         {
-            double scale = size != 0 && fontHeight != 0 ? (double)size / fontHeight : FallbackSizeScale;
-            double shift = offset != 0 && fontHeight != 0 ? (double)offset / fontHeight : superscript ? 1 - scale : scale / 5;
+            // A font that says something that cannot be right (a value below zero, a size outside a fifth to the whole of the size beside it, an offset of more than
+            // that size: some fonts give such values) is a font that does not say. That sanity range is ours; FieldWorks falls back only on zero.
+            double scale = fontHeight > 0 && size > 0 && (double)size / fontHeight >= MinimumScale && (double)size / fontHeight <= 1 ? (double)size / fontHeight : FallbackSizeScale;
+            double shift = fontHeight > 0 && offset > 0 && (double)offset / fontHeight <= 1 ? (double)offset / fontHeight : superscript ? 1 - scale : scale / 5;
             return new ScriptPlacement(scale, shift);
         }
 

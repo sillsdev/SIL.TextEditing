@@ -127,6 +127,11 @@ namespace SIL.TextEditing.Avalonia.Tests
         [InlineData(1000, 0, 2000, false, 0.5, 0.1)]
         [InlineData(0, 700, 2000, true, 2.0 / 3.0, 0.35)]       // an offset and no size: the fallback size
         [InlineData(1000, 700, 0, true, 2.0 / 3.0, 1.0 / 3.0)]  // no height to say them over: all of it falls back
+        [InlineData(-500, 700, 2000, true, 2.0 / 3.0, 0.35)]    // a size below zero: the fallback size
+        [InlineData(100, 700, 2000, true, 2.0 / 3.0, 0.35)]     // a size of a twentieth of the size beside it is a font that does not say: the fallback
+        [InlineData(3000, 700, 2000, false, 2.0 / 3.0, 0.35)]   // and one of one and a half times it is too
+        [InlineData(1000, -300, 2000, true, 0.5, 0.5)]          // an offset below zero: the fallback offset
+        [InlineData(1000, 3000, 2000, false, 0.5, 0.1)]         // and one of one and a half times the size beside it is too
         public void The_size_and_the_offset_are_the_fonts_values_over_its_height_and_FieldWorks_values_where_it_has_none(int size, int offset, int height, bool superscript, double scale, double shift)
         {
             var place = ScriptPlacement.From(size, offset, height, superscript);
