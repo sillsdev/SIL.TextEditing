@@ -17,7 +17,9 @@ namespace SIL.TextEditing.Tests
             Assert.Equal("Hello", Word(t, 2));
             Assert.Equal(",", Word(t, 5));
             Assert.Equal("  ", Word(t, 7));
-            Assert.Equal("big_world", Word(t, 12));
+            Assert.Equal("big", Word(t, 9));              // an underscore is punctuation, as in FieldWorks and in the spell checker
+            Assert.Equal("_", Word(t, 11));
+            Assert.Equal("world", Word(t, 12));
             Assert.Equal("!!", Word(t, 17));
             Assert.Equal("42", Word(t, 21));
         }

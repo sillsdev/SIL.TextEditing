@@ -20,5 +20,7 @@
     <ProjectReference Include="..\..\src\SIL.TextEditing\SIL.TextEditing.csproj" />
     <ProjectReference Include="..\..\src\SIL.TextEditing.Avalonia\SIL.TextEditing.Avalonia.csproj" />
     <Compile Include="..\Common\TestDocs.cs" Link="TestDocs.cs" />
+    <Compile Include="..\Common\FakeSpelling.cs" Link="FakeSpelling.cs" />
+    <Compile Include="..\Common\ReferenceSpellScanner.cs" Link="ReferenceSpellScanner.cs" />
   </ItemGroup>
 </Project>

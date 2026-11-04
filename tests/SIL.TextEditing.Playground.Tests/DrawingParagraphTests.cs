@@ -47,20 +47,88 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        const int ArabicJustified = 34;
+
         [Fact]
-        public void Justify_is_not_drawn_because_Avalonia_exposes_no_public_justifier_so_lines_stay_at_the_leading_edge() => Headless.Run(() =>
+        public void Justified_lines_but_the_last_reach_both_edges_of_the_text_area_and_the_last_stays_at_the_leading_edge_in_both_directions() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Paragraphs))
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 8000))
             {
-                var j = s.Field.ParagraphLayoutFor(Justified);
-                Assert.Equal(5, j.Format.Align);
-                Assert.True(j.Lines.Count > 2);
-                foreach (var li in j.Lines) Assert.Equal(0, Left(li), 1);
-                // When Avalonia makes InterWordJustification public (or the formatter justifies), lines but the last reach the edge: draw it then.
-                Assert.True(j.Lines[0].Line.Width < j.ContentWidth - 1);
+                var shot = new Shot(s);
+                foreach (int p in new[] { Justified, ArabicJustified })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    Assert.Equal(5, pl.Format.Align);
+                    Assert.True(pl.Lines.Count > 2, "paragraph " + p);
+                    double top = s.Field.ParagraphTop(p), left = pl.ContentLeft, right = pl.ContentLeft + pl.ContentWidth;
+                    for (int i = 0; i < pl.Lines.Count; i++)
+                    {
+                        var li = pl.Lines[i];
+                        var columns = shot.InkColumns(0, shot.Width, top + li.TextY + 1, top + li.TextY + li.Line.Height - 1);
+                        Assert.NotEmpty(columns);
+                        if (i < pl.Lines.Count - 1)
+                        {
+                            Assert.InRange(columns.Min(), left - 1, left + 8);   // (a few pixels of side bearing)
+                            Assert.InRange(columns.Max(), right - 8, right + 1);
+                        }
+                        else if (pl.Rtl)
+                        {
+                            Assert.InRange(columns.Max(), right - 8, right + 1);   // the last line of a right-to-left paragraph starts at the right edge
+                            Assert.True(columns.Min() > left + 20, "and does not reach the left edge");
+                        }
+                        else
+                        {
+                            Assert.InRange(columns.Min(), left - 1, left + 8);   // (a few pixels of side bearing)
+                            Assert.True(columns.Max() < right - 20, "and does not reach the right edge");
+                        }
+                    }
+                }
             }
         });
 
+        [Fact]
+        public void An_underline_runs_on_through_the_stretched_spaces_of_a_justified_line() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 8000))
+            {
+                foreach (var run in s.Editor.Document.Paragraphs[Justified].Runs) run.Props.SetInt(TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSingle, 0);
+                s.Field.RefreshFromDocument();
+                Headless.Pump();
+                var pl = s.Field.ParagraphLayoutFor(Justified);
+                var shot = new Shot(s);
+                double top = s.Field.ParagraphTop(Justified);
+                var li = pl.Lines[0];
+                // The row of the underline is the one under the baseline with the most ink.
+                int baseline = (int)System.Math.Round(top + li.TextY + li.Line.Baseline), best = 0, row = -1;
+                for (int y = baseline + 1; y < baseline + 8; y++)
+                {
+                    int n = 0;
+                    for (int x = (int)pl.ContentLeft; x < (int)(pl.ContentLeft + pl.ContentWidth); x++) if (shot.IsInk(x, y, 200)) n++;
+                    if (n > best) { best = n; row = y; }
+                }
+                Assert.True(row > 0);
+                int width = (int)pl.ContentWidth;
+                Assert.True(best >= width * 0.97, "the underline is " + best + " of " + width + " pixels wide, so it runs through the stretched spaces");
+            }
+        });
+
+        [Fact]
+        public void Mouse_clicks_and_the_caret_agree_with_the_stretched_lines_of_a_justified_paragraph() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 1100, 8000))
+            {
+                foreach (int p in new[] { Justified, ArabicJustified })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    foreach (var li in pl.Lines)
+                        foreach (int offset in new[] { li.Start + 1, (li.Start + pl.TextEnd(li)) / 2, pl.TextEnd(li) - 2 })
+                        {
+                            s.MouseClick(Edge(s, p, offset));
+                            Assert.Equal(new TextPosition(p, offset), s.Editor.Caret);
+                        }
+                }
+            }
+        });
         [Fact]
         public void An_arabic_paragraph_leads_from_the_right_and_a_hanging_indent_hangs_on_the_right() => Headless.Run(() =>
         {
@@ -155,7 +223,7 @@ namespace SIL.TextEditing.Playground.Tests
                 foreach (var li in d.Lines) Assert.Equal(44.8, li.Height, 3);
                 var e = s.Field.ParagraphLayoutFor(Exact);
                 foreach (var li in e.Lines) Assert.Equal(30, li.Height, 3);
-                foreach (var li in e.Lines) Assert.Equal(li.Y + 30 - li.Line.Height, li.TextY, 3);
+                foreach (var li in e.Lines) Assert.Equal(li.Y + System.Math.Floor(e.Lines[0].Line.Baseline / e.Lines[0].Line.Height * 100) / 100 * 30, li.TextY + li.Line.Baseline, 3);   // the baseline keeps the text's own proportion of the slot
                 // Hit testing and the caret follow the slot: a point low in the first slot is still the first line.
                 var hit = e.HitTestDetailed(new Point(10, e.Lines[0].Y + 29));
                 Assert.True(hit.Offset < e.Lines[1].Start);
@@ -512,7 +580,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(plain.FontRenderingEmSize, label.FontRenderingEmSize);
                 Assert.Equal(plain.Typeface.Weight, label.Typeface.Weight);
                 // The text itself still has them.
-                Assert.Equal(BaselineAlignment.Superscript, s.Field.ParagraphLayoutFor(Number1).Lines[0].Line.TextRuns[0].Properties!.BaselineAlignment);
+                Assert.True(s.Field.ParagraphLayoutFor(Number1).Lines[0].Line.TextRuns[0].Properties!.FontRenderingEmSize < plain.FontRenderingEmSize * 0.8);
             }
         });
 
@@ -543,6 +611,121 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(60, pl.ContentLeft, 3);
                 Assert.Equal(60, pl.Lines[0].X, 3);
                 Assert.Equal(36, pl.LabelRect.X, 3);
+            }
+        });
+
+        const int WideLabel = 30, ArabicWideLabel = 31;
+
+        [Fact]
+        public void A_label_wider_than_the_line_takes_the_first_line_and_the_text_starts_on_the_next_in_both_directions() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 240, 6000))
+            {
+                // A label much longer than the style's, wider than the line.
+                foreach (int q in new[] { WideLabel, ArabicWideLabel })
+                    s.Editor.Document.Paragraphs[q].Props.SetStr(TextPropertyNumbers.BulNumTxtBefore, "Chapter number and then some more words ");
+                s.Field.RefreshFromDocument();
+                Headless.Pump();
+                var shot = new Shot(s);
+                foreach (int p in new[] { WideLabel, ArabicWideLabel })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    var label = pl.LabelRect;
+                    Assert.True(label.Width - 24 > pl.ContentWidth, "the label (less its hang) " + label.Width + " is wider than the line " + pl.ContentWidth);
+                    var first = pl.Lines[0];
+                    Assert.True(label.Bottom <= first.TextY + 0.01, "paragraph " + p + " (content " + pl.ContentWidth + "): the label " + label + " is above the first line of text, at " + first.TextY);
+                    Assert.True(first.Y >= label.Bottom - 0.01, "the text's first line starts below the label's line");
+                    // The text starts at the hanging indent, on the full text width.
+                    if (pl.Rtl) Assert.Equal(pl.ContentLeft + pl.ContentWidth, Left(first) + first.Line.WidthIncludingTrailingWhitespace, 6);
+                    else Assert.Equal(pl.ContentLeft, Left(first), 1);
+                    Assert.True(first.Line.Length > 1, "more than one letter on the line");
+                    // The label sits at the first indent, on the leading side.
+                    if (pl.Rtl) Assert.Equal(pl.ContentLeft + pl.ContentWidth - pl.Format.FirstIndent, label.Right, 1);
+                    else Assert.Equal(pl.ContentLeft + pl.Format.FirstIndent, label.X, 1);
+                    // Pixels: the label's ink is in its own row band and the text's ink below it, none of it beside the label.
+                    double top = s.Field.ParagraphTop(p);
+                    Assert.NotEmpty(shot.InkColumns(label.X, label.Right, top + label.Y, top + label.Bottom));
+                    Assert.NotEmpty(shot.InkColumns(0, shot.Width, top + first.TextY, top + first.TextY + first.Line.Height));
+                    // Hit testing and the caret use the text line, not the label's.
+                    Assert.Equal(first.TextY, pl.CaretRect(0).Y, 3);
+                    Assert.Equal(0, pl.HitTest(new Point(pl.Rtl ? pl.ContentLeft + pl.ContentWidth - 2 : first.X + 2, label.Y + 1)));   // a click beside the label, at the leading edge, is the start of the text
+                }
+            }
+        });
+
+        [Fact]
+        public void A_label_that_fits_the_line_stays_on_the_first_line_even_when_the_first_word_does_not_fit_beside_it() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 240, 6000))
+            {
+                var pl = s.Field.ParagraphLayoutFor(WideLabel);
+                Assert.True(pl.LabelRect.Width - 24 < pl.ContentWidth, "the label (less its hang) " + pl.LabelRect.Width + " fits the line " + pl.ContentWidth);
+                Assert.Equal(pl.Lines[0].TextY, pl.LabelRect.Y, 3);
+            }
+        });
+
+        const int ExactTen = 32;
+
+        [Fact]
+        public void An_exact_line_height_keeps_the_baseline_at_the_same_fraction_of_the_slot_so_text_larger_than_the_slot_overflows_both_ways() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 400, 7000))
+            {
+                var pl = s.Field.ParagraphLayoutFor(ExactTen);
+                Assert.True(pl.Lines.Count > 2);
+                foreach (var li in pl.Lines) Assert.Equal(10, li.Height, 3);
+                Assert.True(pl.Lines[0].Line.Height > 15, "the text is taller than its slot");
+                // The baseline sits at the proportion of the slot that the font's ascent is of the text's height, so lines are one slot apart.
+                double fraction = System.Math.Floor(pl.Lines[0].Line.Baseline / pl.Lines[0].Line.Height * 100) / 100;   // cut to a whole per cent
+                foreach (var li in pl.Lines) Assert.Equal(li.Y + fraction * 10, li.TextY + li.Line.Baseline, 3);
+                Assert.Equal(10, pl.Lines[1].TextY + pl.Lines[1].Line.Baseline - (pl.Lines[0].TextY + pl.Lines[0].Line.Baseline), 3);
+                // The caret keeps the text's own height and sits on the text.
+                var caret = pl.CaretRect(0);
+                Assert.Equal(pl.Lines[0].TextY, caret.Y, 3);
+                Assert.Equal(pl.Lines[0].Line.Height, caret.Height, 3);
+                // Pixels: the letters (no descenders) end on the baseline.
+                var shot = new Shot(s);
+                double top = s.Field.ParagraphTop(ExactTen);
+                var first = pl.Lines[0];
+                int baselineRow = (int)Math.Round(top + first.TextY + first.Line.Baseline);
+                int inkBottom = shot.InkBottom(new Rect(first.X, baselineRow - 12, 200, 14));   // rows up to just below the baseline: the next line's letters start 10 rows lower
+                Assert.InRange(inkBottom, baselineRow - 2, baselineRow + 1);
+                // Not bottom-aligned in the slot (where the baseline would sit by the descent above the slot's bottom).
+                double bottomAligned = top + first.Y + first.Height - (first.Line.Height - first.Line.Baseline);
+                Assert.True(top + first.TextY + first.Line.Baseline > bottomAligned + 1.5, "baseline " + (top + first.TextY + first.Line.Baseline) + " vs bottom aligned " + bottomAligned);
+            }
+        });
+
+        const int ArabicTwoLines = 33;
+
+        [Fact]
+        public void Pixels_show_three_dots_after_the_last_visible_line_of_a_cut_off_paragraph_on_its_trailing_side() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 700, 8000))
+            {
+                var shot = new Shot(s);
+                foreach (int p in new[] { TwoLines, ArabicTwoLines })
+                {
+                    var pl = s.Field.ParagraphLayoutFor(p);
+                    Assert.True(pl.Truncated && pl.HasEllipsis, "paragraph " + p);
+                    var dots = pl.EllipsisRect;
+                    double top = s.Field.ParagraphTop(p);
+                    // The dots sit on the baseline: ink in their box, in the rows just above it, in three separate groups of columns.
+                    double baseline = top + pl.Lines[pl.Lines.Count - 1].TextY + pl.Lines[pl.Lines.Count - 1].Line.Baseline;
+                    var columns = new List<int>();
+                    for (int x = (int)dots.X; x < (int)System.Math.Ceiling(dots.Right); x++)
+                        for (int y = (int)(baseline - 4); y <= (int)(baseline + 1); y++)
+                            if (shot.IsInk(x, y, 215)) { columns.Add(x); break; }   // (a dot is small and blurred, so a paler threshold than for letters)
+                    Assert.NotEmpty(columns);
+                    int groups = 1 + columns.Zip(columns.Skip(1), (a, b) => b - a).Count(gap => gap > 1);
+                    Assert.Equal(3, groups);
+                    Assert.Empty(shot.InkColumns(dots.X, dots.Right, top + dots.Y, baseline - 6));   // nothing tall: they are dots
+                    // Nothing is drawn past the text area on the trailing side.
+                    if (pl.Rtl) Assert.Empty(shot.InkColumns(0, pl.ContentLeft - 1, top, top + pl.Height));
+                    else Assert.Empty(shot.InkColumns(pl.ContentLeft + pl.ContentWidth + 1, shot.Width, top, top + pl.Height));
+                }
+                // A paragraph that is not cut off has no dots.
+                Assert.False(s.Field.ParagraphLayoutFor(Plain).HasEllipsis);
             }
         });
 

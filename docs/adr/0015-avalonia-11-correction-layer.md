@@ -11,3 +11,6 @@ fault pins it. When FieldWorks moves to Avalonia 12 (ADR 0009), the layer and it
   12 already does correctly, and the code would outlive its reason.
 
 Owner decision, 2026-11-03. Supersedes the earlier proposal that the field own visual caret movement.
+
+Superseded in part by ADR 0027 (2026-11-04): Avalonia 12 has some of the same faults, so the layer is keyed on the
+line's shape and applies on both versions.

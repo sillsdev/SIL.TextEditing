@@ -9,3 +9,5 @@ FwAvalonia. Motif's GUI reaches LCModel only through its host project. The playg
 a project.
 
 Owner decision, 2026-11-03.
+
+Refined 2026-11-04: the clipboard forms, and the order paste reads them in, are in ADR 0029.

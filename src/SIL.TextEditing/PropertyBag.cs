@@ -22,19 +22,167 @@ namespace SIL.TextEditing
         public override string ToString() => Variation + ":" + Value;
     }
 
+    /// <summary>Something that holds a property bag and must be told when the bag is changed in place: a run, or a paragraph.</summary>
+    internal interface IBagOwner
+    {
+        void BagChanged();
+    }
+
+    /// <summary>The properties of one number space of a <see cref="PropertyBag"/>, in key order. It reads and writes like a
+    /// <see cref="SortedDictionary{TKey, TValue}"/>, and every change tells the paragraphs that hold the bag (<see cref="Paragraph.ChangeStamp"/>),
+    /// so a host that edits a bag in place is noticed (issue 101).</summary>
+    public sealed class PropertyDictionary<TValue> : IDictionary<int, TValue>, IReadOnlyDictionary<int, TValue>
+    {
+        readonly SortedDictionary<int, TValue> _items = new SortedDictionary<int, TValue>();
+        readonly PropertyBag _bag;
+
+        internal PropertyDictionary(PropertyBag bag)
+        {
+            _bag = bag;
+        }
+
+        public TValue this[int key]
+        {
+            get => _items[key];
+            set
+            {
+                if (_items.TryGetValue(key, out var old) && EqualityComparer<TValue>.Default.Equals(old, value)) return;
+                _items[key] = value;
+                _bag.Changed();
+            }
+        }
+
+        public int Count => _items.Count;
+        public bool ContainsKey(int key) => _items.ContainsKey(key);
+        public bool TryGetValue(int key, out TValue value) => _items.TryGetValue(key, out value!);
+
+        public void Add(int key, TValue value)
+        {
+            _items.Add(key, value);
+            _bag.Changed();
+        }
+
+        public bool Remove(int key)
+        {
+            if (!_items.Remove(key)) return false;
+            _bag.Changed();
+            return true;
+        }
+
+        public void Clear()
+        {
+            if (_items.Count == 0) return;
+            _items.Clear();
+            _bag.Changed();
+        }
+
+        public SortedDictionary<int, TValue>.KeyCollection Keys => _items.Keys;
+        public SortedDictionary<int, TValue>.ValueCollection Values => _items.Values;
+        public SortedDictionary<int, TValue>.Enumerator GetEnumerator() => _items.GetEnumerator();
+
+        ICollection<int> IDictionary<int, TValue>.Keys => _items.Keys;
+        ICollection<TValue> IDictionary<int, TValue>.Values => _items.Values;
+        IEnumerable<int> IReadOnlyDictionary<int, TValue>.Keys => _items.Keys;
+        IEnumerable<TValue> IReadOnlyDictionary<int, TValue>.Values => _items.Values;
+        IEnumerator<KeyValuePair<int, TValue>> IEnumerable<KeyValuePair<int, TValue>>.GetEnumerator() => _items.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => _items.GetEnumerator();
+        bool ICollection<KeyValuePair<int, TValue>>.IsReadOnly => false;
+        void ICollection<KeyValuePair<int, TValue>>.Add(KeyValuePair<int, TValue> item) => Add(item.Key, item.Value);
+        bool ICollection<KeyValuePair<int, TValue>>.Contains(KeyValuePair<int, TValue> item) => ((ICollection<KeyValuePair<int, TValue>>)_items).Contains(item);
+        void ICollection<KeyValuePair<int, TValue>>.CopyTo(KeyValuePair<int, TValue>[] array, int arrayIndex) => ((ICollection<KeyValuePair<int, TValue>>)_items).CopyTo(array, arrayIndex);
+
+        bool ICollection<KeyValuePair<int, TValue>>.Remove(KeyValuePair<int, TValue> item)
+        {
+            if (!((ICollection<KeyValuePair<int, TValue>>)_items).Remove(item)) return false;
+            _bag.Changed();
+            return true;
+        }
+    }
+
     /// <summary>
     /// The opaque property bag of a run, keyed by FieldWorks text property numbers (see
     /// <see cref="TextPropertyNumbers"/>). Integer and string properties live in separate number spaces, as in
     /// ITsTextProps. The editor never interprets a bag; it copies the whole bag through every edit, and the
-    /// text surface reads only the few numbers it draws.
+    /// text surface reads only the few numbers it draws. A change to the bag in place (<see cref="SetInt"/>, <see cref="SetStr"/> or a write
+    /// to <see cref="IntProps"/> or <see cref="StrProps"/>) tells the paragraphs that hold it, so their <see cref="Paragraph.ChangeStamp"/> moves
+    /// and a field draws them again.
     /// </summary>
     public sealed class PropertyBag
     {
-        public SortedDictionary<int, IntPropValue> IntProps { get; } = new SortedDictionary<int, IntPropValue>();
-        public SortedDictionary<int, string> StrProps { get; } = new SortedDictionary<int, string>();
+        public PropertyBag()
+        {
+            IntProps = new PropertyDictionary<IntPropValue>(this);
+            StrProps = new PropertyDictionary<string>(this);
+        }
+
+        public PropertyDictionary<IntPropValue> IntProps { get; }
+        public PropertyDictionary<string> StrProps { get; }
 
         public int Count => IntProps.Count + StrProps.Count;
 
+        // Who holds this bag: the first strongly, any others (a bag shared by several runs is rare) weakly, so a bag that outlives some of its
+        // holders does not keep them alive.
+        IBagOwner? _owner;
+        List<WeakReference<IBagOwner>>? _otherOwners;
+        int _pruneAt = 8;
+
+        /// <summary>For a test: how many holders the bag remembers (the dead ones among the weak ones until they are pruned).</summary>
+        internal int OwnerCount => (_owner == null ? 0 : 1) + (_otherOwners?.Count ?? 0);
+
+        internal void Attach(IBagOwner owner)
+        {
+            if (_owner == null) _owner = owner;
+            else if (!ReferenceEquals(_owner, owner))
+            {
+                var others = _otherOwners ??= new List<WeakReference<IBagOwner>>();
+                // A bag given to very many runs that come and go would otherwise remember every one: drop the dead ones when the list has doubled.
+                if (others.Count >= _pruneAt)
+                {
+                    others.RemoveAll(w => !w.TryGetTarget(out _));
+                    _pruneAt = Math.Max(8, others.Count * 2);
+                }
+                others.Add(new WeakReference<IBagOwner>(owner));
+            }
+        }
+
+        internal void Detach(IBagOwner owner)
+        {
+            if (_otherOwners != null)
+            {
+                for (int i = 0; i < _otherOwners.Count; i++)
+                {
+                    if (_otherOwners[i].TryGetTarget(out var other) && ReferenceEquals(other, owner))
+                    {
+                        _otherOwners.RemoveAt(i);
+                        if (_otherOwners.Count == 0) _otherOwners = null;
+                        return;
+                    }
+                }
+            }
+            if (!ReferenceEquals(_owner, owner)) return;
+            _owner = null;
+            while (_otherOwners != null && _owner == null)
+            {
+                var first = _otherOwners[0];
+                _otherOwners.RemoveAt(0);
+                if (_otherOwners.Count == 0) _otherOwners = null;
+                if (first.TryGetTarget(out var promoted)) _owner = promoted;
+            }
+        }
+
+        internal void Changed()
+        {
+            _owner?.BagChanged();
+            if (_otherOwners == null) return;
+            for (int i = _otherOwners.Count - 1; i >= 0; i--)
+            {
+                if (_otherOwners[i].TryGetTarget(out var owner)) owner.BagChanged();
+                else _otherOwners.RemoveAt(i);
+            }
+            if (_otherOwners.Count == 0) _otherOwners = null;
+        }
+
+        /// <summary>A copy of the bag that no run or paragraph holds yet.</summary>
         public PropertyBag Clone()
         {
             var copy = new PropertyBag();
@@ -125,6 +273,9 @@ namespace SIL.TextEditing
         public const int LineHeight = 24;
         /// <summary>Paragraph background colour (ktptParaColor; FieldWorks treats it as the back colour).</summary>
         public const int ParaColor = 25;
+        /// <summary>ktptSpellCheck (26): <see cref="SpellCheckNormal"/>, <see cref="SpellCheckDoNot"/> or <see cref="SpellCheckForce"/> (ADR 0020). Absent means normal.</summary>
+        public const int SpellCheck = 26;
+        public const int SpellCheckNormal = 0, SpellCheckDoNot = 1, SpellCheckForce = 2;
         /// <summary>ktptMarginTop: the CSS-style top margin (the gap between paragraphs is the larger of it and the sum of space after and space before).</summary>
         public const int MarginTop = 50;
         public const int PadLeading = 134;

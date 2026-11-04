@@ -50,6 +50,7 @@ namespace SIL.TextEditing.Playground
             ["Justified"] = Bag().SetInt(TextPropertyNumbers.Align, 5),
             ["Double Spaced"] = Bag().SetInt(TextPropertyNumbers.LineHeight, 20000, TextPropertyNumbers.VariationRelative),
             ["Exact 30"] = Bag().SetInt(TextPropertyNumbers.LineHeight, Mpt(-30), 1),
+            ["Exact 10"] = Bag().SetInt(TextPropertyNumbers.LineHeight, Mpt(-10), 1),
             ["Boxed"] = Bag().SetInt(TextPropertyNumbers.BorderTop, Mpt(1), 1).SetInt(TextPropertyNumbers.BorderBottom, Mpt(1), 1)
                 .SetInt(TextPropertyNumbers.BorderLeading, Mpt(3), 1).SetInt(TextPropertyNumbers.BorderTrailing, Mpt(1), 1).SetInt(TextPropertyNumbers.BorderColor, Blue)
                 .SetInt(TextPropertyNumbers.PadTop, Mpt(4), 1).SetInt(TextPropertyNumbers.PadBottom, Mpt(4), 1).SetInt(TextPropertyNumbers.PadLeading, Mpt(6), 1).SetInt(TextPropertyNumbers.PadTrailing, Mpt(6), 1)
@@ -61,6 +62,8 @@ namespace SIL.TextEditing.Playground
             ["List Flush"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.BulNumScheme, 10).SetStr(TextPropertyNumbers.BulNumTxtAfter, "."),
             ["List Roman"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-30), 1).SetInt(TextPropertyNumbers.BulNumScheme, 12)
                 .SetStr(TextPropertyNumbers.BulNumTxtBefore, "(").SetStr(TextPropertyNumbers.BulNumTxtAfter, ")"),
+            ["List Wide Label"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-24), 1).SetInt(TextPropertyNumbers.BulNumScheme, 10)
+                .SetStr(TextPropertyNumbers.BulNumTxtBefore, "Chapter number ").SetStr(TextPropertyNumbers.BulNumTxtAfter, "."),
             ["List Letter"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-24), 1).SetInt(TextPropertyNumbers.BulNumScheme, 14)
                 .SetStr(TextPropertyNumbers.BulNumTxtAfter, ")"),
         };

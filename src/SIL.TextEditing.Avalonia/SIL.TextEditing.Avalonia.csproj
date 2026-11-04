@@ -12,6 +12,11 @@
   </PropertyGroup>
   <!-- One source tree, two Avalonia generations. The version per target framework comes from Directory.Packages.props. -->
   <ItemGroup>
+    <InternalsVisibleTo Include="SIL.TextEditing.Avalonia.Tests" />
+    <InternalsVisibleTo Include="SIL.TextEditing.Playground.Tests" />
+    <InternalsVisibleTo Include="SIL.TextEditing.SecondDispatcher.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="SIL.WritingSystems" />
     <ProjectReference Include="..\SIL.TextEditing\SIL.TextEditing.csproj" />

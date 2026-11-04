@@ -10,4 +10,9 @@
     <IsTrimmable>true</IsTrimmable>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SIL.TextEditing.Tests" />
+    <InternalsVisibleTo Include="SIL.TextEditing.Avalonia" />
+    <InternalsVisibleTo Include="SIL.TextEditing.Avalonia.Tests" />
+  </ItemGroup>
 </Project>

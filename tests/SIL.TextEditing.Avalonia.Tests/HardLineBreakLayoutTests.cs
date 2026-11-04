@@ -331,6 +331,59 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
         });
 
+        static RichTextField BreakFirstThenHidden()
+        {
+            // The second paragraph starts with an editable hard break and the line limit hides everything after it.
+            var p1 = Para("en", "en", Break + "rest");
+            p1.Props.SetInt(TextPropertyNumbers.MaxLines, 1);
+            var field = Fixtures.Field(Doc(Para("en", "en", "ab"), p1), 520);
+            var pl = field.ParagraphLayoutFor(1);
+            Assert.True(pl.Truncated);
+            Assert.Equal(0, pl.VisibleEnd);
+            return field;
+        }
+
+        [Fact]
+        public void Backspace_at_the_start_of_a_paragraph_that_begins_with_an_editable_break_and_hides_the_rest_joins_it_to_the_one_above() => Headless.Run(() =>
+        {
+            // The paragraph mark is reachable (the caret rests at the start of the second paragraph), so the join is allowed even
+            // though the editable text beside it is hidden; FieldWorks' join does not look at truncation.
+            var field = BreakFirstThenHidden();
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Back);
+            Assert.Single(field.Editor.Document.Paragraphs);
+            Assert.Equal("ab" + Break + "rest", Text(field));
+            Assert.Equal(new TextPosition(0, 2), field.Editor.Caret);
+        });
+
+        [Fact]
+        public void Delete_at_the_end_of_the_paragraph_above_one_that_begins_with_an_editable_break_and_hides_the_rest_joins_them() => Headless.Run(() =>
+        {
+            var field = BreakFirstThenHidden();
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.Press(Key.Delete);
+            Assert.Single(field.Editor.Document.Paragraphs);
+            Assert.Equal("ab" + Break + "rest", Text(field));
+        });
+
+        [Fact]
+        public void The_join_is_still_refused_when_the_hidden_paragraph_begins_with_text_that_may_not_be_edited() => Headless.Run(() =>
+        {
+            var p1 = new Paragraph { DefaultWs = "en" };
+            var locked = new Run { Ws = "en", Text = Break };
+            locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            p1.Runs.Add(locked);
+            p1.Runs.Add(new Run { Ws = "en", Text = "rest" });
+            p1.Props.SetInt(TextPropertyNumbers.MaxLines, 1);
+            var field = Fixtures.Field(Doc(Para("en", "en", "ab"), p1), 520);
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Back);
+            Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.Press(Key.Delete);
+            Assert.Equal(2, field.Editor.Document.Paragraphs.Count);
+        });
+
         [Fact]
         public void A_preedit_before_a_trailing_break_draws_its_caret_after_the_preedit_on_the_same_line() => Headless.Run(() =>
         {
@@ -409,6 +462,65 @@ namespace SIL.TextEditing.Avalonia.Tests
             field.LeaveRequested += (s, e) => { left++; e.Handled = true; };
             field.Press(Key.Tab);
             Assert.Equal(1, left);   // Tab is not trapped by a place nobody can reach
+        });
+
+        [Theory]
+        [InlineData("|", "y", 1)]
+        [InlineData("ab|", "cd", 1)]
+        [InlineData("a|b|", "cd", 2)]
+        public void A_non_editable_break_counts_toward_the_line_limit_and_the_editable_text_behind_it_stays_hidden(string locked, string editable, int maxLines) => Headless.Run(() =>
+        {
+            // The limit counts lines whatever their editability (as in FieldWorks), so host data that puts the only editable text
+            // behind a locked break at the limit is hidden and cannot be edited from the keyboard (ADR 0024).
+            string text = locked.Replace("|", Break) + editable;
+            var field = LockedThenEditable(locked.Replace("|", Break), editable, maxLines);
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.True(pl.Truncated);
+            Assert.Equal(maxLines, pl.Lines.Count);
+            Assert.True(pl.VisibleEnd <= locked.Length);
+            for (int o = 0; o <= text.Length; o++)
+                foreach (var act in new System.Action<RichTextField>[] { f => f.Type("x"), f => f.Press(Key.Delete), f => f.Press(Key.Back) })
+                {
+                    field.Editor.SetCaret(new TextPosition(0, o));
+                    act(field);
+                    Assert.Equal(text, Text(field));
+                }
+        });
+
+        [Fact]
+        public void The_visible_end_is_not_an_editable_place_when_a_wrap_falls_on_the_boundary_of_locked_and_hidden_editable_text() => Headless.Run(() =>
+        {
+            // 40 locked characters then 40 editable ones at MaxLines 1: at some widths the one line holds exactly the
+            // locked run, so the visible end is the start of the editable run, whose text is hidden.
+            int found = 0;
+            for (int width = 200; width <= 700; width++)
+            {
+                var p = new Paragraph { DefaultWs = "en" };
+                var locked = new Run { Ws = "en", Text = new string((char)97, 40) };
+                locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+                p.Runs.Add(locked);
+                p.Runs.Add(new Run { Ws = "en", Text = new string((char)98, 40) });
+                p.Props.SetInt(TextPropertyNumbers.MaxLines, 1);
+                var field = Fixtures.Field(Doc(p), width);
+                var pl = field.ParagraphLayoutFor(0);
+                if (!pl.Truncated || pl.VisibleEnd != 40) continue;   // the wrap is somewhere else at this width
+                found++;
+                var visibleEnd = new TextPosition(0, 40);
+                Assert.False(field.Editor.IsEditableAt(visibleEnd), $"width {width}");
+                Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Next, out _), $"width {width}");
+                Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Last, out _), $"width {width}");
+                field.Editor.SetCaret(new TextPosition(0, 0));
+                Assert.Equal(new TextPosition(0, 0), field.Editor.Caret);   // no editable place to move to
+                field.Editor.SetCaret(visibleEnd);
+                Assert.False(field.Editor.CanEdit);
+                field.Type("x");
+                Assert.Equal(80, field.Editor.Document.Paragraphs[0].Length);
+                int left = 0;
+                field.LeaveRequested += (s, e) => { left++; e.Handled = true; };
+                field.Press(Key.Tab);
+                Assert.Equal(1, left);   // Tab leaves: the caret is not offered where nothing can be typed
+            }
+            Assert.True(found > 0);   // some width wraps on the boundary in the test font
         });
 
         static Paragraph Limit(string text, int maxLines)
@@ -593,14 +705,47 @@ namespace SIL.TextEditing.Avalonia.Tests
             AssertRecoveredByDelete(field, "y", 0);
         });
 
+        /// <summary>The union of the glyph boxes of the first line's text, in paragraph coordinates.</summary>
+        static Rect InkBox(ParagraphLayout pl)
+        {
+            var li = pl.Lines[0];
+            Rect? union = null;
+            foreach (var tb in li.Line.GetTextBounds(li.Start, pl.TextEnd(li) - li.Start))
+            {
+                var r = new Rect(li.X + tb.Rectangle.X, li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height);
+                union = union.HasValue ? union.Value.Union(r) : r;
+            }
+            return union!.Value;
+        }
+
         [Fact]
-        public void Selecting_only_a_hard_break_in_a_right_to_left_paragraph_draws_the_block_inside_the_line() => Headless.Run(() =>
+        public void Selecting_only_a_hard_break_in_a_right_to_left_paragraph_ending_in_Latin_draws_the_block_left_of_the_text() => Headless.Run(() =>
         {
             var pl = Field("ab" + Break + "cd", 0, rtl: true).ParagraphLayoutFor(0);
             var block = Assert.Single(pl.SelectionRects(2, 3));
-            var caret = pl.CaretRect(2, true);
+            var ink = InkBox(pl);
             Assert.True(block.X >= 0 && block.Right <= 520.01, "the block is inside the field");
-            Assert.True(block.Right <= caret.X + 0.01, "in a right-to-left paragraph it is left of the caret");
+            Assert.True(block.Right <= ink.X + 0.01, "the break sits at the line's end in the paragraph direction, left of the text, not over the last glyph");
+            Assert.Equal(pl.Lines[0].TextY, block.Y, 3);
+        });
+
+        [Fact]
+        public void Selecting_only_a_hard_break_in_a_right_to_left_paragraph_ending_in_Arabic_draws_the_block_left_of_the_text() => Headless.Run(() =>
+        {
+            var pl = Field("\u0627\u0628" + Break + "\u062c\u062f", 0, rtl: true).ParagraphLayoutFor(0);
+            var block = Assert.Single(pl.SelectionRects(2, 3));
+            Assert.True(block.X >= 0 && block.Right <= 520.01, "the block is inside the field");
+            Assert.True(block.Right <= InkBox(pl).X + 0.01, "left of the text");
+        });
+
+        [Fact]
+        public void Selecting_only_a_hard_break_in_a_left_to_right_paragraph_ending_in_Arabic_draws_the_block_right_of_the_text() => Headless.Run(() =>
+        {
+            var p = Para("en", "ar", "\u0627\u0628" + Break + "\u062c\u062f");
+            var field = Fixtures.Field(Doc(p), 520);
+            var pl = field.ParagraphLayoutFor(0);
+            var block = Assert.Single(pl.SelectionRects(2, 3));
+            Assert.True(block.X >= InkBox(pl).Right - 0.01, "right of the text, where the break is in a left-to-right paragraph");
         });
     }
 }

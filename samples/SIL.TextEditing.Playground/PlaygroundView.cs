@@ -43,6 +43,16 @@ namespace SIL.TextEditing.Playground
             public const string ReadOnly = "ReadOnlyCheck";
             public const string SingleParagraph = "SingleParagraphCheck";
             public const string HostHandlesLeave = "HostHandlesLeaveCheck";
+            public const string SpellCheck = "SpellCheckBox";
+            public const string SpellShow = "SpellShowButton";
+            public const string SpellReplace = "SpellReplaceButton";
+            public const string SpellSpaces = "SpellSpacesButton";
+            public const string SpellWholeFirst = "SpellWholeFirstButton";
+            public const string SpellWholeLast = "SpellWholeLastButton";
+            public const string SpellAdd = "SpellAddButton";
+            public const string SpellIgnore = "SpellIgnoreButton";
+            public const string HyphenLetter = "HyphenLetterBox";
+            public const string SpellBackground = "SpellBackgroundBox";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
             public const string DefaultVernacular = "DefaultVernacularButton";
             public const string WsLabel = "WsLabel";
@@ -50,6 +60,18 @@ namespace SIL.TextEditing.Playground
             public const string Inspector = "Inspector";
             public const string EventLog = "EventLog";
             public const string ScenarioDescription = "ScenarioDescription";
+            public const string FindText = "FindText";
+            public const string ReplaceText = "ReplaceText";
+            public const string MatchCase = "MatchCaseCheck";
+            public const string MatchDiacritics = "MatchDiacriticsCheck";
+            public const string WholeWord = "WholeWordCheck";
+            public const string RegularExpression = "RegularExpressionCheck";
+            public const string HighlightAll = "HighlightAllCheck";
+            public const string FindNext = "FindNextButton";
+            public const string FindPrevious = "FindPreviousButton";
+            public const string Replace = "ReplaceButton";
+            public const string ReplaceAll = "ReplaceAllButton";
+            public const string FindStatus = "FindStatus";
             public static string WritingSystem(string tag) => "Ws_" + tag;
         }
 
@@ -79,6 +101,19 @@ namespace SIL.TextEditing.Playground
         CheckBox _readOnlyCheck = null!;
         CheckBox _singleParagraphCheck = null!;
         CheckBox _leaveHandled = null!;
+        CheckBox _spellCheck = null!;
+        SampleSpelling? _spelling;
+        CheckBox _hyphenLetter = null!;
+        CheckBox _spellBackground = null!;
+        bool _spellOffUiThread;
+        TextBox _findBox = null!;
+        TextBox _replaceBox = null!;
+        CheckBox _matchCase = null!;
+        CheckBox _matchDiacritics = null!;
+        CheckBox _wholeWord = null!;
+        CheckBox _regex = null!;
+        CheckBox _highlightAll = null!;
+        TextBlock _findStatus = null!;
         readonly TextBlock _description;
         readonly TextBlock _wsLabel;
         readonly TextBlock _selectionLabel;
@@ -128,6 +163,9 @@ namespace SIL.TextEditing.Playground
         public Scenario CurrentScenario { get; private set; } = Scenarios.All[0];
         /// <summary>The field the toolbar, writing-system bar and inspector act on: the focused one.</summary>
         public RichTextField Field => _active.Field;
+
+        /// <summary>The playground's dictionaries while spell checking is on, else null.</summary>
+        public SampleSpelling? Spelling => _spelling;
         public IReadOnlyList<RichTextField> Fields => _sessions.Select(s => s.Field).ToList();
         /// <summary>The host-owned undo stack of the active field.</summary>
         public SimpleUndoStack Undo => _active.Undo;
@@ -186,6 +224,45 @@ namespace SIL.TextEditing.Playground
             _leaveHandled = new CheckBox { Name = Names.HostHandlesLeave, Content = "Host takes leave requests", Focusable = false, Margin = new Thickness(2) };
             ToolTip.SetTip(_leaveHandled, "Tab, Shift+Tab, Ctrl+Tab and arrows at the field's edge raise LeaveRequested; when ticked the host marks it handled, so Tab does not move focus");
             toolbar.Children.Add(_leaveHandled);
+            toolbar.Children.Add(Spacer());
+            _spellCheck = new CheckBox { Name = Names.SpellCheck, Content = "Spell checking", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_spellCheck, "Give the fields the playground's English and French word lists as the host's dictionaries; the field checks the paragraphs in view when idle");
+            _spellCheck.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                SetSpelling(_spellCheck.IsChecked == true);
+            };
+            toolbar.Children.Add(_spellCheck);
+            _hyphenLetter = new CheckBox { Name = Names.HyphenLetter, Content = "Hyphen is a letter", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_hyphenLetter, "The host's word rule (RichTextField.WordRules): a writing system that makes the hyphen a letter makes well-known one word for a double-click, Ctrl+Left and Right, find and the spell checker");
+            _hyphenLetter.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                SetWordRules(_hyphenLetter.IsChecked == true);
+            };
+            toolbar.Children.Add(_hyphenLetter);
+            _spellBackground = new CheckBox { Name = Names.SpellBackground, Content = "Slow dictionary, off the UI thread", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_spellBackground, "The playground's dictionaries take 15 ms a word and say they are safe off the UI thread (IBackgroundSpellChecker): the field finds the words, a worker asks them and the squiggles arrive without holding up typing");
+            _spellBackground.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                _spellOffUiThread = _spellBackground.IsChecked == true;
+                if (_spelling != null)
+                {
+                    _spelling.OffUiThread = _spellOffUiThread;
+                    _spelling.Delay = _spellOffUiThread ? 15 : 0;
+                    _spelling.RaiseDictionariesChanged();       // the fields ask again, now of the other kind of checker
+                }
+                Log("dictionary: " + (_spellOffUiThread ? "slow, asked off the UI thread" : "asked on the UI thread"));
+            };
+            toolbar.Children.Add(_spellBackground);
+            toolbar.Children.Add(Tool(Names.SpellShow, "Spelling at caret", "What the context menu would offer for the marked word at the caret: the word, why it is marked and the suggestions", () => ShowSpelling()));
+            toolbar.Children.Add(Tool(Names.SpellReplace, "Use first suggestion", "Replace the marked word at the caret with the first suggestion (one undo step)", () => ReplaceSpelling()));
+            toolbar.Children.Add(Tool(Names.SpellSpaces, "Insert missing spaces", "For a word that mixes writing systems or holds an object: put a space between the parts, each part keeping its own writing system", () => SpacesSpelling()));
+            toolbar.Children.Add(Tool(Names.SpellWholeFirst, "Whole word, first writing system", "For a word that mixes writing systems: make the whole word the first writing system in it, as FieldWorks' menu item does", () => WholeWordSpelling(false)));
+            toolbar.Children.Add(Tool(Names.SpellWholeLast, "Whole word, last writing system", "For a word that mixes writing systems: make the whole word the last writing system in it", () => WholeWordSpelling(true)));
+            toolbar.Children.Add(Tool(Names.SpellAdd, "Add to dictionary", "Add the marked word at the caret to its dictionary", () => AddSpelling(false)));
+            toolbar.Children.Add(Tool(Names.SpellIgnore, "Ignore", "Ignore the marked word at the caret", () => AddSpelling(true)));
 
             var wsBar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
             wsBar.Children.Add(_wsLabel);
@@ -201,6 +278,8 @@ namespace SIL.TextEditing.Playground
                 }
             }
             wsBar.Children.Add(_selectionLabel);
+
+            var findBar = BuildFindBar();
 
             var fieldScroll = new ScrollViewer
             {
@@ -239,11 +318,176 @@ namespace SIL.TextEditing.Playground
             top.Children.Add(toolbar);
             top.Children.Add(_description);
             top.Children.Add(wsBar);
+            top.Children.Add(findBar);
             var root = new DockPanel { Background = Brushes.WhiteSmoke };
             DockPanel.SetDock(top, Dock.Top);
             root.Children.Add(top);
             root.Children.Add(body);
             return root;
+        }
+
+        // ------------------------------------------------------------ find and replace (the host's dialog, ADR 0021)
+
+        Control BuildFindBar()
+        {
+            var bar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
+            bar.Children.Add(Label("Find:"));
+            _findBox = new TextBox { Name = Names.FindText, MinWidth = 150, Margin = new Thickness(2), IsTabStop = false };
+            ToolTip.SetTip(_findBox, "The text to find in the focused field");
+            _findBox.TextChanged += (s, e) => UpdateFindHighlight();
+            bar.Children.Add(_findBox);
+            bar.Children.Add(Label("Replace with:"));
+            _replaceBox = new TextBox { Name = Names.ReplaceText, MinWidth = 150, Margin = new Thickness(2), IsTabStop = false };
+            ToolTip.SetTip(_replaceBox, "The replacement text; a regular expression may use $1");
+            bar.Children.Add(_replaceBox);
+            CheckBox Option(string name, string text, string tip, bool on)
+            {
+                var box = new CheckBox { Name = name, Content = text, IsChecked = on, Focusable = false, Margin = new Thickness(2) };
+                ToolTip.SetTip(box, tip);
+                box.IsCheckedChanged += (s, e) => UpdateFindHighlight();
+                bar.Children.Add(box);
+                return box;
+            }
+            _matchCase = Option(Names.MatchCase, "Match case", "Upper and lower case differ (diacritics are then matched too)", false);
+            _matchDiacritics = Option(Names.MatchDiacritics, "Match diacritics", "Combining marks must agree; off, they are ignored", true);
+            _wholeWord = Option(Names.WholeWord, "Whole word", "A match starts and ends at word boundaries", false);
+            _regex = Option(Names.RegularExpression, "Regular expression", "The text is a regular expression", false);
+            _highlightAll = Option(Names.HighlightAll, "Highlight all", "Highlight every match, not only the current one", true);
+            bar.Children.Add(Tool(Names.FindPrevious, "Find Previous", "Select the previous match", () => DoFind(false)));
+            bar.Children.Add(Tool(Names.FindNext, "Find Next", "Select the next match", () => DoFind(true)));
+            bar.Children.Add(Tool(Names.Replace, "Replace", "Replace the selected match, then find the next", () => DoReplace()));
+            bar.Children.Add(Tool(Names.ReplaceAll, "Replace All", "Replace every match in the field as one undo step", () => DoReplaceAll()));
+            _findStatus = new TextBlock { Name = Names.FindStatus, Foreground = Brushes.DimGray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 2) };
+            bar.Children.Add(_findStatus);
+            return bar;
+        }
+
+        FindOptions CurrentFindOptions() => new FindOptions
+        {
+            Pattern = _findBox.Text ?? string.Empty,
+            MatchCase = _matchCase.IsChecked == true,
+            MatchDiacritics = _matchDiacritics.IsChecked == true,
+            WholeWord = _wholeWord.IsChecked == true,
+            UseRegularExpression = _regex.IsChecked == true,
+        };
+
+        public string FindStatusText => _findStatus.Text ?? string.Empty;
+
+        void UpdateFindHighlight()
+        {
+            if (_active == null || _highlightAll == null) return;
+            var options = CurrentFindOptions();
+            _active.Field.SetFindHighlight(options.Pattern.Length == 0 || !options.IsValid(out _) ? null : options, _highlightAll.IsChecked == true);
+        }
+
+        bool FindOptionsUsable(out FindOptions options)
+        {
+            options = CurrentFindOptions();
+            if (!options.IsValid(out var error))
+            {
+                _findStatus.Text = "Not a valid regular expression: " + error;
+                Log("find: " + _findStatus.Text);
+                return false;
+            }
+            if (options.Pattern.Length == 0)
+            {
+                _findStatus.Text = "Type something to find";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>Find Next or Find Previous: the host's dialog asks the focused field to search, select and highlight, wrapping
+        /// round and saying so, as FieldWorks' dialog does.</summary>
+        public bool DoFind(bool forward)
+        {
+            if (!FindOptionsUsable(out var options)) return false;
+            var field = _active.Field;
+            UpdateFindHighlight();
+            bool found = field.Find(options, forward, true, out bool wrapped);
+            _findStatus.Text = found ? (wrapped ? "Wrapped. " : string.Empty) + "Found at " + field.Editor.SelectionRange : "Not found";
+            Log("find " + (forward ? "next" : "previous") + ": " + _findStatus.Text);
+            return found;
+        }
+
+        /// <summary>Replace: replaces the selected match (one undo step), then finds the next, as FieldWorks' dialog does.</summary>
+        public bool DoReplace()
+        {
+            if (!FindOptionsUsable(out var options)) return false;
+            var field = _active.Field;
+            bool done = field.Editor.ReplaceCurrent(options, _replaceBox.Text ?? string.Empty);
+            if (!done)
+            {
+                // Nothing selected is a match yet (or it may not be edited): select the next one, as Replace does in FieldWorks.
+                _findStatus.Text = "Select a match first; found the next one";
+                DoFind(true);
+                return false;
+            }
+            Log("replace: replaced the selected match");
+            UpdateFindHighlight();
+            bool next = field.Find(options, true, true, out bool wrapped);
+            _findStatus.Text = "Replaced" + (next ? "; next match at " + field.Editor.SelectionRange : "; no more matches");
+            return true;
+        }
+
+        /// <summary>Replace All: every match in the focused field, one undo step.</summary>
+        public int DoReplaceAll()
+        {
+            if (!FindOptionsUsable(out var options)) return 0;
+            var field = _active.Field;
+            int count = field.Editor.ReplaceAll(options, _replaceBox.Text ?? string.Empty);
+            _findStatus.Text = count == 0 ? "Not found" : "Replaced " + count + (count == 1 ? " match" : " matches");
+            Log("replace all: " + _findStatus.Text);
+            UpdateFindHighlight();
+            return count;
+        }
+
+        // ------------------------------------------------------------ context menu (the host builds it, ADR 0021)
+
+        /// <summary>What the last context-menu request told the host.</summary>
+        public ContextInfo? LastContextInfo { get; private set; }
+        /// <summary>The captions of the menu the playground built for it.</summary>
+        public IReadOnlyList<string> LastContextMenuItems { get; private set; } = new List<string>();
+        ContextMenu? _contextMenu;
+        /// <summary>Closes the menu the last context-menu request opened, if it is still open.</summary>
+        public void CloseContextMenu() => _contextMenu?.Close();
+
+
+        void ShowContextMenu(Session session, ContextMenuRequestedEventArgs e)
+        {
+            var info = e.Info;
+            LastContextInfo = info;
+            var field = session.Field;
+            var items = new List<Control>();
+            var captions = new List<string>();
+            void Add(string caption, bool enabled, Action? click = null)
+            {
+                var item = new MenuItem { Header = caption, IsEnabled = enabled };
+                if (click != null) item.Click += (s, a) => click();
+                items.Add(item);
+                captions.Add(caption);
+            }
+            if (info.Word.Length > 0)
+            {
+                Add("Word: " + info.Word + " (" + info.WritingSystem + ")", false);
+                if (info.SpellingSuggestions.Count == 0) Add("(no spelling suggestions)", false);
+                foreach (var s in info.SpellingSuggestions) Add(s, true);
+                Add("Find \"" + info.Word + "\"", true, () => { _findBox.Text = info.Word; });
+            }
+            if (info.EmbeddedObject != null)
+                Add((info.EmbeddedObject.IsLink ? "Open link" : "Object") + ": " + info.EmbeddedObject.Data.Substring(Math.Min(1, info.EmbeddedObject.Data.Length)), info.EmbeddedObject.IsLink);
+            Add("Cut", field.Editor.HasSelection && field.Editor.CanEdit, () => ClipboardIdle = CopyAsync(true));
+            Add("Copy", field.Editor.HasSelection, () => ClipboardIdle = CopyAsync(false));
+            Add("Paste", field.Editor.CanEdit, () => ClipboardIdle = PasteAsync());
+            LastContextMenuItems = captions;
+            Log("context menu (" + e.Trigger + ") at " + e.Position.X.ToString("0", CultureInfo.InvariantCulture) + "," + e.Position.Y.ToString("0", CultureInfo.InvariantCulture)
+                + ": word " + (info.Word.Length == 0 ? "none" : "\"" + info.Word + "\" " + info.WordRange)
+                + ", ws " + info.WritingSystem
+                + (info.EmbeddedObject != null ? ", " + (info.EmbeddedObject.IsLink ? "link" : "object") + " at " + info.EmbeddedObject.Range : string.Empty)
+                + ", selection " + (info.HasSelection ? info.Selection.ToString() : "none"));
+            _contextMenu?.Close();
+            _contextMenu = new ContextMenu { ItemsSource = items };
+            _contextMenu.Open(field);
         }
 
         static TextBlock Label(string text) => new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 2, 2, 2) };
@@ -294,9 +538,13 @@ namespace SIL.TextEditing.Playground
             _syncing = true;
             _readOnlyCheck.IsChecked = false;
             _singleParagraphCheck.IsChecked = false;
+            _spellCheck.IsChecked = scenario.Name == Scenarios.Spelling;
+            _hyphenLetter.IsChecked = false;
             _syncing = false;
+            SetSpelling(scenario.Name == Scenarios.Spelling);
             _selectionState = string.Empty;
             Log("scenario: " + scenario.Name + (scenario.Many ? " (" + documents.Count + " fields)" : string.Empty));
+            UpdateFindHighlight();
             UpdateWsLabel();
             RefreshInspector();
             if (TopLevel.GetTopLevel(this) != null) Dispatcher.UIThread.Post(() => _active.Field.Focus());
@@ -322,7 +570,7 @@ namespace SIL.TextEditing.Playground
             {
                 if (_active != session) return;
                 UpdateWsLabel();
-                Log("caret ws " + o + " -> " + n + ": would switch keyboard to " + n);
+                Log(o == n ? "focus gained, ws " + n + ": would switch keyboard to " + n : "caret ws " + o + " -> " + n + ": would switch keyboard to " + n);
             };
             field.LeaveRequested += (o, e) =>
             {
@@ -331,6 +579,13 @@ namespace SIL.TextEditing.Playground
                 e.Handled = _leaveHandled.IsChecked == true;
             };
             field.EnterRequested += m => Log("Enter passed to the host" + (m == KeyModifiers.None ? string.Empty : " (" + m + ")") + ": the host's default button would run");
+            field.ContextMenuRequested += (o, e) => { Activate(session); ShowContextMenu(session, e); };
+            field.ScrollRequested += (o, e) =>
+            {
+                // The playground leaves scrolling to Avalonia's scroll viewer (the field asks it when nothing handles the request); it only
+                // reports the requests that are not just the caret following typing.
+                if (_active == session && e.Reason != ScrollReason.Caret) Log("scroll requested: " + e.Reason + (e.Delta == 0 ? string.Empty : " by " + e.Delta.ToString("0", CultureInfo.InvariantCulture) + " px"));
+            };
             field.UndoRequested += () => { Activate(session); UndoLast("Ctrl+Z in the field"); };
             field.RedoRequested += () => { Activate(session); RedoLast("Ctrl+Y in the field"); };
             field.SelectionWsState += state =>
@@ -369,10 +624,74 @@ namespace SIL.TextEditing.Playground
             _syncing = true;
             _readOnlyCheck.IsChecked = session.Field.IsReadOnly;
             _singleParagraphCheck.IsChecked = session.Field.SingleParagraph;
+            _spellCheck.IsChecked = session.Field.SpellChecking != null;
             _syncing = false;
             Log("focus: field " + session.Number);
             UpdateWsLabel();
             RefreshInspector();
+        }
+
+        // ------------------------------------------------------------ spelling
+
+        /// <summary>The host's word rule for every field: with <paramref name="hyphenIsLetter"/> the hyphen forms words, as a writing system that says so would make it.</summary>
+        void SetWordRules(bool hyphenIsLetter)
+        {
+            foreach (var session in _sessions) session.Field.WordRules = hyphenIsLetter ? SampleWordRules.HyphenIsLetter : null;
+            Log("word rule: " + (hyphenIsLetter ? "the hyphen is a letter (a double-click, Ctrl+arrows, find and spelling take it)" : "the defaults"));
+        }
+
+        void SetSpelling(bool on)
+        {
+            _spelling = on ? new SampleSpelling(Log) { OffUiThread = _spellOffUiThread, Delay = _spellOffUiThread ? 15 : 0 } : null;
+            foreach (var session in _sessions) session.Field.SpellChecking = _spelling;
+            Log("spell checking: " + (on ? "on (English and French word lists)" : "off"));
+        }
+
+        SpellingSuggestions? SpellingAtCaret(string action)
+        {
+            var field = _active.Field;
+            var at = field.SpellingSuggestionsAt(field.Editor.Caret);
+            if (at == null) Log(action + ": no marked word at the caret");
+            return at;
+        }
+
+        void ShowSpelling()
+        {
+            var at = SpellingAtCaret("context menu");
+            if (at == null) return;
+            Log("context menu: '" + at.Word + "' (" + at.Ws + ", " + at.Problem + "): " + (at.All.Count == 0 ? "No suggestions" : string.Join(", ", at.Inline) + (at.Additional.Any() ? " + Additional suggestions: " + string.Join(", ", at.Additional) : string.Empty)) + (at.CanAddToDictionary ? "; Add to dictionary" : "; (Add to dictionary disabled)"));
+        }
+
+        void ReplaceSpelling()
+        {
+            var at = SpellingAtCaret("replace");
+            if (at == null) return;
+            if (at.All.Count == 0) { Log("replace: no suggestions for '" + at.Word + "'"); return; }
+            Log("replace: '" + at.Word + "' -> '" + at.All[0] + "': " + (_active.Field.ApplySpellingSuggestion(at, at.All[0]) ? "done" : "refused"));
+        }
+
+        void SpacesSpelling()
+        {
+            var at = SpellingAtCaret("insert spaces");
+            if (at == null) return;
+            Log("insert spaces: '" + at.Word + "': " + (_active.Field.ApplySpellingSuggestion(at, at.WithMissingSpaces()) ? "done" : "refused"));
+        }
+
+        void WholeWordSpelling(bool last)
+        {
+            var at = SpellingAtCaret("whole word");
+            if (at == null) return;
+            if (at.WritingSystems.Count < 2) { Log("whole word: '" + at.Word + "' is in one writing system"); return; }
+            var ws = last ? at.WritingSystems[at.WritingSystems.Count - 1] : at.WritingSystems[0];
+            Log("whole word: '" + at.Word + "' -> " + ws + ": " + (_active.Field.ApplySpellingSuggestion(at, at.WithWholeWordIn(ws)) ? "done" : "refused"));
+        }
+
+        void AddSpelling(bool ignore)
+        {
+            var at = SpellingAtCaret(ignore ? "ignore" : "add");
+            if (at == null) return;
+            bool done = ignore ? _active.Field.IgnoreWord(at) : _active.Field.AddToDictionary(at);
+            if (!done) Log((ignore ? "ignore" : "add") + ": '" + at.Word + "' is not a plain misspelling" + (ignore && at.CanAddToDictionary ? " or its dictionary cannot ignore" : string.Empty));
         }
 
         // ------------------------------------------------------------ label, inspector, log

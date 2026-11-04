@@ -135,7 +135,7 @@ namespace SIL.TextEditing.LCModel
         /// <summary>A paragraph from its string, its StyleRules and the host's key.</summary>
         public static Paragraph ToParagraph(ITsString contents, ITsTextProps? styleRules, object? key, IWritingSystemHandles writingSystems)
         {
-            var paragraph = new Paragraph { Key = key, Props = ToBag(styleRules), Runs = ToRuns(contents, writingSystems) };
+            var paragraph = new Paragraph { Key = key, Props = ToBag(styleRules), Runs = new RunList(ToRuns(contents, writingSystems)) };
             if (paragraph.Props.StrProps.TryGetValue(PropNamedStyle, out var style)) paragraph.Style = style;
             if (paragraph.Props.TryGetInt(PropRightToLeft, out int rtl)) paragraph.Rtl = rtl != 0;
             if (paragraph.Runs.Count > 0) paragraph.DefaultWs = paragraph.Runs[0].Ws;

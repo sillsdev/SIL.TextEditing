@@ -29,11 +29,33 @@ namespace SIL.TextEditing
 
         /// <summary>Raised after each edit with the reversible change.</summary>
         public event Action<EditDelta>? Committed;
-        /// <summary>Raised when the active writing system changes: old, new.</summary>
+        /// <summary>Raised when the active writing system changes: old, new (ADR 0008). That happens when the caret moves into
+        /// text of another writing system, when a selection's first writing system changes (FieldWorks sets the keyboard for
+        /// the first writing system a selection covers, not for the end the caret is at), when an edit or the host's
+        /// <see cref="Apply"/> leaves the caret in another one, and when <see cref="SetActiveWs"/> chooses one for typing. It is
+        /// raised once per change and never when the writing system stays the same. The editor has no notion of focus, so it
+        /// is raised whether or not the field has focus. A host that switches keyboards subscribes to
+        /// <c>RichTextField.ActiveWsChanged</c> instead, which is raised only while the field has focus.</summary>
         public event Action<string, string>? ActiveWsChanged;
         public event Action? CaretMoved;
         /// <summary>Raised on any change to the document: start paragraph, removed paragraphs, added paragraphs.</summary>
         public event Action<int, int, int>? DocumentChanged;
+
+        /// <summary>Raised just before <see cref="DocumentChanged"/> for an edit whose range is known (typing, deleting, pasting, Enter and a
+        /// line break): which text was replaced and where the new text ends, so a listener can move what it keeps by offset (a field keeps its
+        /// spelling marks outside the edit). Not raised for <see cref="Apply"/>, <see cref="ExternalReplaceParagraph"/> or an edit that
+        /// leaves the paragraph that follows the range as the one that keeps the identity; those only raise <see cref="DocumentChanged"/>.</summary>
+        public event Action<TextEdit>? TextEdited;
+
+        /// <summary>Called first by everything that changes the document (typing, paste, deletion, Enter, line breaks, and the
+        /// host's <see cref="Apply"/> and <see cref="ExternalReplaceParagraph"/>), before it touches anything. A host that has a
+        /// thread rule sets it to throw when the caller breaks the rule. <c>RichTextField</c> sets it to require the UI thread:
+        /// a document edit raises events its control answers by changing Avalonia state, which only the UI thread may do, and
+        /// FieldWorks makes its edits there too, so an edit from another thread throws an <see cref="InvalidOperationException"/>
+        /// at once and leaves the document as it was. Null (the default) allows any thread.</summary>
+        public Action? AccessCheck { get; set; }
+
+        void CheckAccess() => AccessCheck?.Invoke();
 
         public bool HasSelection => !Caret.Equals(Anchor);
 
@@ -95,9 +117,29 @@ namespace SIL.TextEditing
             CaretMoved?.Invoke();
         }
 
+        /// <summary>The writing system of the first text a range selection covers, which is what FieldWorks sets the keyboard
+        /// for, whichever end the caret is at.</summary>
+        string FirstWsOfSelection()
+        {
+            Ordered(out var a, out var b);
+            for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
+            {
+                int s = pi == a.Paragraph ? a.Offset : 0;
+                int e = pi == b.Paragraph ? b.Offset : Document.Paragraphs[pi].Length;
+                int pos = 0;
+                foreach (var r in Document.Paragraphs[pi].Runs)
+                {
+                    int rs = pos, re = pos + r.Text.Length;
+                    pos = re;
+                    if (re > s && rs < e) return r.Ws;
+                }
+            }
+            return WsAt(Caret);
+        }
+
         void RefreshWs()
         {
-            var n = _wsOverride ? ActiveWs : WsAt(Caret);
+            var n = _wsOverride ? ActiveWs : HasSelection ? FirstWsOfSelection() : WsAt(Caret);
             if (n == ActiveWs) return;
             var o = ActiveWs;
             ActiveWs = n;
@@ -131,7 +173,7 @@ namespace SIL.TextEditing
             return d;
         }
 
-        void Finish(EditDelta d, TextPosition caret)
+        void Finish(EditDelta d, TextPosition caret, TextEdit? edit = null)
         {
             AssignUndoGroup(d);
             Caret = Anchor = caret;
@@ -139,6 +181,7 @@ namespace SIL.TextEditing
             _wsOverride = false;
             RefreshWs();
             Committed?.Invoke(d);
+            if (edit != null) TextEdited?.Invoke(edit.Value);
             DocumentChanged?.Invoke(d.Start, d.Before.Count, d.After.Count);
             CaretMoved?.Invoke();
             EndSingleEditGroup();
@@ -150,10 +193,11 @@ namespace SIL.TextEditing
 
         public void TypeText(string text)
         {
+            CheckAccess();
             if (string.IsNullOrEmpty(text)) return;
             text = Normalized(text);
             if (SingleParagraph) text = OneLine(text);
-            else text = text.Replace("\r\n", "\n");
+            else text = text.Replace("\t", "").Replace("\r\n", "\n");
             if (text.Length == 0) return;
             var parts = text.Split('\n');
             for (int i = 0; i < parts.Length; i++)
@@ -168,6 +212,7 @@ namespace SIL.TextEditing
         /// joins the typing before it nor the typing after it.</summary>
         public void PasteText(string text)
         {
+            CheckAccess();
             if (string.IsNullOrEmpty(text) || !CanEditSelectionOrCaret()) return;
             // Text that is only separators adds nothing in single-paragraph mode, but a paste still replaces the selection.
             if (SingleParagraph && HasSelection && OneLine(Normalized(text)).Length == 0) { InOneUndoStep(() => DeleteSelection("type")); return; }
@@ -183,6 +228,7 @@ namespace SIL.TextEditing
         /// that does not accept Return). It is one undo step of its own.</summary>
         public void InsertLineBreak()
         {
+            CheckAccess();
             if (!CanEditSelectionOrCaret()) return;
             InOneUndoStep(() => InsertOne(LineSeparator.ToString()));
         }
@@ -218,10 +264,13 @@ namespace SIL.TextEditing
                 var ws = ActiveWs;
                 var d = Begin(Caret.Paragraph, Caret.Paragraph, "type");
                 var para = Document.Paragraphs[Caret.Paragraph];
+                long stamp = para.ChangeStamp;
+                var at = Caret;
                 para.Insert(Caret.Offset, text, ws, InheritProps(Caret, ws));
                 d.After.Add(para.Clone());
                 bool keepOverride = _wsOverride;
-                Finish(d, new TextPosition(Caret.Paragraph, Caret.Offset + text.Length));
+                var after = new TextPosition(at.Paragraph, at.Offset + text.Length);
+                Finish(d, after, new TextEdit(at, at, after, stamp, stamp));
                 if (keepOverride)
                 {
                     _wsOverride = true;
@@ -278,6 +327,7 @@ namespace SIL.TextEditing
         /// </summary>
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
+            CheckAccess();
             if (IsReadOnly || !CanEditRange(a, b)) return;
             if (fragment != null)
             {
@@ -300,6 +350,10 @@ namespace SIL.TextEditing
                 if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
                 foreach (var p in fragment) SeparatorsToSpaces(p);
             }
+            else if (fragment != null)
+            {
+                foreach (var p in fragment) RemoveTabs(p);
+            }
             // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
             if (fragment != null && Document.Normalization is NormalizationForm form)
             {
@@ -317,7 +371,7 @@ namespace SIL.TextEditing
             tail.Delete(0, b.Offset);
             var survivor = Document.Paragraphs[KeptParagraph(a, b)];
             var merged = survivor.Clone();
-            merged.Runs = new List<Run>();
+            merged.Runs = new RunList();
             foreach (var r in head.Runs) merged.Runs.Add(r.Clone());
             TextPosition caret;
             var newParas = new List<Paragraph>();
@@ -352,7 +406,7 @@ namespace SIL.TextEditing
                     var runs = fragment[fragment.Count - 1].Runs.Select(r => r.Clone()).ToList();
                     int off = runs.Sum(r => r.Text.Length);
                     runs.AddRange(tail.Runs.Select(r => r.Clone()));
-                    lastNew.Runs = runs;
+                    lastNew.Runs = new RunList(runs);
                     lastNew.Normalize();
                     newParas.Add(lastNew);
                     caret = new TextPosition(a.Paragraph + fragment.Count - 1, off);
@@ -361,13 +415,15 @@ namespace SIL.TextEditing
             Document.Paragraphs.RemoveRange(a.Paragraph, b.Paragraph - a.Paragraph + 1);
             Document.Paragraphs.InsertRange(a.Paragraph, newParas);
             d.After.AddRange(newParas.Select(p => p.Clone()));
-            Finish(d, caret);
+            bool sameProperties = (fragment == null || fragment.Count <= 1) && first.Style == last.Style && first.Props.ContentEquals(last.Props);
+            Finish(d, caret, survivor == first ? new TextEdit(a, b, caret, first.ChangeStamp, last.ChangeStamp, sameProperties) : (TextEdit?)null);
         }
 
         /// <summary>Enter. At offset 0 the new empty paragraph (new identity) goes before and the original identity
         /// stays on the right; anywhere else the left keeps the identity and the right is new.</summary>
         public void Enter()
         {
+            CheckAccess();
             if (SingleParagraph || !CanEditSelectionOrCaret()) return;
             if (HasSelection) DeleteSelection("enter-del");
             var d = Begin(Caret.Paragraph, Caret.Paragraph, "enter");
@@ -390,7 +446,7 @@ namespace SIL.TextEditing
             Document.Paragraphs.Insert(Caret.Paragraph + 1, right);
             d.After.Add(left.Clone());
             d.After.Add(right.Clone());
-            Finish(d, new TextPosition(Caret.Paragraph + 1, 0));
+            Finish(d, new TextPosition(Caret.Paragraph + 1, 0), new TextEdit(Caret, Caret, new TextPosition(Caret.Paragraph + 1, 0), orig.ChangeStamp, orig.ChangeStamp));
         }
 
         // ---- fragments (clipboard) ----
@@ -405,7 +461,7 @@ namespace SIL.TextEditing
                 var p = Document.Paragraphs[pi];
                 int s = pi == a.Paragraph ? a.Offset : 0;
                 int e = pi == b.Paragraph ? b.Offset : p.Length;
-                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = p.Slice(s, e) });
+                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = new RunList(p.Slice(s, e)) });
             }
             return result;
         }
@@ -422,6 +478,7 @@ namespace SIL.TextEditing
         /// <summary>Applies a delta, for undo and redo driven by the host.</summary>
         public void Apply(EditDelta d)
         {
+            CheckAccess();
             Document.Paragraphs.RemoveRange(d.Start, d.Before.Count);
             Document.Paragraphs.InsertRange(d.Start, d.After.Select(p => p.Clone()));
             var c = d.CaretAfter;
@@ -439,6 +496,7 @@ namespace SIL.TextEditing
         /// the text: changeStart, removedLength and insertedLength describe the text difference.</summary>
         public void ExternalReplaceParagraph(int paragraphIndex, Paragraph replacement, int changeStart, int removedLength, int insertedLength)
         {
+            CheckAccess();
             Document.Paragraphs[paragraphIndex] = replacement;
             TextPosition Map(TextPosition p)
             {

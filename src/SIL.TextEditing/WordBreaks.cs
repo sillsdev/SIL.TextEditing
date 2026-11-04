@@ -1,120 +1,219 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 
 namespace SIL.TextEditing
 {
     /// <summary>
-    /// A deliberately simple word rule for double-click and Ctrl+Left/Right, built on <see cref="GraphemeClusters"/>.
-    /// Every grapheme cluster has a class taken from its first code point: Word (letter, digit, mark, connector
-    /// punctuation such as underscore), Space (white space), Object (U+FFFC, an inline object) or Other (any other
-    /// punctuation or symbol). A word is a maximal run of Word clusters; an apostrophe (U+0027 or U+2019) with a Word
-    /// cluster on both sides is part of the word. A run of Space or of Other clusters is its own "word" for double-click,
-    /// and an Object is always alone. There is no dictionary, so Thai, Khmer and Chinese text without spaces is one
-    /// word per run of letters; a host that needs better can replace the rule. This is not UAX #29 word breaking.
+    /// The word rule of the double-click, Ctrl+Left and Right and the whole-word find: the spell checker's rule (<see cref="SpellScanner"/>) over grapheme
+    /// clusters, as FieldWorks' views use one rule, the writing system's, everywhere (ADR 0026, issue 102). Every code point has a class: Word (a number,
+    /// or what the host's <see cref="IWordRules.IsWordForming"/> says forms words in the writing system of that character, by default letters, combining
+    /// marks and modifier symbols, or a character the host's <see cref="IWordRules.JoinsWords"/> says stays in a word, an apostrophe or a zero-width joiner,
+    /// when a Word code point stands on each side of it), Space (white space), Object (U+FFFC, an inline object) or Other (any other punctuation or
+    /// symbol, an underscore and a format character included). A word is a maximal run of Word clusters; a cluster, the caret's unit, takes the class of
+    /// its first code point, so a combining mark after a space or a hyphen stays with it and a trailing zero-width joiner or non-joiner stays with the
+    /// cluster before it. A run of Space or of Other clusters is its own "word" for double-click, and an Object is always alone. The overloads that take
+    /// a <see cref="Paragraph"/> ask the host's rule for the writing system of each character; the ones that take only a string use
+    /// <see cref="DefaultWordRules"/> and one writing system. There is no dictionary, so Thai, Khmer and Chinese text without spaces is one word per run
+    /// of letters; a host that needs better can replace the rule. This is not UAX #29 word breaking.
     /// </summary>
     public static class WordBreaks
     {
-        enum Kind { Word, Space, Other, Object }
+        enum Kind : sbyte { Word, Space, Other, Object }
 
-        static Kind KindOf(string text, int index)
+        /// <summary>The clusters of a text and their classes, each class worked out when first asked for (a Ctrl+arrow looks at a few clusters, not at
+        /// every one of a long paragraph, and asks the host about those only).</summary>
+        sealed class Clusters
         {
-            char c = text[index];
-            if (c == '￼') return Kind.Object;
-            if (char.IsWhiteSpace(c)) return Kind.Space;
-            switch (CharUnicodeInfo.GetUnicodeCategory(text, index))
+            readonly string _text;
+            readonly IReadOnlyList<int> _starts;
+            readonly IWordRules _rules;
+            readonly Func<int, string>? _wsAt;
+            readonly sbyte[] _kinds;
+
+            public Clusters(string text, IWordRules? rules, Func<int, string>? wsAt)
             {
-                case UnicodeCategory.UppercaseLetter:
-                case UnicodeCategory.LowercaseLetter:
-                case UnicodeCategory.TitlecaseLetter:
-                case UnicodeCategory.ModifierLetter:
-                case UnicodeCategory.OtherLetter:
-                case UnicodeCategory.NonSpacingMark:
-                case UnicodeCategory.SpacingCombiningMark:
-                case UnicodeCategory.EnclosingMark:
-                case UnicodeCategory.DecimalDigitNumber:
-                case UnicodeCategory.LetterNumber:
-                case UnicodeCategory.OtherNumber:
-                case UnicodeCategory.ConnectorPunctuation:
-                case UnicodeCategory.Format:
-                    return Kind.Word;
-                default:
-                    return Kind.Other;
+                _text = text;
+                _starts = GraphemeClusters.Starts(text);
+                _rules = rules ?? DefaultWordRules.Instance;
+                _wsAt = wsAt;
+                _kinds = new sbyte[_starts.Count];
+                for (int i = 0; i < _kinds.Length; i++) _kinds[i] = -1;
+            }
+
+            public int Count => _starts.Count;
+            public int Start(int cluster) => _starts[cluster];
+            public int End(int cluster) => cluster + 1 < _starts.Count ? _starts[cluster + 1] : _text.Length;
+
+            /// <summary>The cluster that holds the offset (the last that starts at or before it).</summary>
+            public int At(int offset)
+            {
+                int lo = 0, hi = _starts.Count - 1;
+                while (lo < hi)
+                {
+                    int mid = lo + (hi - lo + 1) / 2;
+                    if (_starts[mid] <= offset) lo = mid; else hi = mid - 1;
+                }
+                return lo;
+            }
+
+            public Kind this[int cluster]
+            {
+                get
+                {
+                    var kind = _kinds[cluster];
+                    if (kind < 0) _kinds[cluster] = kind = (sbyte)Classify(_starts[cluster]);
+                    return (Kind)kind;
+                }
+            }
+
+            /// <summary>True when cluster <paramref name="left"/> and the one after it are one unit: of one class, and, for words, not parted by a tail of the first that
+            /// is not itself word (a zero-width non-joiner with no letter after it, which the spell checker's word stops before).</summary>
+            public bool Joined(int left)
+            {
+                var kind = this[left];
+                if (kind != this[left + 1]) return false;
+                if (kind != Kind.Word) return true;
+                int last = SpellScanner.CodePointBefore(_text, End(left), out int width);
+                return End(left) - width == _starts[left] || Classify(End(left) - width) == Kind.Word;
+            }
+
+            string WsAt(int index) => _wsAt?.Invoke(index) ?? string.Empty;
+
+            bool Forms(int index, int cp) => SpellScanner.IsWordFormingIn(_rules, WsAt(index), cp, false);
+
+            Kind Classify(int index)
+            {
+                int cp = SpellScanner.CodePointAt(_text, index, out int width);
+                if (cp == Run.ObjectReplacement) return Kind.Object;
+                string ws = WsAt(index);
+                if (SpellScanner.IsWordFormingIn(_rules, ws, cp, false)) return Kind.Word;
+                // A joiner (an apostrophe, a zero-width joiner) with a word-forming character right on each side stays in the word, as the spell checker's rule has it.
+                if (index > 0 && index + width < _text.Length && _rules.JoinsWords(ws, cp))
+                {
+                    int before = SpellScanner.CodePointBefore(_text, index, out int beforeWidth);
+                    int after = SpellScanner.CodePointAt(_text, index + width, out _);
+                    if (Forms(index - beforeWidth, before) && Forms(index + width, after)) return Kind.Word;
+                }
+                return char.IsWhiteSpace(_text, index) ? Kind.Space : Kind.Other;
             }
         }
 
-        /// <summary>Classes of the clusters of the text, with apostrophes between words folded into the word.</summary>
-        static Kind[] Classify(string text, IReadOnlyList<int> starts)
+        /// <summary>The writing system of the run that holds each offset of the paragraph, for the host's rule.</summary>
+        internal static Func<int, string> WsOf(Paragraph paragraph) => offset =>
         {
-            var kinds = new Kind[starts.Count];
-            for (int i = 0; i < starts.Count; i++) kinds[i] = KindOf(text, starts[i]);
-            for (int i = 1; i + 1 < starts.Count; i++)
-            {
-                char c = text[starts[i]];
-                bool apostrophe = (c == '\'' || c == '’') && starts[i + 1] - starts[i] == 1;
-                if (apostrophe && kinds[i - 1] == Kind.Word && kinds[i + 1] == Kind.Word) kinds[i] = Kind.Word;
-            }
-            return kinds;
-        }
+            int i = paragraph.RunIndexAt(offset, out _);
+            return i < paragraph.Runs.Count ? paragraph.Runs[i].Ws : paragraph.DefaultWs;
+        };
 
-        static int End(string text, IReadOnlyList<int> starts, int cluster) => cluster + 1 < starts.Count ? starts[cluster + 1] : text.Length;
-
-        static int ClusterAt(IReadOnlyList<int> starts, int offset)
-        {
-            int k = 0;
-            while (k + 1 < starts.Count && starts[k + 1] <= offset) k++;
-            return k;
-        }
-
-        /// <summary>The run containing the character at <paramref name="charIndex"/> (clamped into the text): the word,
-        /// white-space run or punctuation run a double-click selects. Empty text gives (0, 0).</summary>
-        public static void WordAt(string text, int charIndex, out int start, out int end)
+        static void WordAt(string text, int charIndex, IWordRules? rules, Func<int, string>? wsAt, out int start, out int end)
         {
             start = end = 0;
             if (string.IsNullOrEmpty(text)) return;
-            var starts = GraphemeClusters.Starts(text);
-            var kinds = Classify(text, starts);
-            int k = ClusterAt(starts, Math.Max(0, Math.Min(text.Length - 1, charIndex)));
+            var clusters = new Clusters(text, rules, wsAt);
+            int k = clusters.At(Math.Max(0, Math.Min(text.Length - 1, charIndex)));
+            var kind = clusters[k];
             int a = k, b = k;
-            if (kinds[k] != Kind.Object)
+            if (kind != Kind.Object)
             {
-                while (a > 0 && kinds[a - 1] == kinds[k]) a--;
-                while (b + 1 < starts.Count && kinds[b + 1] == kinds[k]) b++;
+                while (a > 0 && clusters.Joined(a - 1)) a--;
+                while (b + 1 < clusters.Count && clusters.Joined(b)) b++;
             }
-            start = starts[a];
-            end = End(text, starts, b);
+            start = clusters.Start(a);
+            end = clusters.End(b);
         }
 
-        /// <summary>Ctrl+Right: the start of the next word after <paramref name="index"/> (skipping the rest of the current
-        /// word or punctuation run and then white space), or the text length.</summary>
-        public static int NextWordStart(string text, int index)
+        /// <summary>The run containing the character at <paramref name="charIndex"/> (clamped into the text): the word,
+        /// white-space run or punctuation run a double-click selects. Empty text gives (0, 0). The default word rule.</summary>
+        public static void WordAt(string text, int charIndex, out int start, out int end) => WordAt(text, charIndex, null, null, out start, out end);
+
+        /// <summary>As <see cref="WordAt(string, int, out int, out int)"/>, by the host's word rule (<paramref name="rules"/>, null for the default) for the
+        /// writing system of each character of the paragraph.</summary>
+        public static void WordAt(Paragraph paragraph, int charIndex, IWordRules? rules, out int start, out int end)
+            => WordAt(paragraph.Text, charIndex, rules, WsOf(paragraph), out start, out end);
+
+        /// <summary>For each offset 0 to the text length, whether a word starts or ends there: the start and end of the text, and
+        /// every cluster boundary where the class changes (word, white space, other) or an object sits. Offsets inside a cluster
+        /// are not boundaries. A whole-word find uses it. The default word rule.</summary>
+        public static bool[] Boundaries(string text) => Boundaries(text, null, null);
+
+        /// <summary>As <see cref="Boundaries(string)"/>, by the host's word rule for the writing system of each character of the paragraph.</summary>
+        public static bool[] Boundaries(Paragraph paragraph, IWordRules? rules) => Boundaries(paragraph.Text, rules, WsOf(paragraph));
+
+        /// <summary>As <see cref="Boundaries(string)"/>; <paramref name="wsAt"/> says the writing system at an offset of <paramref name="text"/> (null for one
+        /// writing system).</summary>
+        internal static bool[] Boundaries(string text, IWordRules? rules, Func<int, string>? wsAt)
+        {
+            var result = new bool[text.Length + 1];
+            result[0] = result[text.Length] = true;
+            if (text.Length == 0) return result;
+            var clusters = new Clusters(text, rules, wsAt);
+            for (int k = 1; k < clusters.Count; k++)
+                result[clusters.Start(k)] = !clusters.Joined(k - 1) || clusters[k] == Kind.Object || clusters[k - 1] == Kind.Object;
+            return result;
+        }
+
+        static bool TryWordAt(string text, int charIndex, IWordRules? rules, Func<int, string>? wsAt, out int start, out int end)
+        {
+            start = end = Math.Max(0, Math.Min(text.Length, charIndex));
+            if (text.Length == 0 || charIndex < 0 || charIndex >= text.Length) return false;
+            var clusters = new Clusters(text, rules, wsAt);
+            int k = clusters.At(charIndex);
+            if (clusters[k] != Kind.Word) return false;
+            int a = k, b = k;
+            while (a > 0 && clusters.Joined(a - 1)) a--;
+            while (b + 1 < clusters.Count && clusters.Joined(b)) b++;
+            start = clusters.Start(a);
+            end = clusters.End(b);
+            return true;
+        }
+
+        /// <summary>The word under <paramref name="charIndex"/>: true with its range when the character there is part of a word
+        /// (not white space, punctuation or an object); false with an empty range at the index otherwise. The default word rule.</summary>
+        public static bool TryWordAt(string text, int charIndex, out int start, out int end) => TryWordAt(text, charIndex, null, null, out start, out end);
+
+        /// <summary>As <see cref="TryWordAt(string, int, out int, out int)"/>, by the host's word rule for the writing system of each character of the
+        /// paragraph. A context request asks for the word this way, so it is the word the spell checker marks.</summary>
+        public static bool TryWordAt(Paragraph paragraph, int charIndex, IWordRules? rules, out int start, out int end)
+            => TryWordAt(paragraph.Text, charIndex, rules, WsOf(paragraph), out start, out end);
+
+        static int NextWordStart(string text, int index, IWordRules? rules, Func<int, string>? wsAt)
         {
             if (string.IsNullOrEmpty(text) || index >= text.Length) return text?.Length ?? 0;
-            var starts = GraphemeClusters.Starts(text);
-            var kinds = Classify(text, starts);
-            int k = ClusterAt(starts, Math.Max(0, index));
-            var kind = kinds[k];
+            var clusters = new Clusters(text, rules, wsAt);
+            int k = clusters.At(Math.Max(0, index));
+            var kind = clusters[k];
             if (kind != Kind.Space)
             {
                 k++;
-                if (kind != Kind.Object) while (k < starts.Count && kinds[k] == kind) k++;
+                if (kind != Kind.Object) while (k < clusters.Count && clusters.Joined(k - 1)) k++;
             }
-            while (k < starts.Count && kinds[k] == Kind.Space) k++;
-            return k < starts.Count ? starts[k] : text.Length;
+            while (k < clusters.Count && clusters[k] == Kind.Space) k++;
+            return k < clusters.Count ? clusters.Start(k) : text.Length;
         }
 
-        /// <summary>Ctrl+Left: the start of the word before <paramref name="index"/> (skipping white space first), or 0.</summary>
-        public static int PreviousWordStart(string text, int index)
+        /// <summary>Ctrl+Right: the start of the next word after <paramref name="index"/> (skipping the rest of the current
+        /// word or punctuation run and then white space), or the text length. The default word rule.</summary>
+        public static int NextWordStart(string text, int index) => NextWordStart(text, index, null, null);
+
+        /// <summary>As <see cref="NextWordStart(string, int)"/>, by the host's word rule for the writing system of each character of the paragraph.</summary>
+        public static int NextWordStart(Paragraph paragraph, int index, IWordRules? rules) => NextWordStart(paragraph.Text, index, rules, WsOf(paragraph));
+
+        static int PreviousWordStart(string text, int index, IWordRules? rules, Func<int, string>? wsAt)
         {
             if (string.IsNullOrEmpty(text) || index <= 0) return 0;
-            var starts = GraphemeClusters.Starts(text);
-            var kinds = Classify(text, starts);
-            int k = ClusterAt(starts, Math.Min(index, text.Length) - 1);
-            while (k >= 0 && kinds[k] == Kind.Space) k--;
+            var clusters = new Clusters(text, rules, wsAt);
+            int k = clusters.At(Math.Min(index, text.Length) - 1);
+            while (k >= 0 && clusters[k] == Kind.Space) k--;
             if (k < 0) return 0;
-            var kind = kinds[k];
-            if (kind != Kind.Object) while (k > 0 && kinds[k - 1] == kind) k--;
-            return starts[k];
+            var kind = clusters[k];
+            if (kind != Kind.Object) while (k > 0 && clusters.Joined(k - 1)) k--;
+            return clusters.Start(k);
         }
+
+        /// <summary>Ctrl+Left: the start of the word before <paramref name="index"/> (skipping white space first), or 0. The default word rule.</summary>
+        public static int PreviousWordStart(string text, int index) => PreviousWordStart(text, index, null, null);
+
+        /// <summary>As <see cref="PreviousWordStart(string, int)"/>, by the host's word rule for the writing system of each character of the paragraph.</summary>
+        public static int PreviousWordStart(Paragraph paragraph, int index, IWordRules? rules) => PreviousWordStart(paragraph.Text, index, rules, WsOf(paragraph));
     }
 }

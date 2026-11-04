@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Input.TextInput;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
+using Avalonia.Platform;
 
 namespace SIL.TextEditing.Avalonia
 {
@@ -17,7 +18,7 @@ namespace SIL.TextEditing.Avalonia
     /// TextFormatter, and its own caret, selection, hit testing and IME client. Every run carries its
     /// writing system. No Avalonia type leaks into the model project.
     /// </summary>
-    public class RichTextField : Control
+    public partial class RichTextField : Control
     {
         readonly List<ParagraphLayout?> _layouts = new List<ParagraphLayout?>();
         // One entry per paragraph, kept in step with _layouts: what a paragraph's layout needs from the paragraphs before it.
@@ -33,6 +34,13 @@ namespace SIL.TextEditing.Avalonia
             public int Number = NoNumber;
             /// <summary>The bullet or number text, or null until worked out.</summary>
             public string? Label;
+            /// <summary>What has been checked of the paragraph's spelling (null until looked at), for the paragraph as it was (see <see cref="SpellState"/>).</summary>
+            public SpellState? Spell;
+            /// <summary>The <see cref="Paragraph.ChangeStamp"/> the format, label and layout above were made for, or 0 until the first is made. The field
+            /// notices a paragraph that changed behind the editor's back by this (issue 101).</summary>
+            public long Stamp;
+            /// <summary>The paragraph this entry watches for changes (see <c>Watch</c>).</summary>
+            public Paragraph? Watched;
         }
         readonly InputMethodClient _ime;
         IStyleResolver? _styles;
@@ -59,22 +67,47 @@ namespace SIL.TextEditing.Avalonia
 
         public RichTextField(Document document)
         {
-            Editor = new DocumentEditor(document);
+            Editor = new DocumentEditor(document) { AccessCheck = RequireUIThread };
             for (int i = 0; i < document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
+            WatchAll();
             Editor.DocumentChanged += OnDocumentChanged;
+            Editor.IsReadOnlyChanged += OnEditorReadOnlyChanged;
+            Editor.TextEdited += OnTextEdited;
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
-            Editor.ActiveWsChanged += (o, n) => ActiveWsChanged?.Invoke(o, n);
+            Editor.ActiveWsChanged += (o, n) => { if (IsFocused) ActiveWsChanged?.Invoke(o, n); };   // a view without focus does not set the keyboard (#59)
             Editor.CaretMoved += OnCaretMoved;
-            Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count ? VisibleLength(p) : int.MaxValue;
+            Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count && FormatOf(p).MaxLines > 0 ? VisibleLength(p) : int.MaxValue;
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
-            GotFocus += (o, e) => InvalidateVisual();
+            GotFocus += (o, e) => { InvalidateVisual(); ActiveWsChanged?.Invoke(Editor.ActiveWs, Editor.ActiveWs); };
             LostFocus += (o, e) => { Editor.CloseUndoGroup(); InvalidateVisual(); };
             Editor.Committed += d => RestartPauseTimer();
-            ActualThemeVariantChanged += (o, e) => InvalidateVisual();
+            ActualThemeVariantChanged += (o, e) =>
+            {
+                // The default text colour is one brush the layouts share, changed in place: a theme change is a redraw, not a layout of every paragraph.
+                RefreshSystemColours();
+            };
+            HookContextRequests();
         }
 
-        /// <summary>The editing session: caret, selection, active writing system and edit events.</summary>
+        /// <summary>The dispatcher the field belongs to. Avalonia 12 lets a control live on a dispatcher other than the main UI
+        /// thread's; Avalonia 11 has only the one.</summary>
+        global::Avalonia.Threading.Dispatcher OwnDispatcher =>
+#if NET10_0_OR_GREATER
+            Dispatcher;
+#else
+            global::Avalonia.Threading.Dispatcher.UIThread;
+#endif
+
+        void RequireUIThread()
+        {
+            if (!CheckAccess())
+                throw new InvalidOperationException("A RichTextField's document must be edited on the thread of the dispatcher the field belongs to: the field changes Avalonia state when the document changes. Marshal the edit with the field's Dispatcher (the UI thread's, Dispatcher.UIThread, for a field on the main window).");
+        }
+
+        /// <summary>The editing session: caret, selection, active writing system and edit events. Like the control, it must be
+        /// used on the UI thread: a call that changes the document from another thread throws an
+        /// <see cref="InvalidOperationException"/> before anything changes (<see cref="DocumentEditor.AccessCheck"/>).</summary>
         public DocumentEditor Editor { get; }
         public WritingSystemRegistry WritingSystems { get; set; } = new WritingSystemRegistry();
         /// <summary>Resolves the object data of an object run to a picture, or null.</summary>
@@ -100,8 +133,80 @@ namespace SIL.TextEditing.Avalonia
                 InvalidateAllLayouts();
             }
         }
-        public IBrush Foreground { get; set; } = Brushes.Black;
-        public IBrush Background { get; set; } = Brushes.White;
+        IBrush? _foreground, _background;
+
+        // The default text colour, which the text is laid out with until the host sets one. It is one brush the field owns and changes in place
+        // when the theme or the system's colours change, so that a change costs a redraw and not a layout of every paragraph.
+        SolidColorBrush? _themeForeground;
+        bool _themeForegroundStale = true;
+
+        /// <summary>The brush the text is laid out with: the host's colour, else the field's own default.</summary>
+        IBrush LayoutForeground => _foreground ?? DefaultForeground();
+
+        SolidColorBrush DefaultForeground()
+        {
+            _themeForeground ??= new SolidColorBrush();
+            if (_themeForegroundStale)
+            {
+                var resolved = ResolveCaretBrush();
+                _themeForeground.Color = resolved is ISolidColorBrush solid ? solid.Color : Colors.Black;
+                _themeForeground.Opacity = resolved.Opacity;
+                _themeForegroundStale = false;
+            }
+            return _themeForeground;
+        }
+
+        /// <summary>The colour of text and of a border with no colour of its own. Until the host sets one it is the theme's text colour (the
+        /// same resource as the caret), or in a high contrast theme the system's window text colour, and it follows a change of either without
+        /// the text being laid out again. A colour the host sets is kept as it is, under any theme: a host that sets only this on a dark theme
+        /// draws it on the theme's dark page, so it sets <see cref="Background"/> as well (or not either). <see cref="ResetForeground"/> goes
+        /// back to following the theme. Read, it is the colour the text is drawn in now (a copy: the field's own default brush changes with the theme and is not handed out).</summary>
+        public IBrush Foreground
+        {
+            get => _foreground ?? new global::Avalonia.Media.Immutable.ImmutableSolidColorBrush(DefaultForeground().Color, DefaultForeground().Opacity);
+            set
+            {
+                _foreground = value;
+                InvalidateAllLayouts();
+            }
+        }
+
+        /// <summary>The page colour. Until the host sets one it is the theme's window colour (white when there is no theme), or in a high contrast
+        /// theme the system's window colour, so light text taken from a dark theme is not drawn on white. A colour the host sets is kept as it is
+        /// (see <see cref="Foreground"/>); <see cref="ResetBackground"/> goes back to following the theme.</summary>
+        public IBrush Background
+        {
+            get => _background ?? ResolveBackgroundBrush();
+            set
+            {
+                _background = value;
+                InvalidateVisual();
+            }
+        }
+
+        /// <summary>Goes back to following the theme for the text colour, after the host has set <see cref="Foreground"/>.</summary>
+        public void ResetForeground()
+        {
+            _foreground = null;
+            _themeForegroundStale = true;
+            InvalidateAllLayouts();
+        }
+
+        /// <summary>Goes back to following the theme for the page colour, after the host has set <see cref="Background"/>.</summary>
+        public void ResetBackground()
+        {
+            _background = null;
+            InvalidateVisual();
+        }
+
+        /// <summary>Takes the system's colours and high contrast setting again. The field does this by itself when the platform says they changed.</summary>
+        internal void RefreshSystemColours()
+        {
+            SystemColours.Refresh();
+            _themeForegroundStale = true;
+            DefaultForeground();
+            InvalidateVisual();
+        }
         public bool ShowCaretAlways { get; set; }
         /// <summary>A field-level read-only flag (forwards to <see cref="DocumentEditor.IsReadOnly"/>): selection and copy
         /// work, nothing changes the text. Runs can also be read-only one by one (ADR 0019).</summary>
@@ -110,10 +215,9 @@ namespace SIL.TextEditing.Avalonia
             get => Editor.IsReadOnly;
             set
             {
-                if (Editor.IsReadOnly == value) return;
+                // Raises IsReadOnlyChanged whoever sets it, which restarts spell checking (ADR 0020), ends a composition (an input method cannot go
+                // on composing into read-only text) and tells automation: OnEditorReadOnlyChanged.
                 Editor.IsReadOnly = value;
-                if (value && _preedit != null) SetPreedit(null, null);   // an input method cannot go on composing into read-only text
-                _peer?.RaiseReadOnlyChanged(!value, value);
             }
         }
         /// <summary>Single-paragraph mode (ADR 0012; forwards to <see cref="DocumentEditor.SingleParagraph"/>): Enter does not
@@ -130,7 +234,24 @@ namespace SIL.TextEditing.Avalonia
         public string? Preedit => _preedit;
         public TextInputMethodClient ImeClient => _ime;
 
-        /// <summary>Raised synchronously when the active writing system changes: old, new.</summary>
+        /// <summary>Tells the host which writing system's keyboard to switch to (ADR 0008; the field never touches keyboards).
+        /// Raised synchronously, with the old and the new writing system, once per change and never when nothing changed: when the
+        /// caret moves into text of another writing system, when a selection's first writing system changes (FieldWorks uses the
+        /// first writing system a selection covers, not the end the caret is at), when an edit, an undo or <see cref="DocumentEditor.SetActiveWs"/>
+        /// (the writing-system toolbar) changes it. It is also raised when the field gains focus, with the old and new both the
+        /// writing system at the caret, because the keyboard then in effect belongs to whatever had focus before and the
+        /// writing system here may not have changed. While the field lacks focus it raises nothing, as FieldWorks' views do not
+        /// set the keyboard without focus: a change made then (a host setting the caret in a background field, say) is reported
+        /// once, as the focus-gain event, with the writing system the field has by then. See the README, "Keyboards", for what
+        /// a host does on focus in and out.
+        ///
+        /// <para>On Windows, FieldWorks sets the keyboard on focus gain only when focus comes from a window of the same process, so
+        /// a keyboard the user picked elsewhere is kept when focus returns without a click (Alt+Tab, the tray); a click makes a
+        /// selection, and the selection sets the keyboard. It restores the default keyboard when a view loses focus to a
+        /// control elsewhere in the same application that is not a view. The field cannot tell where focus came from (Avalonia
+        /// reports how focus arrived, not from which window or process), so it raises this event on every focus gain and the
+        /// host decides whether to switch; to restore the default keyboard the host uses <c>LostFocus</c>, as the field raises
+        /// nothing when it loses focus.</para></summary>
         public event Action<string, string>? ActiveWsChanged;
         /// <summary>Raised in single-paragraph mode when Enter is pressed (Shift+Enter is not passed on: it inserts a hard line break): the host decides what it means, as a
         /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it
@@ -147,14 +268,20 @@ namespace SIL.TextEditing.Avalonia
 
         void OnDocumentChanged(int start, int removed, int added)
         {
+            var spelling = SpellBeforeChange(start, removed);
             for (int i = 0; i < removed && start < _layouts.Count; i++)
             {
                 _layouts[start]?.Dispose();
                 _layouts.RemoveAt(start);
+                Unwatch(_info[start]);
                 _info.RemoveAt(start);
             }
             for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
+            for (int i = 0; i < added && start + i < Editor.Document.Paragraphs.Count; i++) Watch(_info[start + i], Editor.Document.Paragraphs[start + i]);
+            SpellAfterChange(start, added, spelling);
             ForgetNumbersFrom(start);
+            RequestSpellingIdle();
+            FindDocumentChanged();
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -162,7 +289,30 @@ namespace SIL.TextEditing.Avalonia
         // ------------------------------------------------ layout
 
         /// <summary>The format of a paragraph, resolved once until the paragraph or the styles change.</summary>
-        ParaFormat FormatOf(int index) => _info[index].Format ??= ParagraphLayout.ResolveFormat(Editor.Document.Paragraphs[index], WritingSystems, _styles);
+        ParaFormat FormatOf(int index) => Current(index).Format ??= ParagraphLayout.ResolveFormat(Editor.Document.Paragraphs[index], WritingSystems, _styles);
+
+        /// <summary>What is known of a paragraph's layout, as long as the paragraph is as it was: a paragraph that changed behind the editor's back
+        /// (<see cref="Paragraph.ChangeStamp"/> is not the one its format, label and layout were made for) loses them, and the numbers of the paragraphs
+        /// after it are worked out again. Comparing a number is cheap, so every use asks (issue 101).</summary>
+        ParaInfo Current(int index)
+        {
+            var info = _info[index];
+            var paragraphs = Editor.Document.Paragraphs;
+            if (index >= paragraphs.Count) return info;
+            long stamp = paragraphs[index].ChangeStamp;
+            if (info.Stamp == stamp) return info;
+            bool changed = info.Stamp != 0;
+            info.Stamp = stamp;
+            if (changed)
+            {
+                info.Format = null;
+                info.Label = null;
+                _layouts[index]?.Dispose();
+                _layouts[index] = null;
+                ForgetNumbersFrom(index);
+            }
+            return info;
+        }
 
         void ForgetNumbersFrom(int start)
         {
@@ -201,6 +351,7 @@ namespace SIL.TextEditing.Avalonia
 
         public ParagraphLayout ParagraphLayoutFor(int index)
         {
+            Current(index);
             var existing = _layouts[index];
             string label = LabelOf(index);
             double above = index > 0 ? FormatOf(index - 1).SpaceAfter : 0;
@@ -216,11 +367,12 @@ namespace SIL.TextEditing.Avalonia
             {
                 preeditAt = Editor.Caret.Offset;
                 preedit = _preedit;
-                template = new Run { Ws = Editor.ActiveWs };
+                template = Editor.TypingRun();
             }
-            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
+            var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, LayoutForeground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
             _layouts[index] = layout;
             LayoutCount++;
+            ApplySpelling(index, layout);
             return layout;
         }
 
@@ -237,30 +389,37 @@ namespace SIL.TextEditing.Avalonia
             {
                 _layouts[i]?.Dispose();
                 _layouts[i] = null;
-                _info[i] = new ParaInfo();
+                _info[i] = new ParaInfo { Watched = _info[i].Watched };
             }
             InvalidateMeasure();
             InvalidateVisual();
         }
 
-        /// <summary>Call after the host changed the Document directly (not through the editor): drops every layout and
-        /// resizes the layout list to the paragraph count.</summary>
+        /// <summary>Call after the host changed the list of paragraphs of the Document directly (not through the editor): added, removed or replaced
+        /// one. It drops every layout and resizes the layout list to the paragraph count. A change to a paragraph itself, its runs, a run's text or
+        /// properties (set in place too), its style or direction, needs no call: the paragraph tells the field (<see cref="Paragraph.ChangeStamp"/>).</summary>
         public void RefreshFromDocument()
         {
             foreach (var l in _layouts) l?.Dispose();
+            UnwatchAll();
             _layouts.Clear();
             _info.Clear();
+            FindDocumentChanged();   // the highlight and the current match were worked out from the old text
             for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
+            WatchAll();
+            RestartSpelling();       // the paragraphs may be other text: nothing checked before is trusted, and a failed writing system is tried again
             InvalidateMeasure();
             InvalidateVisual();
         }
 
         protected override Size MeasureOverride(Size availableSize)
         {
+            _hostEditNoticed = false;   // a change to a paragraph from here on asks for another measure (see OnParagraphTouched)
             double w = double.IsInfinity(availableSize.Width) ? PreferredWidth : availableSize.Width;
             if (Math.Abs(w - _layoutWidth) > 0.5)
             {
                 _layoutWidth = w;
+                ForgetLimitedSpelling();   // where a line limit cuts the text moves with the width
                 for (int i = 0; i < _layouts.Count; i++)
                 {
                     _layouts[i]?.Dispose();
@@ -287,7 +446,7 @@ namespace SIL.TextEditing.Avalonia
             var pl = ParagraphLayoutFor(c.Paragraph);
             var r = pl.CaretRect(c.Offset, false, CurrentHit());
             if (_preedit != null && pl.PreeditAt >= 0) r = pl.CaretRect(pl.PreeditAt + _preeditCursor, true);   // inside the preedit, in effective offsets
-            return new Rect(r.X, r.Y + ParagraphTop(c.Paragraph), 1.5, r.Height);
+            return new Rect(r.X, r.Y + ParagraphTop(c.Paragraph), ParagraphLayout.CaretWidth, r.Height);
         }
 
         // ------------------------------------------------ rendering
@@ -298,24 +457,47 @@ namespace SIL.TextEditing.Avalonia
             if (_layouts.Count == 0) return;
             Editor.Ordered(out var a, out var b);
             var selectionBrush = Editor.HasSelection ? ResolveSelectionBrush() : null;
+            var selectedText = Editor.HasSelection ? SelectedTextColour() : null;
             double y = 0;
             var clip = new Rect(Bounds.Size);
             for (int i = 0; i < _layouts.Count; i++)
             {
                 var pl = ParagraphLayoutFor(i);
+                DropStaleSpelling(i, pl);
                 if (y + pl.Height >= 0 && y <= clip.Bottom + 1)
                 {
+                    List<Rect>? selection = null;
                     pl.DrawBox(context, y);
                     pl.DrawBackgrounds(context, y);
+                    DrawFindHighlights(context, pl, i, y);
                     if (Editor.HasSelection && i >= a.Paragraph && i <= b.Paragraph)
                     {
                         int s = i == a.Paragraph ? a.Offset : 0;
                         int e = i == b.Paragraph ? b.Offset : pl.Paragraph.Length;
-                        foreach (var r in pl.SelectionRects(s, e))
+                        selection = pl.SelectionRects(s, e);
+                        foreach (var r in selection)
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
-                    foreach (var li in pl.Lines) if (!li.IsEmpty) li.Line.Draw(context, new Point(li.X, y + li.TextY));
+                    foreach (var li in pl.Lines) if (!li.IsEmpty) li.Draw(context, y);
+                    pl.DrawDecorations(context, y);
+                    if (selectedText != null && selection != null && pl.InColour(selectedText.Value) is ParagraphLayout recoloured)
+                    {
+                        // In a high contrast theme the selected text has a colour of its own: the selection's fill is laid again over the text drawn in its
+                        // own colours, and the same text in the selection's colour goes on that.
+                        foreach (var r in selection)
+                        {
+                            var box = new Rect(r.X, r.Y + y, r.Width, r.Height);
+                            context.DrawRectangle(selectionBrush, null, box);
+                            using (context.PushClip(box))
+                            {
+                                foreach (var li in recoloured.Lines) if (!li.IsEmpty) li.Draw(context, y);
+                                recoloured.DrawDecorations(context, y);
+                            }
+                        }
+                    }
+                    pl.DrawSquiggles(context, y);
                     pl.DrawLabel(context, y);
+                    pl.DrawEllipsis(context, y);
                     if (ObjectAsGlyph)
                     {
                         foreach (var o in pl.ObjectRects())
@@ -329,6 +511,7 @@ namespace SIL.TextEditing.Avalonia
                 y += pl.Height;
             }
             if (IsFocused || ShowCaretAlways) context.DrawRectangle(ResolveCaretBrush(), null, CaretRect());
+            ScheduleSpellingIfWanted();
         }
 
         // ------------------------------------------------ caret movement
@@ -336,46 +519,85 @@ namespace SIL.TextEditing.Avalonia
         // ADR 0023: a pause of TypingPause ends the typing step even when nothing else follows.
         void RestartPauseTimer()
         {
-            // The editor has no thread affinity, but a DispatcherTimer does: an edit from another thread hands the timer to the
-            // UI thread. A field that is not on screen has no timer (it closes the step when it leaves the screen).
-            if (!global::Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            // Edits are refused off the UI thread (Editor.AccessCheck), so this is only reached from another thread when a host
+            // has removed that check; a DispatcherTimer has thread affinity, so the restart is handed to the field's own dispatcher then. A field
+            // that is not on screen has no timer (it closes the step when it leaves the screen).
+            if (!CheckAccess())
             {
-                global::Avalonia.Threading.Dispatcher.UIThread.Post(RestartPauseTimer);
+                OwnDispatcher.Post(RestartPauseTimer);
                 return;
             }
             if (!_onScreen)
             {
                 _pauseTimer?.Stop();
+                _pauseHandle?.Dispose();
+                _pauseHandle = null;
+                return;
+            }
+            _pauseTimer?.Stop();
+            _pauseHandle?.Dispose();
+            _pauseHandle = null;
+            if (!Editor.HasOpenUndoGroup) return;
+            var scheduler = PauseScheduler;
+            if (scheduler != null)
+            {
+                _pauseHandle = scheduler(Editor.TypingPause, () => Editor.CloseUndoGroup());
                 return;
             }
             if (_pauseTimer == null)
             {
+#if NET10_0_OR_GREATER
+                _pauseTimer = new global::Avalonia.Threading.DispatcherTimer(global::Avalonia.Threading.DispatcherPriority.Background, OwnDispatcher);
+#else
                 _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
+#endif
                 _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
             }
-            _pauseTimer.Stop();
-            if (!Editor.HasOpenUndoGroup) return;
             _pauseTimer.Interval = Editor.TypingPause;
             _pauseTimer.Start();
         }
 
+        IDisposable? _pauseHandle;
+
+        /// <summary>Starts the one-shot timer that ends a typing step when the pause passes (ADR 0023): it is given the pause
+        /// (<see cref="DocumentEditor.TypingPause"/>) and the action to run when it elapses, and returns something that cancels
+        /// it; the field cancels and asks again after every edit. Null, the default, uses a dispatcher timer, which the field
+        /// does not create while a scheduler is set. Internal: a test with its own clock sets it to drive the pause without
+        /// waiting, and the action it is given must run on the field's dispatcher thread, which the field does not check.</summary>
+        internal Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
+
         bool _onScreen;
+        IPlatformSettings? _platformSettings;
+
+        internal void OnPlatformColoursChanged(object? sender, PlatformColorValues values) =>
+            OwnDispatcher.Post(RefreshSystemColours);
+
 
         protected override void OnAttachedToVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
         {
             _onScreen = true;
+            _platformSettings = global::Avalonia.Application.Current?.PlatformSettings;
+            if (_platformSettings != null) _platformSettings.ColorValuesChanged += OnPlatformColoursChanged;
+            RefreshSystemColours();   // the theme and the system may have changed while the field was away
             base.OnAttachedToVisualTree(e);
+            WatchScrolling();
         }
 
         protected override void OnDetachedFromVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
         {
             _onScreen = false;
+            CancelBatch();   // a worker that is asking the host's checker stops: the field is going away
+            if (_platformSettings != null) _platformSettings.ColorValuesChanged -= OnPlatformColoursChanged;
+            _platformSettings = null;
+            StopWatchingScrolling();
             _pauseTimer?.Stop();
             Editor.CloseUndoGroup();
             base.OnDetachedFromVisualTree(e);
         }
 
-        /// <summary>The text a caret can reach in a paragraph: all of it, or the part a line limit leaves showing.</summary>
+        /// <summary>The text a caret can reach in a paragraph with a line limit: the part the limit leaves showing. Only such a paragraph
+        /// needs a layout to know it; the editor is told there is no limit for any other, so searching for an editable place does not lay
+        /// out paragraphs that are not on screen.</summary>
         int VisibleLength(int paragraph) => ParagraphLayoutFor(paragraph).VisibleEnd;
 
         /// <summary>A position moved back to the end of the visible text when it is in text a line limit hides (FieldWorks puts an
@@ -409,6 +631,9 @@ namespace SIL.TextEditing.Avalonia
                 SelectionWsState?.Invoke(set.Count > 1 ? "mixed:" + string.Join(",", set) : set[0]);
             }
             else SelectionWsState?.Invoke(Editor.ActiveWs);
+            // Typing and the host's own caret changes in a field the user is working in ask the host to show the caret (a move the
+            // field makes itself asks from Move).
+            if (!_moving && !_dragging && IsFocused && Editor.Document.Paragraphs.Count == _layouts.Count) RequestCaretIntoView();
         }
 
         /// <summary>The caret hit (affinity) that applies to the current caret, or null when it has none.</summary>
@@ -423,6 +648,7 @@ namespace SIL.TextEditing.Avalonia
             _moving = true;
             try { Editor.SetCaret(p, extend, p.CompareTo(Editor.Caret)); }
             finally { _moving = false; }
+            if (!_dragging) RequestCaretIntoView();
         }
 
         /// <summary>Left or Right arrow, logical as in FieldWorks: Left goes backwards in a left-to-right paragraph and
@@ -473,12 +699,12 @@ namespace SIL.TextEditing.Avalonia
             bool backward = para.Rtl ? !left : left;
             if (backward)
             {
-                if (c.Offset > 0) Move(new TextPosition(c.Paragraph, WordBreaks.PreviousWordStart(para.Text, c.Offset)), extend);
+                if (c.Offset > 0) Move(new TextPosition(c.Paragraph, WordBreaks.PreviousWordStart(para, c.Offset, Editor.WordRules)), extend);
                 else if (c.Paragraph > 0) Move(new TextPosition(c.Paragraph - 1, VisibleLength(c.Paragraph - 1)), extend);
             }
             else
             {
-                if (c.Offset < VisibleLength(c.Paragraph)) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para.Text, c.Offset)), extend);
+                if (c.Offset < VisibleLength(c.Paragraph)) Move(new TextPosition(c.Paragraph, WordBreaks.NextWordStart(para, c.Offset, Editor.WordRules)), extend);
                 else if (c.Paragraph + 1 < Editor.Document.Paragraphs.Count) Move(new TextPosition(c.Paragraph + 1, 0), extend);
             }
         }
@@ -584,6 +810,9 @@ namespace SIL.TextEditing.Avalonia
                     return RaiseLeave(shift ? LeaveDirection.Previous : LeaveDirection.Next, LeaveKey.Tab, ctrl, double.NaN);
                 }
                 case Key.Up: MoveVertical(false, shift); return true;
+                case Key.F10 when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0: RaiseKeyboardContextRequest(); return true;
+                case Key.PageUp when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: if (ctrl) MovePageEdge(false, shift); else MovePage(false, shift); return true;
+                case Key.PageDown when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: if (ctrl) MovePageEdge(true, shift); else MovePage(true, shift); return true;
                 case Key.Down: MoveVertical(true, shift); return true;
                 case Key.Home:
                 {
@@ -655,7 +884,7 @@ namespace SIL.TextEditing.Avalonia
             var result = Editor.PreviewLineBreak(out int kept);
             if (result == null) return false;
             double above = kept > 0 ? FormatOf(kept - 1).SpaceAfter : 0;
-            using var layout = ParagraphLayout.Build(result, _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, -1, null, null, _styles, LabelOf(kept), above);
+            using var layout = ParagraphLayout.Build(result, _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, LayoutForeground, ObjectAsGlyph, -1, null, null, _styles, LabelOf(kept), above);
             return layout.Truncated || layout.HiddenTrailingBreak;
         }
 
@@ -735,8 +964,9 @@ namespace SIL.TextEditing.Avalonia
             if (!props.IsLeftButtonPressed)
             {
                 // Right click (context menu): keep a selection that was clicked inside, otherwise move the caret there.
+                // Inside means the pointer is over a selected character, not merely beside the selection's end.
                 Editor.Ordered(out var sa, out var sb);
-                bool inside = Editor.HasSelection && loc.Position.CompareTo(sa) >= 0 && loc.Position.CompareTo(sb) <= 0;
+                bool inside = Editor.HasSelection && loc.Character.CompareTo(sa) >= 0 && loc.Character.CompareTo(sb) < 0;
                 if (!inside) Move(loc.Position, false, false, loc.Hit);
                 e.Handled = true;
                 return;
@@ -763,7 +993,7 @@ namespace SIL.TextEditing.Avalonia
                 start = end = new TextPosition(loc.Character.Paragraph, para.Length);
                 return;
             }
-            WordBreaks.WordAt(para.Text, loc.Character.Offset, out int s, out int en);
+            WordBreaks.WordAt(para, loc.Character.Offset, Editor.WordRules, out int s, out int en);
             start = new TextPosition(loc.Character.Paragraph, s);
             end = new TextPosition(loc.Character.Paragraph, en);
         }
@@ -784,7 +1014,7 @@ namespace SIL.TextEditing.Avalonia
         protected override void OnPointerMoved(PointerEventArgs e)
         {
             if (!_dragging) return;
-            var loc = Locate(e.GetPosition(this));
+            var loc = Locate(DragPoint(e.GetPosition(this)));
             if (_dragUnit == DragUnit.Character) Move(loc.Position, true, false, loc.Hit);
             else SelectUnit(loc, false);
         }
@@ -793,6 +1023,7 @@ namespace SIL.TextEditing.Avalonia
         {
             _dragging = false;
             e.Pointer.Capture(null);
+            base.OnPointerReleased(e);   // Avalonia raises its context request for a right click from here
         }
 
         protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
@@ -927,13 +1158,25 @@ namespace SIL.TextEditing.Avalonia
 
         // ------------------------------------------------ system colours
 
-        /// <summary>The selection fill: the theme or system highlight resource, else light sky blue.</summary>
-        public IBrush ResolveSelectionBrush() =>
+        /// <summary>The selection fill: in a high contrast theme the system highlight colour, else the theme or system highlight resource, else light sky blue.</summary>
+        public IBrush ResolveSelectionBrush() => SystemBrush(SystemColour.Highlight) ??
             ThemeBrush(Brushes.LightSkyBlue, "TextControlSelectionHighlightColor", "SystemControlHighlightAccentBrush", "SystemColorHighlightColor");
 
-        /// <summary>The caret fill: the theme or system text-colour resource, else black.</summary>
-        public IBrush ResolveCaretBrush() =>
+        /// <summary>The colour of selected text in a high contrast theme (the system's highlight text colour), or null when the theme decides: the text keeps its own.</summary>
+        Color? SelectedTextColour() => SystemColours.IsHighContrast() ? SystemColours.Get(SystemColour.HighlightText) : null;
+
+        /// <summary>The caret fill and default text colour: in a high contrast theme the system window text colour, else the theme or system text-colour resource, else black.</summary>
+        public IBrush ResolveCaretBrush() => SystemBrush(SystemColour.WindowText) ??
             ThemeBrush(Brushes.Black, "TextControlForeground", "SystemControlForegroundBaseHighBrush", "SystemColorWindowTextColor");
+
+        /// <summary>The page fill: in a high contrast theme the system window colour, else the theme or system window-colour resource, else white.</summary>
+        public IBrush ResolveBackgroundBrush() => SystemBrush(SystemColour.Window) ??
+            ThemeBrush(Brushes.White, "SystemControlBackgroundAltHighBrush", "SystemAltHighColor", "SystemColorWindowColor");
+
+        /// <summary>The system's colour of a kind as a brush while the system is in a high contrast theme, else null (Avalonia's themes have no high contrast
+        /// variant: they would give black on white, where FieldWorks draws in the system's window text and window colours).</summary>
+        static IBrush? SystemBrush(SystemColour kind) =>
+            SystemColours.IsHighContrast() && SystemColours.Get(kind) is Color color ? new SolidColorBrush(color) : null;
 
         /// <summary>The first of the named theme or system resources that is a colour or brush; else the fallback look.</summary>
         IBrush ThemeBrush(IBrush fallback, params string[] keys)

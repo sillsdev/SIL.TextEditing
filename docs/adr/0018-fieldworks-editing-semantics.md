@@ -13,3 +13,6 @@ Where FieldWorks and other editors differ, the field does what FieldWorks does (
 are design choices, not WinForms limits, so they wait for a separate decision.
 
 Owner decision, 2026-11-03.
+
+Amended 2026-11-04: Markdown import normalises run text to the form the host stores, as pasting does. Attribute
+values are never normalised.

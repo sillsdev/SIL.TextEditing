@@ -41,22 +41,62 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
-        [Fact]
-        public void A_pause_in_typing_closes_the_step_by_itself() => Headless.Run(async () =>
+        sealed class FakePause : IDisposable
         {
+            public TimeSpan After;
+            public Action Run = () => { };
+            public bool Cancelled;
+            public void Dispose() => Cancelled = true;
+        }
+
+        [Fact]
+        public void A_pause_in_typing_closes_the_step_by_itself() => Headless.Run(() =>
+        {
+            // The pause is driven by a scheduler the test controls, not by wall time: the field asks for a timer of the editor's
+            // pause, typing again cancels it and asks for a new one, and when it fires the step closes.
             using (var s = new Session(Scenarios.MixedBidi))
             {
+                var timers = new System.Collections.Generic.List<FakePause>();
+                s.Field.PauseScheduler = (after, run) =>
+                {
+                    var t = new FakePause { After = after, Run = run };
+                    timers.Add(t);
+                    return t;
+                };
                 s.Editor.TypingPause = TimeSpan.FromMilliseconds(60);
                 s.Caret(0, 0);
                 s.Type("a");
                 Assert.True(s.Editor.HasOpenUndoGroup);
-                for (int i = 0; i < 40 && s.Editor.HasOpenUndoGroup; i++)
+                var first = Assert.Single(timers.FindAll(t => !t.Cancelled));
+                Assert.Equal(TimeSpan.FromMilliseconds(60), first.After);
+                s.Type("b");   // more typing before the pause passes: the first timer is cancelled and a new one starts
+                Assert.True(first.Cancelled);
+                var second = Assert.Single(timers.FindAll(t => !t.Cancelled));
+                Assert.True(s.Editor.HasOpenUndoGroup);
+                Assert.DoesNotContain("ended", s.Log);
+
+                second.Run();   // the pause passes
+                Assert.False(s.Editor.HasOpenUndoGroup);
+                Assert.Contains("ended", s.Log);
+            }
+        });
+
+        [Fact]
+        public void The_default_pause_timer_closes_the_step_when_the_dispatcher_runs_it() => Headless.Run(async () =>
+        {
+            // The real DispatcherTimer path: no scheduler is set. The pause is one tick, so this waits for the dispatcher to run
+            // the timer, not for a stretch of wall time, and only checks the step closed.
+            using (var s = new Session(Scenarios.MixedBidi))
+            {
+                s.Editor.TypingPause = TimeSpan.FromTicks(1);
+                s.Caret(0, 0);
+                s.Type("a");
+                for (int i = 0; i < 1000 && s.Editor.HasOpenUndoGroup; i++)
                 {
-                    await Task.Delay(50);
+                    await Task.Delay(10);
                     Headless.Pump();
                 }
                 Assert.False(s.Editor.HasOpenUndoGroup);
-                Assert.Contains("ended", s.Log);
             }
         });
     }

@@ -94,7 +94,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(RunWith(s, 3, "red text").ForegroundBrush));
                 var green = RunWith(s, 3, "green on pale yellow");
                 Assert.Equal(Color.FromRgb(0, 128, 0), ColorOf(green.ForegroundBrush));
-                Assert.Same(s.Field.Foreground, RunWith(s, 3, "transparent colour").ForegroundBrush);
+                Assert.Equal(ColorOf(s.Field.Foreground), ColorOf(RunWith(s, 3, "transparent colour").ForegroundBrush));
                 var warning = RunWith(s, 3, "Warning (a style)");
                 Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(warning.ForegroundBrush));
             }
@@ -155,13 +155,21 @@ namespace SIL.TextEditing.Playground.Tests
             using (var s = new Session(Scenarios.Drawing))
             {
                 var shot = new DrawingParagraphTests.Shot(s);
-                int bottomH = shot.InkBottom(BoxOf(s, 5, "H2O", 0, 1));
-                int bottomSub = shot.InkBottom(BoxOf(s, 5, "H2O", 1, 1));
-                int bottomC = shot.InkBottom(BoxOf(s, 5, "mc2", 1, 1));
-                int bottomSup = shot.InkBottom(BoxOf(s, 5, "mc2", 2, 1));
+                // The superscript and the subscript are small (the font's own size for them), so their strokes are light: a lighter ink counts here.
+                int Bottom(Rect box)
+                {
+                    for (int y = (int)box.Bottom + 7; y >= (int)box.Y - 8; y--)
+                        for (int x = (int)box.X + 1; x < (int)box.Right - 1; x++)
+                            if (shot.IsInk(x, y, 200)) return y;
+                    return -1;
+                }
+                int bottomH = Bottom(BoxOf(s, 5, "H2O", 0, 1));
+                int bottomSub = Bottom(BoxOf(s, 5, "H2O", 1, 1));
+                int bottomC = Bottom(BoxOf(s, 5, "mc2", 1, 1));
+                int bottomSup = Bottom(BoxOf(s, 5, "mc2", 2, 1));
                 Assert.True(bottomH >= 0 && bottomSub >= 0 && bottomC >= 0 && bottomSup >= 0);
                 Assert.True(bottomSup <= bottomC - 3, "superscript ink ends at " + bottomSup + ", the text beside it at " + bottomC);
-                Assert.True(bottomSub >= bottomH + 2, "subscript ink ends at " + bottomSub + ", the text beside it at " + bottomH);
+                Assert.True(bottomSub >= bottomH + 1, "subscript ink ends at " + bottomSub + ", the text beside it at " + bottomH);
             }
         });
 
@@ -209,72 +217,168 @@ namespace SIL.TextEditing.Playground.Tests
         {
             using (var s = new Session(Scenarios.Drawing))
             {
-                var dotted = RunWith(s, 4, "dotted").TextDecorations!.Single();
-                Assert.Equal(TextDecorationLocation.Underline, dotted.Location);
-                Assert.NotNull(dotted.StrokeDashArray);
-                Assert.Equal(new double[] { 2, 2 }, dotted.StrokeDashArray!.ToArray());
-                Assert.Equal(new double[] { 6, 3 }, RunWith(s, 4, "dashed").TextDecorations!.Single().StrokeDashArray!.ToArray());
-                var single = RunWith(s, 4, "single").TextDecorations!.Single();
-                Assert.Equal(TextDecorationLocation.Underline, single.Location);
-                Assert.Null(single.StrokeDashArray);
-                var dbl = RunWith(s, 4, "double").TextDecorations!;
-                Assert.Equal(2, dbl.Count);
-                Assert.NotEqual(dbl[0].StrokeOffset, dbl[1].StrokeOffset);
-                Assert.Equal(TextDecorationLocation.Strikethrough, RunWith(s, 4, "strikethrough").TextDecorations!.Single().Location);
-                Assert.Equal(Color.FromRgb(0, 0, 255), ColorOf(RunWith(s, 4, "blue single").TextDecorations!.Single().Stroke));
-                var styled = RunWith(s, 4, "Misspelled").TextDecorations!;
-                Assert.Equal(2, styled.Count);
-                Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(styled[0].Stroke));
-                Assert.Null(RunWith(s, 4, "Lines: ").TextDecorations);
+                // The field draws underlines and strikethrough itself (a gap at each descender is Avalonia's): Avalonia is given none, and the run says
+                // what to draw. UnderlineDescenderTests and the pixel tests above look at the picture.
+                var layout = s.Field.ParagraphLayoutFor(4);
+                int Kind(string token) => layout.DecorationAt(layout.EffectiveText.IndexOf(token, System.StringComparison.Ordinal))?.LineKind ?? 0;
+                IBrush? Colour(string token) => layout.DecorationAt(layout.EffectiveText.IndexOf(token, System.StringComparison.Ordinal))?.LineBrush;
+                Assert.Equal(1, Kind("dotted"));
+                Assert.Equal(2, Kind("dashed"));
+                Assert.Equal(3, Kind("single"));
+                Assert.Equal(4, Kind("double"));
+                Assert.Equal(5, Kind("strikethrough"));
+                Assert.Equal(Color.FromRgb(0, 0, 255), ColorOf(Colour("blue single")));
+                Assert.Equal(4, Kind("Misspelled"));
+                Assert.Equal(Color.FromRgb(255, 0, 0), ColorOf(Colour("Misspelled")));
+                Assert.Equal(0, Kind("Lines: "));
+                foreach (var token in new[] { "dotted", "dashed", "single", "double", "strikethrough", "blue single", "Misspelled", "Lines: " }) Assert.Null(RunWith(s, 4, token).TextDecorations);
             }
         });
 
         [Fact]
-        public void Superscript_and_subscript_shrink_to_two_thirds_and_shift_the_baseline() => Headless.Run(() =>
+        public void Superscript_and_subscript_are_smaller_than_the_text_beside_them_and_their_baseline_is_shifted_not_aligned_to_the_line() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Drawing))
             {
                 var sup = RunWith(s, 5, "super");
                 var sub = RunWith(s, 5, "sub");
-                Assert.Equal(16 * 2.0 / 3.0, sup.FontRenderingEmSize, 3);
-                Assert.Equal(BaselineAlignment.Superscript, sup.BaselineAlignment);
-                Assert.Equal(BaselineAlignment.Subscript, sub.BaselineAlignment);
-                Assert.Equal(BaselineAlignment.Baseline, RunWith(s, 5, "Position: H").BaselineAlignment);
+                var plain = RunWith(s, 5, "Position: H");
+                // The size is the font's own, from its OS/2 table (SuperscriptFontTests pins it against the font files), and well under the text beside it.
+                Assert.InRange(sup.FontRenderingEmSize, 4, 16 * 0.8);
+                Assert.InRange(sub.FontRenderingEmSize, 4, 16 * 0.8);
+                Assert.Equal(16, plain.FontRenderingEmSize);
+                Assert.Equal(BaselineAlignment.Baseline, sup.BaselineAlignment);
+                Assert.Equal(BaselineAlignment.Baseline, sub.BaselineAlignment);
+                var layout = s.Field.ParagraphLayoutFor(5);
+                string text = s.ParagraphText(5);
+                Assert.True(layout.Lines[0].Pieces(text.IndexOf("super", System.StringComparison.Ordinal), text.IndexOf("super", System.StringComparison.Ordinal) + 5).Single().Value > 0);
+                Assert.True(layout.Lines[0].Pieces(text.IndexOf("sub,", System.StringComparison.Ordinal), text.IndexOf("sub,", System.StringComparison.Ordinal) + 3).Single().Value < 0);
             }
         });
 
-        // The three properties below are carried and kept through every edit but not drawn yet (ADR 0005 exceptions, tracked as issues;
-        // justification is pinned in DrawingParagraphTests). When one starts being drawn these fail: replace the test with one for the feature.
+        // Justification is the one drawing property not drawn yet (an ADR 0005 exception tracked as an issue; it is pinned in DrawingParagraphTests).
 
-        /// <summary>How far below the top of its line the lowest ink of a box is.</summary>
-        static double Below(DrawingParagraphTests.Shot shot, Rect box) => shot.InkBottom(box) - box.Y;
+        static bool IsRed(DrawingParagraphTests.Shot shot, int x, int y) { var c = shot.At(x, y); return c.R > 200 && c.G < 90 && c.B < 90; }
+
+        /// <summary>For each column of the box that has red ink in the rows below the baseline, the topmost such row; and the number of red
+        /// pixels in the rows above the baseline.</summary>
+        static (List<int> Tops, int Above, int Columns) Squiggle(DrawingParagraphTests.Shot shot, Session s, int paragraph, int at, int length)
+        {
+            var pl = s.Field.ParagraphLayoutFor(paragraph);
+            var li = pl.Lines[pl.LineIndexOf(at)];
+            var bounds = li.Line.GetTextBounds(at, System.Math.Min(length, li.End - at));
+            double x0 = bounds.Min(b => b.Rectangle.X) + li.X, x1 = bounds.Max(b => b.Rectangle.Right) + li.X;
+            int baseline = (int)System.Math.Round(s.Field.ParagraphTop(paragraph) + li.TextY + li.Line.Baseline);
+            var tops = new List<int>();
+            int above = 0;
+            for (int x = (int)x0 + 1; x < (int)x1 - 1; x++)
+            {
+                for (int y = baseline - 14; y < baseline; y++) if (IsRed(shot, x, y)) above++;   // (the line above has its own squiggle further up)
+                for (int y = baseline; y < baseline + 12; y++) if (IsRed(shot, x, y)) { tops.Add(y - baseline); break; }
+            }
+            return (tops, above, System.Math.Max(0, (int)x1 - 1 - ((int)x0 + 1)));
+        }
+
+
+        /// <summary>The row of the lowest ink inside a box grown by a few rows above and below.</summary>
+        static int InkBottomRow(DrawingParagraphTests.Shot shot, Rect box) => shot.InkBottom(new Rect(box.X, box.Y - 8, box.Width, box.Height + 16));
 
         [Fact]
-        public void Offset_is_not_drawn_yet_so_raised_and_lowered_runs_sit_on_the_text_baseline() => Headless.Run(() =>
+        public void A_raised_run_is_drawn_four_pixels_higher_and_a_lowered_run_four_pixels_lower_than_the_text_beside_it() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Drawing))
             {
                 var shot = new DrawingParagraphTests.Shot(s);
                 Assert.Equal(4000, s.Editor.Document.Paragraphs[5].Runs.Single(r => r.Text == "up").Props.IntProps[TextPropertyNumbers.Offset].Value);
-                // The p of "up" (raised 4 pt) and the p of "pt" beside it end on the same row; so do the n of "down" (lowered) and the n of "drawn".
-                // (Measured from the top of the line, as the two may be on different lines; 1 pixel allows for rounding, a 4 point shift is 5.)
-                Assert.InRange(Below(shot, BoxOf(s, 5, ": up", 3, 1)) - Below(shot, BoxOf(s, 5, "pt", 0, 1)), -1, 1);
-                Assert.InRange(Below(shot, BoxOf(s, 5, "down", 3, 1)) - Below(shot, BoxOf(s, 5, "drawn", 4, 1)), -1, 1);
+                Assert.Equal(-4000, s.Editor.Document.Paragraphs[5].Runs.Single(r => r.Text == "down").Props.IntProps[TextPropertyNumbers.Offset].Value);
+                // The p of "up" (raised 4 pt) and the p of "pt" beside it: the same letter, 4 pixels apart; and the o of "down" (lowered) and of "ordinary".
+                // (They are on the same line, so the rows are comparable; a pixel allows for rounding.)
+                var paragraph = s.Field.ParagraphLayoutFor(5);
+                string text = s.ParagraphText(5);
+                Assert.Equal(paragraph.LineIndexOf(text.IndexOf(": up", System.StringComparison.Ordinal) + 3), paragraph.LineIndexOf(text.IndexOf("pt", System.StringComparison.Ordinal)));
+                int upP = InkBottomRow(shot, BoxOf(s, 5, ": up", 3, 1)), plainP = InkBottomRow(shot, BoxOf(s, 5, "pt", 0, 1));
+                Assert.InRange(plainP - upP, 3, 5);
+                // (The o, whose bowl is dark in the middle of its box wherever the letter falls between pixels, and not the n, whose stems are at its edges.)
+                int downN = InkBottomRow(shot, BoxOf(s, 5, "down", 1, 1)), plainN = InkBottomRow(shot, BoxOf(s, 5, "ordinary run", 0, 1));
+                Assert.InRange(downN - plainN, 3, 5);
+            }
+        });
+
+        /// <summary>The highest row (relative to the text's own baseline) with red ink in the columns of a range of text.</summary>
+        static int HighestRed(DrawingParagraphTests.Shot shot, Session s, int paragraph, int at, int length)
+        {
+            var pl = s.Field.ParagraphLayoutFor(paragraph);
+            var li = pl.Lines[pl.LineIndexOf(at)];
+            var bounds = li.Line.GetTextBounds(at, length);
+            double x0 = bounds.Min(b => b.Rectangle.X) + li.X, x1 = bounds.Max(b => b.Rectangle.Right) + li.X;
+            int baseline = (int)System.Math.Round(s.Field.ParagraphTop(paragraph) + li.TextY + li.Line.Baseline);
+            for (int dy = -12; dy < 12; dy++)
+                for (int x = (int)x0 + 1; x < (int)x1 - 1; x++)
+                    if (IsRed(shot, x, baseline + dy)) return dy;
+            return int.MaxValue;
+        }
+
+        [Fact]
+        public void The_squiggle_under_a_raised_run_is_raised_with_it() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var run = s.Editor.Document.Paragraphs[4].Runs.Single(r => r.Text == "scribble");
+                int at = s.ParagraphText(4).IndexOf("scribble", System.StringComparison.Ordinal);
+                int plain = HighestRed(new DrawingParagraphTests.Shot(s), s, 4, at, "scribble".Length);
+                run.Props.SetInt(TextPropertyNumbers.Offset, 4000, TextPropertyNumbers.VariationMilliPoint);
+                s.Field.RefreshFromDocument();
+                Headless.Pump();
+                int raised = HighestRed(new DrawingParagraphTests.Shot(s), s, 4, at, "scribble".Length);
+                Assert.InRange(plain - raised, 3, 5);   // the wave moved up with the run: 4 rows nearer the baseline of the text beside it, or past it
+            }
+        });
+        [Fact]
+        public void The_squiggle_underline_is_a_zigzag_below_the_baseline_in_the_under_colour_and_none_above_it() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Drawing))
+            {
+                var shot = new DrawingParagraphTests.Shot(s);
+                int at = s.ParagraphText(4).IndexOf("scribble", System.StringComparison.Ordinal);
+                var (tops, above, _) = Squiggle(shot, s, 4, at, "scribble".Length);
+                Assert.Equal(0, above);
+                Assert.True(tops.Count >= 25, "red ink under most columns of the word: " + tops.Count);
+                Assert.True(tops.Min() >= 0, "below the baseline");
+                Assert.True(tops.Max() - tops.Min() >= 2, "it rises and falls: rows " + string.Join(",", tops));
+                Assert.True(tops.Max() <= 8, "close under the text: " + tops.Max());
+                // The letters of the word are still the text colour, and the run before it (a plain one) has no red below it.
+                var before = Squiggle(shot, s, 4, s.ParagraphText(4).IndexOf("Lines", System.StringComparison.Ordinal), 5);
+                Assert.Empty(before.Tops);
             }
         });
 
         [Fact]
-        public void Squiggle_is_not_drawn_yet_so_the_run_has_no_underline() => Headless.Run(() =>
+        public void A_squiggled_run_that_wraps_over_lines_is_squiggled_on_each_of_them() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Drawing))
+            using (var s = new Session(Scenarios.Drawing, 330, 700))
             {
-                Assert.Null(RunWith(s, 4, "scribble").TextDecorations);
+                var pl = s.Field.ParagraphLayoutFor(4);
+                const string Token = "a squiggled run that is long enough to wrap onto a second line";
+                int at = s.ParagraphText(4).IndexOf(Token, System.StringComparison.Ordinal);
+                Assert.True(at >= 0, "the run is in the paragraph");
+                int end = at + Token.Length;
+                int first = pl.LineIndexOf(at), last = pl.LineIndexOf(end - 1);
+                Assert.True(last > first, "the run is on more than one line");
                 var shot = new DrawingParagraphTests.Shot(s);
-                // None of the letters of "scribble" go below the baseline, so any ink lower than the plain "Lines" before it would be a line.
-                Assert.InRange(Below(shot, BoxOf(s, 4, "scribble")) - Below(shot, BoxOf(s, 4, "Lines", 0, 5)), -1, 1);
+                int checkedParts = 0;
+                for (int i = first; i <= last; i++)
+                {
+                    int from = System.Math.Max(at, pl.Lines[i].Start), to = System.Math.Min(end, pl.Lines[i].End);
+                    var part = Squiggle(shot, s, 4, from, to - from);
+                    Assert.Equal(0, part.Above);
+                    if (part.Columns < 8) continue;   // a word or two left over at the end of a line
+                    checkedParts++;
+                    Assert.True(part.Tops.Count >= part.Columns * 0.75, "line " + i + ": red ink under " + part.Tops.Count + " of " + part.Columns + " columns");
+                    Assert.True(part.Tops.Max() - part.Tops.Min() >= 2, "line " + i + " rows " + string.Join(",", part.Tops));
+                }
+                Assert.True(checkedParts >= 2, "at least two lines of the run were checked");
             }
         });
-
         [Fact]
         public void The_character_style_box_sets_the_named_style_on_the_selection_and_none_clears_it() => Headless.Run(() =>
         {
