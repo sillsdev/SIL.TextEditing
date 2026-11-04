@@ -34,7 +34,8 @@ namespace SIL.TextEditing
         /// the first writing system a selection covers, not for the end the caret is at), when an edit or the host's
         /// <see cref="Apply"/> leaves the caret in another one, and when <see cref="SetActiveWs"/> chooses one for typing. It is
         /// raised once per change and never when the writing system stays the same. The editor has no notion of focus, so it
-        /// is raised whether or not the field is the one the user is in; see <c>RichTextField.ActiveWsChanged</c>.</summary>
+        /// is raised whether or not the field has focus. A host that switches keyboards subscribes to
+        /// <c>RichTextField.ActiveWsChanged</c> instead, which is raised only while the field has focus.</summary>
         public event Action<string, string>? ActiveWsChanged;
         public event Action? CaretMoved;
         /// <summary>Raised on any change to the document: start paragraph, removed paragraphs, added paragraphs.</summary>

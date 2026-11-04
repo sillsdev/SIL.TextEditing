@@ -59,7 +59,8 @@ one, and can change without superseding anything.
 - **Edits belong on the UI thread.** A change to the document made through `DocumentEditor` from another thread throws an
   `InvalidOperationException` at once, before anything changes (issue #33; `DocumentEditor.AccessCheck`, which
   `RichTextField` sets). The field answers document changes by changing Avalonia state, which only the UI thread may do,
-  so a clear refusal is enough ("the UI thread" is the thread of the dispatcher the field belongs to, which on Avalonia 12 may not be the main window's; the message and the pause-timer fallback name that dispatcher, issue #68); marshalling the notification would leave the document changing under a layout on
+  so a clear refusal is enough ("the UI thread" is the thread of the dispatcher the field belongs to, which on Avalonia 12
+  may not be the main window's; the message and the pause-timer fallback name that dispatcher, issue #68); marshalling the notification would leave the document changing under a layout on
   another thread. FieldWorks marshals off-thread data changes itself, so a host adapter that forwards LCModel
   `PropChanged` into `ExternalReplaceParagraph` or `Apply` must marshal to the UI thread first. Default, not an owner
   decision.
@@ -100,18 +101,22 @@ one, and can change without superseding anything.
   focus (issue #59): FieldWorks' views do not set the keyboard without focus, so a change made while unfocused (a host setting the
   caret in a background field, say) is reported once, as the focus-gain event, with the writing system the field has by then.
   The old and new being equal on focus gain is a default, not an owner decision.
-- **Keyboards on focus in and out stay the host's job; the field reports what it can (issue #69).** FieldWorks' views set the
-  keyboard for the selection when they gain focus only if the window that had focus belongs to the same process, so a keyboard
-  the user chose in the tray, or in another application, survives a click back into the field; and a view that loses focus
-  to a control that is not a view restores the default keyboard (a window can opt out, as the interlinear focus box does).
+- **Keyboards on focus in and out stay the host's job; the field reports what it can (issue #69).** On Windows, FieldWorks'
+  views set the keyboard for the selection on focus gain only if the window that had focus belongs to the same process, so a
+  keyboard the user chose in the tray, or in another application, is kept when focus returns without a click (Alt+Tab, the
+  tray). A click into a view makes a selection and the selection sets the keyboard, so a click does set it. On Linux the
+  keyboard is set on every focus gain. A view that loses focus to a control elsewhere in the same application that is not a
+  view restores the default keyboard (a window can opt out, as the interlinear focus box does); leaving the application is
+  left to the operating system.
   The field raises `ActiveWsChanged` on every focus gain, with old and new equal, because it cannot tell where focus came from:
   Avalonia's `GotFocusEventArgs` says how focus arrived (`NavigationMethod`, `KeyModifiers`) but not from which window or
-  process, so no fact about the source is added to the event. A host that wants FieldWorks' rule decides itself whether the
-  previous focus was in its own process (it knows its windows, or reads the previously focused window from the OS) and ignores
-  the focus-gain event when it was not. To restore the default keyboard, the host subscribes to the field's `LostFocus` and,
-  when focus has gone to something that is not a field, switches to its default; the field raises no event for losing focus
-  and never restores anything itself (ADR 0008). Read from FieldWorks' focus handling; the field's part is a default, not an
-  owner decision.
+  process, so no fact about the source is added to the event. A host that wants FieldWorks' Windows rule decides itself whether
+  the previous focus was in its own process (it knows its windows, or reads the previously focused window from the OS) and
+  ignores the focus-gain event when it was not; the field's event follows changes of writing system, so a click into text of
+  the same writing system gives none. To restore the default keyboard, the host subscribes to the field's `LostFocus` and,
+  when focus has gone to a control of its own application that is not a field, switches to its default; the field raises no
+  event for losing focus and never restores anything itself (ADR 0008). Read from FieldWorks' focus handling; the field's part
+  is a default, not an owner decision.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

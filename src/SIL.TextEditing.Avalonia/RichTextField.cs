@@ -158,11 +158,13 @@ namespace SIL.TextEditing.Avalonia
         /// once, as the focus-gain event, with the writing system the field has by then. See the README, "Keyboards", for what
         /// a host does on focus in and out.
         ///
-        /// <para>FieldWorks sets the keyboard on focus gain only when focus comes from a window of the same process (so a keyboard
-        /// the user picked in another application survives), and restores the default keyboard when a view loses focus to a
-        /// control that is not a view. The field cannot tell where focus came from (Avalonia reports how focus arrived, not from
-        /// which window or process), so it raises this event on every focus gain and the host decides whether to switch; to
-        /// restore the default keyboard the host uses <c>LostFocus</c>, as the field raises nothing when it loses focus.</para></summary>
+        /// <para>On Windows, FieldWorks sets the keyboard on focus gain only when focus comes from a window of the same process, so
+        /// a keyboard the user picked elsewhere is kept when focus returns without a click (Alt+Tab, the tray); a click makes a
+        /// selection, and the selection sets the keyboard. It restores the default keyboard when a view loses focus to a
+        /// control elsewhere in the same application that is not a view. The field cannot tell where focus came from (Avalonia
+        /// reports how focus arrived, not from which window or process), so it raises this event on every focus gain and the
+        /// host decides whether to switch; to restore the default keyboard the host uses <c>LostFocus</c>, as the field raises
+        /// nothing when it loses focus.</para></summary>
         public event Action<string, string>? ActiveWsChanged;
         /// <summary>Raised in single-paragraph mode when Enter is pressed (Shift+Enter is not passed on: it inserts a hard line break): the host decides what it means, as a
         /// dialog's default button does for a FieldWorks view that does not accept Return. The key is left unhandled, so it
@@ -414,7 +416,7 @@ namespace SIL.TextEditing.Avalonia
         /// (<see cref="DocumentEditor.TypingPause"/>) and the action to run when it elapses, and returns something that cancels
         /// it; the field cancels and asks again after every edit. Null, the default, uses a dispatcher timer, which the field
         /// does not create while a scheduler is set. Internal: a test with its own clock sets it to drive the pause without
-        /// waiting, and the action it is given must run on the UI thread, which the field does not check.</summary>
+        /// waiting, and the action it is given must run on the field's dispatcher thread, which the field does not check.</summary>
         internal Func<TimeSpan, Action, IDisposable>? PauseScheduler { get; set; }
 
         bool _onScreen;
