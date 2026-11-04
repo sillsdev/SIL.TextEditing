@@ -245,17 +245,15 @@ namespace SIL.TextEditing.Avalonia
         }
     }
 
-    /// <summary>A run of a line: where it is drawn (x from the line's origin) and the text it holds (<c>Start</c> and <c>Length</c>; when it is
-    /// not <c>Exact</c>, Start is only some place inside the run).</summary>
+    /// <summary>A run of a line: where it is drawn (x from the line's origin) and the text it holds (<c>Start</c> and <c>Length</c>).</summary>
     readonly struct RunSlot
     {
-        public RunSlot(DrawableTextRun run, double x, int start, int length, bool exact)
+        public RunSlot(DrawableTextRun run, double x, int start, int length)
         {
             Run = run;
             X = x;
             Start = start;
             Length = length;
-            Exact = exact;
             // A glyph run numbers its characters from where its own text began, which is not always where the paragraph's text did: the
             // first of the run's characters is the lowest cluster number it has.
             Glyphs = (run as ShapedTextRun)?.GlyphRun;
@@ -271,14 +269,13 @@ namespace SIL.TextEditing.Avalonia
         public double X { get; }
         public int Start { get; }
         public int Length { get; }
-        public bool Exact { get; }
         public double Width => Run.Size.Width;
 
         /// <summary>The distance from the run's origin to the leading edge of the character at the paragraph text <paramref name="index"/>
         /// (the run's whole width at its end), or null when the run cannot say.</summary>
         public double? Distance(int index)
         {
-            if (!Exact || Glyphs == null || _firstCluster == int.MaxValue || index < Start || index > Start + Length) return null;
+            if (Glyphs == null || _firstCluster == int.MaxValue || index < Start || index > Start + Length) return null;
             return Glyphs.GetDistanceFromCharacterHit(new CharacterHit(_firstCluster + index - Start));
         }
     }
@@ -424,8 +421,7 @@ namespace SIL.TextEditing.Avalonia
                 foreach (var slot in _slots)
                 {
                     int a = Math.Max(from, slot.Start), b = Math.Min(to, slot.Start + slot.Length);
-                    if (!slot.Exact) { a = slot.Start; b = slot.Start + 1; if (from > a || to < b) continue; }
-                    else if (b <= a) continue;
+                    if (b <= a) continue;
                     double left = 0, right = slot.Width;
                     if (a > slot.Start || b < slot.Start + slot.Length)
                     {
@@ -561,16 +557,15 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (!(run is DrawableTextRun d)) continue;
                 int start;
-                bool exact = true;
                 if (d is ObjectRun o) start = o.SourceIndex;
-                else if (d.Text.Length > 0 && System.Runtime.InteropServices.MemoryMarshal.TryGetString(d.Text, out _, out start, out _)) { }
-                else
+                else if (!(d.Text.Length > 0 && System.Runtime.InteropServices.MemoryMarshal.TryGetString(d.Text, out _, out start, out _)))
                 {
-                    // Not a slice of the paragraph text: the character under the run's middle, which is somewhere in the run.
-                    start = line.GetCharacterHitFromDistance(x + d.Size.Width / 2).FirstCharacterIndex;
-                    exact = false;
+                    // Every run the formatter returns is an object run or a slice of the paragraph text, which the source hands it as a slice of
+                    // one string (RunSlotTests): a run with no place in the text would be one Avalonia made itself, and has no text to find.
+                    x += d.Size.Width;
+                    continue;
                 }
-                result.Add(new RunSlot(d, x, start, run.Length, exact));
+                result.Add(new RunSlot(d, x, start, run.Length));
                 x += d.Size.Width;
             }
             return result;
