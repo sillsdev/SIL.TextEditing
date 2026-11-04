@@ -631,8 +631,17 @@ namespace SIL.TextEditing.Avalonia
                 }
                 return result;
             }
-            foreach (var tb in Line.GetTextBounds(from, to - from))
-                result.Add(new KeyValuePair<Rect, double>(Shown(tb.Rectangle), 0));
+            try
+            {
+                foreach (var tb in Line.GetTextBounds(from, to - from))
+                    result.Add(new KeyValuePair<Rect, double>(Shown(tb.Rectangle), 0));
+            }
+            catch (InvalidOperationException)
+            {
+                // Avalonia 12 refuses a range that covers no width ("Covered length must be greater than zero"), such as a right-to-left mark alone
+                // before the spaces a line ends with: a range with no width has no box.
+                result.Clear();
+            }
             return result;
         }
         public int Start { get; }
