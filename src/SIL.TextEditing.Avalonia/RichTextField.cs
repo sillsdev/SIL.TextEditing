@@ -34,9 +34,8 @@ namespace SIL.TextEditing.Avalonia
             public int Number = NoNumber;
             /// <summary>The bullet or number text, or null until worked out.</summary>
             public string? Label;
-            /// <summary>The spelling marks of the paragraph's text as it was when checked (null until checked), and that text.</summary>
-            public List<SpellingMark>? Marks;
-            public string? CheckedText;
+            /// <summary>What has been checked of the paragraph's spelling (null until looked at), for the paragraph as it was (see <see cref="SpellState"/>).</summary>
+            public SpellState? Spell;
         }
         readonly InputMethodClient _ime;
         IStyleResolver? _styles;
@@ -66,6 +65,8 @@ namespace SIL.TextEditing.Avalonia
             Editor = new DocumentEditor(document) { AccessCheck = RequireUIThread };
             for (int i = 0; i < document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             Editor.DocumentChanged += OnDocumentChanged;
+            Editor.IsReadOnlyChanged += OnEditorReadOnlyChanged;
+            Editor.TextEdited += OnTextEdited;
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => { if (IsFocused) ActiveWsChanged?.Invoke(o, n); };   // a view without focus does not set the keyboard (#59)
             Editor.CaretMoved += OnCaretMoved;
@@ -209,8 +210,7 @@ namespace SIL.TextEditing.Avalonia
             set
             {
                 if (Editor.IsReadOnly == value) return;
-                Editor.IsReadOnly = value;
-                RestartSpelling();   // read-only text is not checked (ADR 0020)
+                Editor.IsReadOnly = value;   // raises IsReadOnlyChanged, which restarts spell checking (ADR 0020)
                 if (value && _preedit != null) SetPreedit(null, null);   // an input method cannot go on composing into read-only text
                 _peer?.RaiseReadOnlyChanged(!value, value);
             }
@@ -263,6 +263,7 @@ namespace SIL.TextEditing.Avalonia
 
         void OnDocumentChanged(int start, int removed, int added)
         {
+            var spelling = SpellBeforeChange(start, removed);
             for (int i = 0; i < removed && start < _layouts.Count; i++)
             {
                 _layouts[start]?.Dispose();
@@ -270,6 +271,7 @@ namespace SIL.TextEditing.Avalonia
                 _info.RemoveAt(start);
             }
             for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
+            SpellAfterChange(start, added, spelling);
             ForgetNumbersFrom(start);
             RequestSpellingIdle();
             FindDocumentChanged();
@@ -371,6 +373,7 @@ namespace SIL.TextEditing.Avalonia
             _info.Clear();
             FindDocumentChanged();   // the highlight and the current match were worked out from the old text
             for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
+            RestartSpelling();       // the paragraphs may be other text: nothing checked before is trusted, and a failed writing system is tried again
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -424,6 +427,7 @@ namespace SIL.TextEditing.Avalonia
             for (int i = 0; i < _layouts.Count; i++)
             {
                 var pl = ParagraphLayoutFor(i);
+                DropStaleSpelling(i, pl);
                 if (y + pl.Height >= 0 && y <= clip.Bottom + 1)
                 {
                     pl.DrawBox(context, y);

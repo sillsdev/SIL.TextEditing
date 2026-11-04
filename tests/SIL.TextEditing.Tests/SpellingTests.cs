@@ -233,5 +233,42 @@ namespace SIL.TextEditing.Tests
             Assert.False(s.CanAddToDictionary);
             Assert.Empty(s.All);
         }
+
+        sealed class OnlyChecker : SpellCheckHostBase
+        {
+            public readonly FakeChecker Checker = new FakeChecker();
+            public override ISpellChecker? GetChecker(string ws) => ws == "en" ? Checker : null;
+        }
+
+        [Fact]
+        public void A_host_derived_from_the_base_writes_only_GetChecker_and_gets_the_default_word_rules()
+        {
+            var host = new OnlyChecker();
+            host.Checker.Known.Add("don't");
+            Assert.True(host.IsWordForming("en", 'a'));
+            Assert.False(host.IsWordForming("en", ' '));
+            Assert.True(host.JoinsWords("en", (char)39));
+            Assert.False(host.JoinsWords("en", 'a'));
+            Assert.Empty(SpellScanner.Check(TestDocs.Para("en", "en", "don't"), host));
+            Assert.Single(SpellScanner.Check(TestDocs.Para("en", "en", "dont"), host));
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task The_base_raises_dictionaries_changed_to_every_subscriber_from_any_thread()
+        {
+            var host = new OnlyChecker();
+            int a = 0, b = 0;
+            host.RaiseDictionariesChanged();   // nobody listening
+            EventHandler one = (s, e) => { a++; Assert.Same(host, s); };
+            EventHandler two = (s, e) => b++;
+            host.DictionariesChanged += one;
+            host.DictionariesChanged += two;
+            host.RaiseDictionariesChanged();
+            await System.Threading.Tasks.Task.Run(() => host.RaiseDictionariesChanged());
+            host.DictionariesChanged -= one;
+            host.RaiseDictionariesChanged();
+            Assert.Equal(2, a);
+            Assert.Equal(3, b);
+        }
     }
 }

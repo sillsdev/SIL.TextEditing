@@ -79,6 +79,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             host.Checkers["en"].Suggestions = new List<string> { "seat" };
             Assert.Equal(new[] { "seat" }, f.SpellingSuggestionsAt(new TextPosition(0, 9))!.All);
             host.Checkers["en"].Throws = new InvalidOperationException("boom");
+            f.RestartSpelling();   // the host changed what its checker answers, so the field forgets earlier answers
             // the word cannot even be judged now: nothing is marked there, and nothing is thrown
             Assert.Null(f.SpellingSuggestionsAt(new TextPosition(0, 9)));
         });

@@ -9,7 +9,22 @@ namespace SIL.TextEditing
         /// <summary>When true nothing the user does changes the text: typing, deletion, paste, cut, Enter and input
         /// method commits are ignored. Selection, caret movement and copy still work. Host-driven changes
         /// (<see cref="Apply"/>, <see cref="ExternalReplaceParagraph"/>) are not blocked.</summary>
-        public bool IsReadOnly { get; set; }
+        public bool IsReadOnly
+        {
+            get => _isReadOnly;
+            set
+            {
+                if (_isReadOnly == value) return;
+                _isReadOnly = value;
+                IsReadOnlyChanged?.Invoke();
+            }
+        }
+
+        bool _isReadOnly;
+
+        /// <summary>Raised when <see cref="IsReadOnly"/> changes, whoever changed it. A field restarts its spell checking on it: read-only
+        /// text is not checked.</summary>
+        public event Action? IsReadOnlyChanged;
 
         /// <summary>Text the user may change: editable and semi-editable runs. FieldWorks' views treat semi-editable text (used
         /// in type-ahead edit boxes) as editable for typing and deletion and refuse only formatting in it.</summary>
@@ -226,14 +241,8 @@ namespace SIL.TextEditing
             var runs = Document.Paragraphs[pi].Runs;
             int limit = LimitOf(pi);
 
-            // The run that holds the character at p: found by adding up lengths (no probes), not by testing each run.
-            int idx = runs.Count, idxStart = 0;
-            for (int k = 0; k < runs.Count; k++)
-            {
-                int end = idxStart + runs[k].Text.Length;
-                if (end > p.Offset) { idx = k; break; }
-                idxStart = end;
-            }
+            // The run that holds the character at p, from the paragraph's run starts (no probes).
+            int idx = Document.Paragraphs[pi].RunIndexAt(p.Offset, out int idxStart);
 
             // Forward: the start of the first editable run at or after idx (p is not editable, so none touches p from the left).
             int f = idx, fpos = idxStart;

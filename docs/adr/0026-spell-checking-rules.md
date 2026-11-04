@@ -29,7 +29,15 @@ owner decisions.
 - **Insert missing spaces.** For a mixed or embedded word the host calls `SpellingSuggestions.WithMissingSpaces()` and
   `RichTextField.ApplySpellingSuggestion(suggestions, runs)`: a space goes between parts that a dictionary cannot judge
   together, each part keeps its writing system and properties, and an object stays. A string replacement is for a
-  misspelling (or to make a mixed word one writing system) and is refused for an embedded word.
+  misspelling and is refused for an embedded word.
+- **Make the whole word writing system X.** For a word with text in more than one writing system, FieldWorks also offers one item per writing
+  system that makes the whole word that writing system, keeping each part's other properties; the text does not change, so the dictionary of
+  that writing system judges it next. The host builds these items from `SpellingSuggestions.WritingSystems` and `WithWholeWordIn(ws)` and applies
+  them with `ApplySpellingSuggestion(suggestions, runs)`.
+- **The word under the pointer.** FieldWorks takes it by the writing system's own word-forming test (by default letters, combining marks and
+  modifier symbols, and digits) for each character, so an underscore, a hyphen and other punctuation end it, and an embedded object ends the
+  word it selects. The field's context request does the same (`SpellScanner.TryWordAt`, with the host's `IsWordForming` while spell checking is on), so
+  the word of a request is the squiggled word.
 - **Red squiggle, no change to the model.** The marks are drawn like the squiggle underline and are not text properties.
 
 **Defaults (ours; not confirmed in FieldWorks)**
@@ -37,10 +45,18 @@ owner decisions.
   character style and the run's own properties, later layers winning, as FieldWorks' drawing engine layers its
   properties. FieldWorks' menu code disagrees: there the character style overrides the run's own value and the
   paragraph style is not read. The field has one answer for marks and menu and follows the first.
-- **Results are dropped with their paragraph on an edit.** An edit replaces the paragraph's results with none until the
-  next idle step, so a squiggle is never drawn on text it was not made for. They are not shifted: FieldWorks also
-  checks a changed paragraph again from scratch. A result also stores the text it was made for and is ignored if the
-  paragraph text no longer matches.
+- **Edits made behind the editor's back.** A paragraph keeps a change stamp (`Paragraph.ChangeStamp`) that moves when its runs, a run's text,
+  writing system, object data or property bag (replaced), or its style or property bag (replaced) change, and a result remembers the
+  stamp it was made for, so a direct change to the model is noticed without the host saying so, and the marks of that paragraph are
+  dropped. A property bag changed in place and a changed paragraph list are not seen: the host calls `RefreshFromDocument()`, which
+  restarts checking. A change of `DocumentEditor.IsReadOnly` raises `IsReadOnlyChanged`, which restarts checking whoever changed it.
+- **An edit keeps the marks it leaves alone.** A mark outside the edit moves with the text, and only the words around the edit are checked
+  again: the stretch the edit touched, widened to whole words and past an apostrophe or joiner next to it (a mark that ends one
+  character before the edit stays unless that character joins words). The word being typed has no squiggle until the next idle step; no other
+  squiggle blinks. This is ours: FieldWorks checks a changed paragraph again from scratch. An undo, a redo, an external replacement, an edit the
+  field was not told the range of (the host's `Apply`) and any edit to a paragraph with a line limit (the edit moves where the limit cuts
+  it) check the paragraphs they replace again from scratch. A result is for one state of its paragraph
+  (`Paragraph.ChangeStamp`) and is never used for another.
 - **Apostrophes and joiners inside a word, switchable.** An apostrophe (U+0027, U+2019) or a zero-width joiner or
   non-joiner (U+200D, U+200C) with word-forming characters on both sides stays in the word, so "don't" is one word.
   FieldWorks has no such rule: there "don't" splits into "don" and "t" unless the writing system's valid characters make
@@ -59,33 +75,55 @@ owner decisions.
   object, is not a word to mark: a lone object, an object between spaces and a footnote marker get no squiggle. FieldWorks
   counts the object and U+FEFF as word-forming and asks the dictionary about them, which the field does not. A word with an object
   next to text is `Embedded` and is not asked.
+- **One word definition for the other word rules.** The double-click, Ctrl+Left and Right and the whole-word find (`WordBreaks`) use the defaults
+  (`SpellScanner.DefaultIsWordForming`, digits, the apostrophes and joiners that stay inside a word) so that they agree with the spell checker.
+  FieldWorks gives a double-click and its Ctrl+arrow word moves the writing system's rule too; the field gives them the defaults only: with a host,
+  only the context request and the marks follow the host's word rules. The whole-word find's use of the same rule is ours (FieldWorks' was not
+  read), and so is a zero-width joiner or non-joiner staying with the grapheme cluster before it. The spell checker's word goes through an
+  embedded object (FieldWorks widens its menu word the same way) and is `Embedded`, so `ContextInfo.Spelling` can reach further than `ContextInfo.Word`.
+- **`SpellingSuggestions.WritingSystems` leaves out an object's writing system.** FieldWorks counts every run's, an object's included; an
+  object in another writing system alone makes the word `Embedded`, not `Mixed`, so the field does not offer the whole-word items for it.
+- **Insert missing spaces splits at every difference.** FieldWorks puts spaces only where the writing system changes when a word has several, and
+  where the spell-check property changes or an object stands otherwise. `WithMissingSpaces()` does all of them at once: a space wherever the
+  writing system, the spell-check or editable property differs or an object is next to text, so the result is words a dictionary can judge.
 - **Choosing a suggestion keeps the first run's properties.** The string `ApplySpellingSuggestion` replaces the word with a run
   in the word's writing system carrying the first run's properties (FieldWorks' replacement keeps only the writing
   system). Either overload is one undo step of its own, refused when the text can no longer be edited, is hidden by a line
   limit, or is not the word the menu was made for. The caret ends after the replacement.
 - **The menu is the host's.** The field offers `SpellingSuggestionsAt(position)` as the spelling part of the context
   information ADR 0021 describes, and a context request carries it: `ContextInfo.Spelling` is the `SpellingSuggestions` object (the host
-  needs it to apply, add or ignore) and `ContextInfo.SpellingSuggestions` its strings. The word the checker judged can differ from
-  `ContextInfo.Word`, which uses the double-click rule. Building the menu and its wording are the host's.
+  needs it to apply, add or ignore) and `ContextInfo.SpellingSuggestions` its strings. `ContextInfo.Word` and the marked word are one definition
+  (see above), except that the marked word has no unchecked ends and may have an object in it. A pointer over the space beside a marked word, or over an
+  object alone, gets no spelling; a caret at the end of the word does. Building the menu and its wording are the host's.
+- **A host base class, and one wrapper per checker.** `SpellCheckHostBase` implements the interface from `GetChecker` alone, with the default
+  word rules and a `RaiseDictionariesChanged()` safe from any thread. The field wraps each checker once (it still asks the host every
+  time, and makes a new wrapper only when the host answers with another checker), until a restart.
 - **Ignore is optional.** FieldWorks' dictionaries have no ignore operation and its menu has no "Ignore". A checker that
   can ignore a word also implements `ISpellIgnorer`; `SpellingSuggestions.CanIgnore` says so and the host offers the item
   only then.
 - **The host announces dictionary changes.** `ISpellCheckHost.DictionariesChanged` is raised by the host (any thread) when an
   add, the undo of an add, or a dictionary change alters what its checkers answer; every field using the host checks
   again. A field listens only while it is in the visual tree. The field that asked for an add also checks again itself.
-- **When, and where.** One paragraph per idle step, in document order, only paragraphs in view and only while the field is in
-  the visual tree: the paragraph's top and bottom against the scroll viewer the field is in, else against its window, else
-  against a fixed span (2000 device-independent pixels) below its top. FieldWorks checks the whole view, including
-  paragraphs out of sight; the field's choice is ADR 0020's, and it is bounded so a long document in a host that scrolls
-  some other way is not checked whole. Scrolling, an edit to a paragraph, a new host, `RestartSpelling` and a change of the
-  read-only state make paragraphs due again. Idle means the dispatcher's background priority, one request pending at a
-  time; a test replaces the post (`SpellIdlePost`).
+- **When, and where.** Idle steps are bounded by words: a step checks at most 25 words of the first paragraph in view that is not
+  checked (the rest of a long paragraph, or what an edit left to check, in later steps), so a slow checker holds up input for at most that many
+  words, and a step looks at the text around those words, not the whole paragraph. Only paragraphs in view are checked, and only while the field
+  is in the visual tree: the paragraph's top and bottom against the scroll viewer the field is in, else against its window, else against a fixed
+  span (2000 device-independent pixels) below its top. FieldWorks checks the whole view, including paragraphs out of sight; the field's choice
+  is ADR 0020's, and it is bounded so a long document in a host that scrolls some other way is not checked whole. Scrolling, an edit to a
+  paragraph, a new host, `RestartSpelling` and a change of the read-only state make paragraphs due again. Idle means the dispatcher's
+  background priority, one request pending at a time; a test replaces the post (`SpellIdlePost`). The host's checker is still called on the
+  UI thread; a host that cannot answer quickly answers from a cache and raises `DictionariesChanged` when it has more.
+- **Menu answers are remembered.** `SpellingSuggestionsAt` looks at the word at the position only, however long the paragraph is, and remembers its
+  last answer for the paragraph state, the checkers (until a restart) and the read-only state, so a hover over one word asks the host nothing
+  the second time; the checker's suggestions for a word are remembered until a restart too.
 - **Hidden text is not checked.** Text a line limit hides is not checked, no menu is offered for it and no replacement is
   applied to it. A word that crosses the limit is checked whole. FieldWorks checks it. A narrower or wider field makes a
   limited paragraph due again.
 - **A failing host does not end the application.** An exception from a checker or from the host's word tests is caught in the
-  idle step; the field stops checking that writing system (until `RestartSpelling` or a new host), takes the failing word as
-  right, and raises `RichTextField.SpellCheckerFailed` once with the writing system and the exception. A failure while a menu is made gives
+  idle step; the field stops checking that writing system (until `RestartSpelling`, a `DictionariesChanged` notice or a new host), takes the failing
+  word as right, and raises `RichTextField.SpellCheckerFailed` once with the writing system and the exception. When nothing handles
+  the event the failure goes to `System.Diagnostics.Trace` instead (once per writing system until a restart), so it is never silent; a
+  handler that throws is traced too. A host that repairs the dictionary raises `DictionariesChanged`. A failure while a menu is made gives
   no suggestions. An exception from `Add` or `Ignore` is the host's to see.
 - **The word of a mixed word is NFC.** `SpellingSuggestions.Word` is NFC for every kind; an embedded word keeps its objects.
 - **A mark does not cover the input method's composing text.** One that starts where composing text is inserted starts after

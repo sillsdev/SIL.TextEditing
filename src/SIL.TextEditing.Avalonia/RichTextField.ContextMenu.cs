@@ -49,12 +49,13 @@ namespace SIL.TextEditing.Avalonia
             return false;
         }
 
-        /// <summary>Adds the spelling problem at the place, if the word there is marked (ADR 0020, 0021).</summary>
-        ContextInfo WithSpelling(ContextInfo info)
+        /// <summary>Adds the spelling problem at the place, if the word there is marked (ADR 0020, 0021). A pointer means the character under it, so it
+        /// must be inside the marked text; a caret may also be at its end.</summary>
+        ContextInfo WithSpelling(ContextInfo info, bool pointer)
         {
             if (info.Word.Length == 0) return info;
             var spelling = SpellingSuggestionsAt(info.Position);
-            if (spelling == null) return info;
+            if (spelling == null || (pointer && info.Position.Offset >= spelling.End.Offset)) return info;
             info.Spelling = spelling;
             info.SpellingSuggestions.AddRange(spelling.All);
             return info;
@@ -68,12 +69,12 @@ namespace SIL.TextEditing.Avalonia
             if (pointer)
                 {
                 var loc = Locate(at);
-                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Pointer, at, WithSpelling(Editor.DescribeContext(loc.Character, false, PointerIsOverText(loc, at)))));
+                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Pointer, at, WithSpelling(Editor.DescribeContext(loc.Character, false, PointerIsOverText(loc, at)), true)));
             }
             else
             {
                 var caret = CaretRect();
-                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Keyboard, new Point(caret.X, caret.Bottom), WithSpelling(Editor.DescribeContext(Editor.Caret, true))));
+                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Keyboard, new Point(caret.X, caret.Bottom), WithSpelling(Editor.DescribeContext(Editor.Caret, true), false)));
             }
         }
     }

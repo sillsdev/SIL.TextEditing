@@ -38,6 +38,15 @@ Avalonia.Desktop, Avalonia.Themes.Fluent and Avalonia.Win32.Interoperability are
 libraries do not reference them. The playground tests load the Fluent theme so the sample's buttons and pickers have
 templates.
 
+## The run model
+
+`Paragraph.Runs` is a `RunList`, not a `List<Run>`: it tells its paragraph whenever a run is added, removed or replaced, and each
+run tells it when its text changes, so `Paragraph.Length`, `RunBefore`, `RunAfter` and `Spans` are answered from run starts the
+paragraph keeps current (a binary search, not a walk over the runs) however a host changes the runs. A host may edit `Run.Text` or
+the list directly. `RunList` has `Add`, `Insert`, `RemoveAt`, `RemoveRange`, `AddRange`, `Clear`, an indexer and `IEnumerable<Run>`
+(use LINQ for `ConvertAll`, `FindIndex` and the like); assign a `new RunList(runs)` to `Paragraph.Runs` to replace the runs. A
+change to a run's `PropertyBag` in place is not seen (see the spelling section for what to call).
+
 ## Build and test
 
 Windows with the .NET 10 SDK and the .NET Framework 4.8 targeting pack (net48 builds and tests run only on Windows):
@@ -123,14 +132,25 @@ The field owns one text; the window around it belongs to the host. These are the
 
 The host gives the field its dictionaries: set `RichTextField.SpellChecking` to an `ISpellCheckHost` that returns an
 `ISpellChecker` (`Check`, `Suggest`, `Add`; `ISpellIgnorer` adds `Ignore` when a dictionary has it) for each writing system, says which
-characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. The
-field checks the paragraphs in view when idle and draws red squiggles (misspelled, or a word with an object in it) and blue
+characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. Derive from
+`SpellCheckHostBase` to write only `GetChecker`: it has the default word rules and `RaiseDictionariesChanged()` (any thread). The
+field checks the paragraphs in view when idle, a few words at a time, and draws red squiggles (misspelled, or a word with an object in it) and blue
 ones (a word that mixes writing systems or has unchecked text inside). The rules are in `SpellScanner` (UI-free): words
 break at characters that are not word-forming, and do-not-check text and text that may not be edited (unless forced) are
 skipped. `SpellingSuggestionsAt`, `ApplySpellingSuggestion`, `AddToDictionary`, `IgnoreWord` and `RestartSpelling` are
-what a host's context menu and dictionary changes call (`ApplySpellingSuggestion` also takes runs, for "insert missing spaces"). A checker
-that throws raises `SpellCheckerFailed` and is left alone; it does not end the application. The playground's "Spell checking" scenario shows it with a
+what a host's context menu and dictionary changes call (`ApplySpellingSuggestion` also takes runs, for "insert missing spaces" and, with
+`WithWholeWordIn`, for "make the whole word writing system X" in a word with several writing systems). The word of a context request and the squiggled word
+are one definition (an underscore ends both, as in FieldWorks). A checker
+that throws raises `SpellCheckerFailed` (written to `Trace` once per writing system when nothing handles it) and is left alone; it does not end
+the application. A host that repairs the dictionary raises `DictionariesChanged` (or calls `RestartSpelling`), which tries that writing system again. The playground's "Spell checking" scenario shows it with a
 short English and French word list.
+
+What a host calls (the field restarts checking itself on an edit through the editor, `Apply`, `ExternalReplaceParagraph`, a change of
+`IsReadOnly` on the field or its editor, a word added or ignored, and a `DictionariesChanged` notice): after it changes the document
+directly, `RichTextField.RefreshFromDocument()`, which restarts checking too. A paragraph notices a change to its runs, a run's text, writing
+system or object data, a replaced property bag and a new style (`Paragraph.ChangeStamp`) and its marks go at the next draw, but the layout and a
+property bag changed in place are seen only after `RefreshFromDocument()`. After a style change that alters what is checked,
+`RestartSpelling()`. After repairing a failed dictionary, raise `DictionariesChanged`.
 
 ## Colours and themes
 

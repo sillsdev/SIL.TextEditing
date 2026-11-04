@@ -5,13 +5,15 @@ using System.Globalization;
 namespace SIL.TextEditing
 {
     /// <summary>
-    /// A deliberately simple word rule for double-click and Ctrl+Left/Right, built on <see cref="GraphemeClusters"/>.
-    /// Every grapheme cluster has a class taken from its first code point: Word (letter, digit, mark, connector
-    /// punctuation such as underscore), Space (white space), Object (U+FFFC, an inline object) or Other (any other
-    /// punctuation or symbol). A word is a maximal run of Word clusters; an apostrophe (U+0027 or U+2019) with a Word
-    /// cluster on both sides is part of the word. A run of Space or of Other clusters is its own "word" for double-click,
-    /// and an Object is always alone. There is no dictionary, so Thai, Khmer and Chinese text without spaces is one
-    /// word per run of letters; a host that needs better can replace the rule. This is not UAX #29 word breaking.
+    /// A deliberately simple word rule for double-click and Ctrl+Left/Right, built on <see cref="GraphemeClusters"/> and sharing its
+    /// idea of a word with the spell checker (<see cref="SpellScanner"/>), as FieldWorks' views do. Every grapheme cluster has a class
+    /// taken from its first code point: Word (what <see cref="SpellScanner.DefaultIsWordForming"/> says forms words, or a number),
+    /// Space (white space), Object (U+FFFC, an inline object) or Other (any other punctuation or symbol, an underscore and a
+    /// format character included). A word is a maximal run of Word clusters; an apostrophe (U+0027 or U+2019) with a Word cluster on
+    /// both sides is part of the word (<see cref="SpellScanner.DefaultJoinsWords"/>; a zero-width joiner or non-joiner is part of
+    /// the cluster before it). A run of Space or of Other clusters is its own "word" for double-click, and an Object is always alone.
+    /// There is no dictionary, so Thai, Khmer and Chinese text without spaces is one word per run of letters; a host that needs better
+    /// can replace the rule. This is not UAX #29 word breaking.
     /// </summary>
     public static class WordBreaks
     {
@@ -22,21 +24,13 @@ namespace SIL.TextEditing
             char c = text[index];
             if (c == '￼') return Kind.Object;
             if (char.IsWhiteSpace(c)) return Kind.Space;
+            int codePoint = char.IsHighSurrogate(c) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]) ? char.ConvertToUtf32(c, text[index + 1]) : c;
+            if (SpellScanner.DefaultIsWordForming(codePoint)) return Kind.Word;
             switch (CharUnicodeInfo.GetUnicodeCategory(text, index))
             {
-                case UnicodeCategory.UppercaseLetter:
-                case UnicodeCategory.LowercaseLetter:
-                case UnicodeCategory.TitlecaseLetter:
-                case UnicodeCategory.ModifierLetter:
-                case UnicodeCategory.OtherLetter:
-                case UnicodeCategory.NonSpacingMark:
-                case UnicodeCategory.SpacingCombiningMark:
-                case UnicodeCategory.EnclosingMark:
                 case UnicodeCategory.DecimalDigitNumber:
                 case UnicodeCategory.LetterNumber:
                 case UnicodeCategory.OtherNumber:
-                case UnicodeCategory.ConnectorPunctuation:
-                case UnicodeCategory.Format:
                     return Kind.Word;
                 default:
                     return Kind.Other;

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 using static SIL.TextEditing.Tests.TestDocs;
 
@@ -453,7 +454,7 @@ namespace SIL.TextEditing.Tests
             var after = SemiThen("semi", "tail");
             after.SetCaret(new TextPosition(0, 4));
             after.Paste(new List<Paragraph> { Para("en", "en", "Q") });
-            Assert.Equal(new[] { RunEditable.SemiEditable, RunEditable.Editable }, after.Document.Paragraphs[0].Runs.ConvertAll(r => r.Editable).ToArray());
+            Assert.Equal(new[] { RunEditable.SemiEditable, RunEditable.Editable }, after.Document.Paragraphs[0].Runs.Select(r => r.Editable).ToArray());
             Assert.Equal("semiQ", after.Document.Paragraphs[0].Runs[0].Text);
 
             var p = new Paragraph { DefaultWs = "en" };
