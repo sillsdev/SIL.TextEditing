@@ -96,10 +96,10 @@ one, and can change without superseding anything.
   first writing system changes. FieldWorks sets the keyboard for the first writing system a selection covers, not for the end
   the caret is at, so selecting forward from English into French changes nothing and the field matches that. It is also raised
   when the field gains focus, with the old and new both the writing system at the caret, because the keyboard in effect then
-  belongs to whatever had focus before (FieldWorks sets the keyboard for the selection on focus too). The one difference from
-  FieldWorks is ours: its views do not switch the keyboard while they lack focus, the field still reports a change while it lacks
-  focus, and the host ignores one from a field that is not the focused one. The old and new being equal on focus gain, and
-  reporting while unfocused, are defaults, not owner decisions.
+  belongs to whatever had focus before (FieldWorks sets the keyboard for the selection on focus too). The field raises nothing while it lacks
+  focus (issue #59): FieldWorks' views do not set the keyboard without focus, so a change made while unfocused (a host setting the
+  caret in a background field, say) is reported once, as the focus-gain event, with the writing system the field has by then.
+  The old and new being equal on focus gain is a default, not an owner decision.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

@@ -78,8 +78,9 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
 ## Keyboards (ADR 0008)
 
 The field never switches keyboards; the host does. Subscribe to `RichTextField.ActiveWsChanged` (old and new writing system)
-and switch the OS keyboard or Keyman to the new one, but only for the field the user is in: the event is raised whether or not
-the field has focus. It is raised once per change, never when the writing system stays the same, when the caret moves into text
+and switch the OS keyboard or Keyman to the new one. The field raises it only while it has focus, as FieldWorks' views set the
+keyboard only with focus; a change made while it is unfocused is not reported, and the focus-gain event below carries the result.
+It is raised once per change, never when the writing system stays the same, when the caret moves into text
 of another writing system, when a selection's first writing system changes (a selection takes the writing system of the first
 text it covers, as in FieldWorks), when an edit or undo leaves the caret in another one, and when the host or the writing-system
 toolbar calls `Editor.SetActiveWs`. It is also raised, with old and new equal, when the field gains focus, so the host can
