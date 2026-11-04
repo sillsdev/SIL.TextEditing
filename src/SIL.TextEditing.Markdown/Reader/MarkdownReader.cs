@@ -90,9 +90,12 @@ namespace SIL.TextEditing.Markdown.Reader
             foreach (var block in document) items.Add(new KeyValuePair<int, object>(block.Span.Start, block));
             foreach (var fence in fences) items.Add(new KeyValuePair<int, object>(fence.Start, fence));
             items.Sort((a, b) => a.Key.CompareTo(b.Key));
+            var fenceStarts = new HashSet<int>();
+            foreach (var fence in fences) fenceStarts.Add(fence.Start);
             foreach (var item in items)
             {
-                if (item.Value is Fence fence) ReadFence(fence);
+                if (item.Value is Fence fenceBlock) ReadFence(fenceBlock);
+                else if (item.Value is ThematicBreakBlock && fenceStarts.Contains(item.Key)) continue; // a blanked fence, see Interrupt
                 else ReadBlock((Block)item.Value, blanked);
             }
         }
@@ -164,6 +167,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     {
                         open.Closed = true;
                         Blank(blanked, openLineStart, next);
+                        Interrupt(blanked, open);
                         fences.Add(open);
                         open = null;
                     }
@@ -176,9 +180,17 @@ namespace SIL.TextEditing.Markdown.Reader
                 _context.Report(MarkdownDiagnosticIds.UnclosedMark, MarkdownSeverity.Error, "This ::: block is never closed. Add a line with :::.", open.Start, Math.Min(_source.Length, open.Start + 3),
                     replacement: null);
                 Blank(blanked, openLineStart, s.Length);
+                Interrupt(blanked, open);
                 fences.Add(open);
             }
             return blanked.ToString();
+        }
+
+        /// <summary>A blanked fence still ends the list, quote or paragraph before it: its first three characters become a thematic break,
+        /// which the reader skips. Without it, two lists with a fence between them would read as one.</summary>
+        static void Interrupt(StringBuilder text, Fence fence)
+        {
+            for (int i = 0; i < 3; i++) text[fence.Start + i] = '*';
         }
 
         static void Blank(StringBuilder text, int start, int end)

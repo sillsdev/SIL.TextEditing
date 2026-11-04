@@ -19,8 +19,10 @@ namespace SIL.TextEditing.Markdown.Reader
         public PropertyBag Props = new PropertyBag();
         public string? ObjData;
         public bool IsLink;
+        /// <summary>Which object span the text belongs to (0 for none): the pieces of one link are one run.</summary>
+        public int Scope;
 
-        public Fmt Clone() => new Fmt { Ws = Ws, Vernacular = Vernacular, Cs = Cs, CsName = CsName, Props = Props.Clone(), ObjData = ObjData, IsLink = IsLink };
+        public Fmt Clone() => new Fmt { Ws = Ws, Vernacular = Vernacular, Cs = Cs, CsName = CsName, Props = Props.Clone(), ObjData = ObjData, IsLink = IsLink, Scope = Scope };
     }
 
     /// <summary>Turns the inline tree Markdig built into runs (spec 3.2).</summary>
@@ -54,8 +56,23 @@ namespace SIL.TextEditing.Markdown.Reader
             var run = new Run { Text = text, Ws = ResolveWs(fmt), Props = fmt.Props.Clone(), ObjData = fmt.ObjData };
             string? cs = fmt.Cs == CsState.Explicit ? fmt.CsName : fmt.Cs == CsState.None ? null : (fmt.IsLink ? _options.StyleNames.Hyperlink : null);
             if (cs != null) run.Props.StrProps[TextPropertyNumbers.NamedStyle] = cs;
+            // Markdig hands over one link's text in pieces (an escaped bracket is a piece of its own). Runs with object data never
+            // merge afterwards, so the pieces of one object span are joined here.
+            if (fmt.Scope != 0 && fmt.Scope == _lastScope && _runs.Count > 0)
+            {
+                var last = _runs[_runs.Count - 1];
+                if (last.Ws == run.Ws && last.ObjData == run.ObjData && last.Props.ContentEquals(run.Props))
+                {
+                    last.Text += text;
+                    return;
+                }
+            }
+            _lastScope = fmt.Scope;
             _runs.Add(run);
         }
+
+        int _scopes;
+        int _lastScope;
 
         string ResolveWs(Fmt fmt)
         {
@@ -291,6 +308,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 if (form.IsInternal || form.IsPicture || form.Url != null)
                     _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "s6 is the object data; it cannot be combined with a link or picture.", start, end);
                 fmt.ObjData = form.S6;
+                fmt.Scope = ++_scopes;
                 return fmt;
             }
             var target = new MarkdownObject();
@@ -324,6 +342,7 @@ namespace SIL.TextEditing.Markdown.Reader
             if (_options.Objects.TryCreateObjData(target, out string objData, out string? problem))
             {
                 fmt.ObjData = objData;
+                fmt.Scope = ++_scopes;
                 if (!form.IsPicture) fmt.IsLink = true;
             }
             else

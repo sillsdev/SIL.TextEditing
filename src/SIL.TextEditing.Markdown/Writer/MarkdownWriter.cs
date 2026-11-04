@@ -38,11 +38,13 @@ namespace SIL.TextEditing.Markdown.Writer
             paragraph.Normalize();
             var cells = new List<List<Run>> { paragraph.Runs };
             var generator = new InlineGenerator(options, BlockContext.Plain());
-            string? text = writer.Search(generator, cells, candidate =>
+            bool Reads(string candidate)
             {
                 var back = MarkdownReader.ReadInline(candidate, options, out var findings);
                 return !findings.Any(f => f.Severity == MarkdownSeverity.Error && MarkdownReader.IsSyntaxFinding(f.Id)) && Equivalence.Equal(paragraph.Runs, back);
-            });
+            }
+            // The text is read with and without a final line end: a file has one, a string in a database may not.
+            string? text = writer.Search(generator, cells, candidate => Reads(candidate) && Reads(candidate + "\n"));
             return text ?? throw new MarkdownWriteException("The runs cannot be written so that they read back unchanged.");
         }
 
@@ -137,10 +139,10 @@ namespace SIL.TextEditing.Markdown.Writer
 
         static string Describe(Entry e) => "style '" + e.Paragraph.Style + "', " + e.Paragraph.Runs.Count + " runs, " + e.Paragraph.Length + " characters";
 
-        bool ReadsBack(string blockText, Paragraph expected)
+        bool ReadsBack(string blockText, Paragraph expected, int paragraphs = 1)
         {
-            var read = MarkdownReader.ReadParagraphs(blockText, _options, out bool clean);
-            return clean && read.Count == 1 && Equivalence.Equal(expected, read[0]);
+            var read = MarkdownReader.ReadParagraphs(blockText + "\n", _options, out bool clean); // a block is always followed by a line end
+            return clean && read.Count == paragraphs && Equivalence.Equal(expected, read[0]);
         }
 
         // ---------------------------------------------------------------- the ladder
@@ -216,7 +218,7 @@ namespace SIL.TextEditing.Markdown.Writer
             {
                 var entry = entries[i];
                 var generator = new InlineGenerator(_options, context);
-                string? text = Search(generator, OneCell(entry), candidate => ReadsBack(context.Wrap(candidate), entry.Paragraph));
+                string? text = Search(generator, OneCell(entry), candidate => ReadsBack(context.Wrap(candidate), entry.Paragraph, 2));
                 if (text == null) throw new MarkdownWriteException("A paragraph in a fenced block cannot be written so that it reads back unchanged: " + Describe(entry));
                 sb.Append('\n').Append(text);
             }
@@ -227,7 +229,8 @@ namespace SIL.TextEditing.Markdown.Writer
 
         static string Delimiter(int width) => "|" + string.Concat(Enumerable.Repeat(" --- |", width));
 
-        static string DummyHeader(int width) => "|" + string.Concat(Enumerable.Repeat(" x |", width));
+
+        static string SyntheticRow(int width) => "|" + string.Concat(Enumerable.Repeat(" [x]{v} |", width));
 
         static bool CellEligible(Entry e)
         {
@@ -252,6 +255,8 @@ namespace SIL.TextEditing.Markdown.Writer
             return cells;
         }
 
+        /// <summary>Writes a header and the rows after it that fit. Every row is checked inside the whole table written so far: an
+        /// open bracket in one cell can otherwise pair with a closing one in another row, which no single row shows.</summary>
         string? TryTable(List<Entry> entries, int start, out int used)
         {
             used = 0;
@@ -260,14 +265,27 @@ namespace SIL.TextEditing.Markdown.Writer
             var headerCells = SplitCells(header.Paragraph);
             int width = headerCells.Count;
             var context = new BlockContext { InTable = true };
-            string? headerLine = Search(new InlineGenerator(_options, context), headerCells,
-                candidate =>
-                {
-                    var read = MarkdownReader.ReadParagraphs(candidate + "\n" + Delimiter(width), _options, out bool clean);
-                    return clean && read.Count == 1 && Equivalence.Equal(header.Paragraph, read[0]);
-                });
+            var expected = new List<Paragraph> { header.Paragraph };
+            var lines = new List<string>();
+
+            bool TableReadsBack(string candidate)
+            {
+                string text = string.Join("\n", lines.Concat(new[] { candidate }));
+                var read = MarkdownReader.ReadParagraphs(text + "\n", _options, out bool clean);
+                if (!clean || read.Count != expected.Count) return false;
+                for (int i = 0; i < expected.Count; i++) if (!Equivalence.Equal(expected[i], read[i])) return false;
+                return true;
+            }
+
+            string? headerLine = Search(new InlineGenerator(_options, context), headerCells, candidate =>
+            {
+                // A row of closing brackets follows, so a bracket the header leaves open is caught here and not only when a later row closes it.
+                var read = MarkdownReader.ReadParagraphs(candidate + "\n" + Delimiter(width) + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
+                return clean && read.Count == 2 && Equivalence.Equal(header.Paragraph, read[0]);
+            });
             if (headerLine == null) return null;
-            var lines = new List<string> { headerLine, Delimiter(width) };
+            lines.Add(headerLine);
+            lines.Add(Delimiter(width));
             int j = start + 1;
             while (j < entries.Count)
             {
@@ -275,13 +293,9 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (row.IsEmpty || row.Props.Count > 0 || row.Paragraph.Style != Names.TableRow || !CellEligible(row)) break;
                 var cells = SplitCells(row.Paragraph);
                 if (cells.Count != width) break;
-                string? line = Search(new InlineGenerator(_options, context), cells,
-                    candidate =>
-                    {
-                        var read = MarkdownReader.ReadParagraphs(DummyHeader(width) + "\n" + Delimiter(width) + "\n" + candidate, _options, out bool clean);
-                        return clean && read.Count == 2 && Equivalence.Equal(row.Paragraph, read[1]);
-                    });
-                if (line == null) break;
+                expected.Add(row.Paragraph);
+                string? line = Search(new InlineGenerator(_options, context), cells, candidate => TableReadsBack(candidate));
+                if (line == null) { expected.RemoveAt(expected.Count - 1); break; }
                 lines.Add(line);
                 j++;
             }

@@ -32,7 +32,8 @@ namespace SIL.TextEditing.Markdown.Writer
         public static BlockContext Fence(string header) => new BlockContext
         {
             AllowsContinuation = true,
-            Wrap = text => "::: " + header + "\n" + text + "\n:::",
+            // A line follows the paragraph: a fence line that ends in a backslash continues into the next line, so the check needs one.
+            Wrap = text => "::: " + header + "\n" + text + "\nx\n:::",
         };
     }
 

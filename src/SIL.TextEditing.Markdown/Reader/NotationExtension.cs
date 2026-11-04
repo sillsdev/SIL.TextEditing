@@ -226,7 +226,8 @@ namespace SIL.TextEditing.Markdown.Reader
 
         public override bool Match(InlineProcessor processor, ref StringSlice slice)
         {
-            if (!(processor.Inline is LinkInline link) || !link.IsClosed || link.Span.End + 1 != slice.Start) return false;
+            // The link must end right before the brace. Its Span is unreliable inside a table cell, so look at the text.
+            if (!(processor.Inline is LinkInline link) || !link.IsClosed || slice.Start == 0 || slice.Text[slice.Start - 1] != ')') return false;
             var context = ReaderContext.From(processor.Context);
             if (context == null) return false;
             var status = AttributeScanner.TryScan(slice.Text, slice.Start, slice.End + 1, out var block, out int errorPos, out string error);
