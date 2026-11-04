@@ -180,6 +180,22 @@
     "canonical": "::: {custom-style=\"GDR Table Header\"}\n&#x9;\n:::\n\n::: {custom-style=\"GDR Table Row\"}\na&#x9;b\n:::\n"
   },
   {
+    "name": "a tab that is not plain analysis text cannot be a cell separator, so that row is left to a div",
+    "paragraphs": [
+      { "style": "GDR Table Header", "runs": [ { "text": "x\ty", "ws": "en" } ] },
+      { "style": "GDR Table Row", "runs": [ { "text": "a\t", "ws": "ceb" }, { "text": "b", "ws": "en" } ] }
+    ],
+    "canonical": "| x | y |\n|---|---|\n\n::: {custom-style=\"GDR Table Row\"}\n[a&#x9;]{.v}b\n:::\n"
+  },
+  {
+    "name": "an empty row that types in another writing system than the default cannot be a table row",
+    "paragraphs": [
+      { "style": "GDR Table Header", "runs": [ { "text": "H", "ws": "en" } ] },
+      { "style": "GDR Table Row", "typingWs": "ar" }
+    ],
+    "canonical": "| H |\n|---|\n\n::: {custom-style=\"GDR Table Row\"}\n[]{.empty ws=ar}\n:::\n"
+  },
+  {
     "name": "a header row in the middle of rows starts a new table",
     "paragraphs": [
       { "style": "GDR Table Header", "runs": [ { "text": "A\tB", "ws": "en" } ] },

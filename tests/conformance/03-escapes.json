@@ -139,6 +139,11 @@
     "canonical": "a\\\nb\n"
   },
   {
+    "name": "a line separator at the start or the end of a paragraph, or next to another, is a reference, because a line end there would be dropped",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": " a ", "ws": "en" } ] }, { "style": "Normal", "runs": [ { "text": "a  b", "ws": "en" } ] } ],
+    "canonical": "&#x2028;a&#x2028;\n\na&#x2028;&#x2028;b\n"
+  },
+  {
     "name": "a literal backslash at the end of a paragraph is two",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "a\\", "ws": "en" } ] } ],
     "canonical": "a\\\\\n"

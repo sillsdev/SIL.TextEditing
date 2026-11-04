@@ -8,6 +8,7 @@
       "ceb-x-old": { "lang": "ceb", "dir": "ltr", "font": "Doulos SIL" },
       "ar": { "lang": "ar", "dir": "rtl", "font": "Scheherazade New" }
     },
+    "tableStyles": { "header": "GDR Table Header", "row": "GDR Table Row" },
     "styles": {
       "paragraph": [ "Normal", "Heading 1", "Heading 2", "Heading 3", "Bulleted List", "Numbered List", "Block Quote", "Example", "GDR Table Header", "GDR Table Row" ],
       "character": [ "Hyperlink", "Emphasized Text" ]

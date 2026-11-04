@@ -287,8 +287,7 @@
       { "text": "palit", "ws": "en", "props": { "s133": "Hyperlink" }, "link": { "guid": "a1b2c3d4-0000-4000-8000-000000000001", "tool": "lexiconEdit" } }
     ] } ],
     "findings": [ { "id": "fwmd.link.url-rebuilt", "severity": "suggestion", "line": 1, "column": 1, "endLine": 1, "endColumn": 213 } ],
-    "canonical": "[palit](/lexicon/palit(1)){.name guid=a1b2c3d4-0000-4000-8000-000000000001}\n",
-    "pandoc": false
+    "canonical": "[palit](/lexicon/palit(1)){.name guid=a1b2c3d4-0000-4000-8000-000000000001}\n"
   },
   {
     "name": "a tool the path does not give is written as tool=",

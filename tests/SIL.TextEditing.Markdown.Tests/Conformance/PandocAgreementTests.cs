@@ -83,3 +83,27 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         }
     }
 }
+namespace SIL.TextEditing.Markdown.Tests.Conformance
+{
+    /// <summary>The brief: Pandoc reads every fixture. A case with an error finding is read as the text it is only by this library, so it is excluded by its nature; any other case
+    /// that Pandoc is not asked to read says why.</summary>
+    public class PandocExclusionTests
+    {
+        [Fact]
+        public void EveryCaseWithoutAnErrorIsReadByPandocOrSaysWhyNot()
+        {
+            var unexplained = ConformanceLoader.All().Where(c => !c.Pandoc && !c.HasErrors && c.PandocReason == null).Select(c => c.Id).ToList();
+            Assert.True(unexplained.Count == 0, "These cases without an error switch Pandoc off with no reason (\"pandoc\": \"why\"):\n" + string.Join("\n", unexplained));
+        }
+
+        [Fact]
+        public void TheExcludedCasesAreCounted()
+        {
+            var all = ConformanceLoader.All();
+            int errors = all.Count(c => c.HasErrors);
+            int excluded = all.Count(c => !c.Pandoc && !c.HasErrors);
+            // A number to keep an eye on: every case here is one the format is not checked against Pandoc for.
+            Assert.True(excluded <= 12, excluded + " cases without an error are not read by Pandoc (" + errors + " have errors)");
+        }
+    }
+}

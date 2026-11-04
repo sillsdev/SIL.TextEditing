@@ -102,8 +102,7 @@
   {
     "name": "a string with a control character is written as hex, four uppercase digits for each UTF-16 code unit",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "￼", "ws": "en", "objData": "\u0005ab" } ] } ],
-    "canonical": "[&#xFFFC;]{s6x=000500610062}\n",
-    "pandoc": false
+    "canonical": "[&#xFFFC;]{s6x=000500610062}\n"
   },
   {
     "name": "a NUL is an empty span with the class nul",
@@ -127,8 +126,7 @@
     "name": "a typed reference to NUL or a surrogate reads as the replacement character",
     "markdown": "a&#x0;b &#xD800;\n",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "a�b �", "ws": "en" } ] } ],
-    "canonical": "a�b �\n",
-    "pandoc": false
+    "canonical": "a�b �\n"
   },
   {
     "name": "superscript and subscript are read as Pandoc reads them and written as attributes",

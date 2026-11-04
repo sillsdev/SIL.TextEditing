@@ -24,6 +24,10 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         readonly List<string> _known = new List<string>();
         readonly List<string> _paragraphStyles = new List<string>(), _characterStyles = new List<string>();
 
+        /// <summary>The table styles the project names (spec 3.1: the host names them; a GDR template creates two), or null for the library's defaults.</summary>
+        public string? TableHeaderStyle { get; private set; }
+        public string? TableRowStyle { get; private set; }
+
         public string DefaultAnalysis { get; private set; } = "en";
         public string DefaultVernacular { get; private set; } = "ceb";
 
@@ -47,6 +51,11 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 }
             }
             else host._known.AddRange(new[] { "en", "ceb", "ceb-x-old", "ar" });
+            if (project.TryGetValue("tableStyles", out var tableStyles) && tableStyles != null)
+            {
+                host.TableHeaderStyle = Json.OptStr(Json.Obj(tableStyles), "header");
+                host.TableRowStyle = Json.OptStr(Json.Obj(tableStyles), "row");
+            }
             if (project.TryGetValue("styles", out var styles) && styles != null)
             {
                 var s = Json.Obj(styles);

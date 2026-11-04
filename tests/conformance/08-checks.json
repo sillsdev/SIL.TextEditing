@@ -49,8 +49,7 @@
     "name": "ok: fwmd.syntax.too-deep a short nest of quotes",
     "markdown": "> x\n",
     "paragraphs": [ { "style": "Block Quote", "runs": [ { "text": "x", "ws": "en" } ] } ],
-    "canonical": "> x\n",
-    "pandoc": false
+    "canonical": "> x\n"
   },
   {
     "name": "text nested deeper than the reader allows is one finding and its lines are kept as text",

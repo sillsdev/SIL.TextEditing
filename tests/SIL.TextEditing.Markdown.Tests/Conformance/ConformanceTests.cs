@@ -52,6 +52,8 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 Styles = host.HasStyles ? host : null,
                 WriteFrontMatter = c.ExplicitFrontMatter,
             };
+            if (host.TableHeaderStyle != null) options.StyleNames.TableHeader = host.TableHeaderStyle;
+            if (host.TableRowStyle != null) options.StyleNames.TableRow = host.TableRowStyle;
             if (c.Options != null)
             {
                 string? form = Json.OptStr(c.Options, "linkForm");

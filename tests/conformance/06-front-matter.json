@@ -48,8 +48,7 @@
     "frontMatter": "explicit",
     "markdown": "---\nfwmd: 1\nanalysis: en\nvernacular: 'ceb'\n---\n\n[x]{.v}\n",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "ceb" } ] } ],
-    "canonical": "---\nfwmd: 1\nanalysis: \"en\"\nvernacular: \"ceb\"\nwritingSystems:\n  en:\n    lang: \"en\"\n    dir: \"ltr\"\n    font: \"Charis SIL\"\n  ceb:\n    lang: \"ceb\"\n    dir: \"ltr\"\n    font: \"Charis SIL\"\n---\n\n[x]{.v}\n",
-    "pandoc": false
+    "canonical": "---\nfwmd: 1\nanalysis: \"en\"\nvernacular: \"ceb\"\nwritingSystems:\n  en:\n    lang: \"en\"\n    dir: \"ltr\"\n    font: \"Charis SIL\"\n  ceb:\n    lang: \"ceb\"\n    dir: \"ltr\"\n    font: \"Charis SIL\"\n---\n\n[x]{.v}\n"
   },
   {
     "name": "a version that is not a number is malformed",
@@ -64,16 +63,14 @@
     "project": "standard",
     "frontMatter": "explicit",
     "markdown": "---\ntitle: A title\n---\n\nx\n",
-    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en" } ] } ],
-    "pandoc": false
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en" } ] } ]
   },
   {
     "name": "text with no front matter takes the host's defaults",
     "project": "standard",
     "frontMatter": "explicit",
     "markdown": "[x]{.v} y\n",
-    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "ceb" }, { "text": " y", "ws": "en" } ] } ],
-    "pandoc": false
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "ceb" }, { "text": " y", "ws": "en" } ] } ]
   },
   {
     "name": "run text is normalised to NFD on import and attribute values are not",

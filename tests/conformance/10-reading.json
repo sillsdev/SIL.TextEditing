@@ -3,15 +3,13 @@
     "name": "a byte order mark at the start is ignored",
     "frontMatter": "explicit",
     "markdown": "﻿x\n",
-    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en" } ] } ],
-    "pandoc": false
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en" } ] } ]
   },
   {
     "name": "a byte order mark in front of the front matter is ignored too",
     "frontMatter": "explicit",
     "markdown": "﻿---\nfwmd: 1\nanalysis: \"ceb\"\nvernacular: \"en\"\n---\n\nx\n",
-    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "ceb" } ] } ],
-    "pandoc": false
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "ceb" } ] } ]
   },
   {
     "name": "a soft line break is one space",

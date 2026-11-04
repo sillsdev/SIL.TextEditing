@@ -23,8 +23,7 @@
     "paragraphs": [ { "style": "Normal", "runs": [
       { "text": "x", "ws": "en", "props": { "s133": "Hyperlink" }, "link": { "guid": "00000007-0000-4000-8000-000000000007", "tool": "lexiconEdit" } }
     ] } ],
-    "canonical": "[x](/lexicon/café){guid=00000007-0000-4000-8000-000000000007}\n",
-    "pandoc": false
+    "canonical": "[x](/lexicon/café){guid=00000007-0000-4000-8000-000000000007}\n"
   },
   {
     "name": "a name that itself ends in a number in parentheses has those parentheses encoded, so it is not read as a homograph number",

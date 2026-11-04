@@ -71,6 +71,10 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
 
         public static ConformanceCase Find(string id) => All().First(c => c.Id == id);
 
+        static bool StartsWithFrontMatter(string? text)
+            => text != null && (text.StartsWith("---\n", StringComparison.Ordinal) || text.StartsWith(((char)0xFEFF) + "---\n", StringComparison.Ordinal));
+
+
         static ConformanceCase Load(string file, Dictionary<string, object?> o)
         {
             var c = new ConformanceCase { File = file, Name = Json.Str(o["name"]) };
@@ -107,6 +111,8 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             }
             if (o.TryGetValue("project", out var pr) && pr != null) c.Project = pr is string name ? Json.Obj(Projects()[name]) : Json.Obj(pr);
             if (o.TryGetValue("options", out var op) && op != null) c.Options = Json.Obj(op);
+            // A case written the way spec 6.3 shows it, with its front matter inside the text, is a whole file: the runner adds nothing.
+            if (StartsWithFrontMatter(c.Markdown) || (c.Markdown == null && StartsWithFrontMatter(c.Canonical))) c.ExplicitFrontMatter = true;
             return c;
         }
 
