@@ -3,9 +3,12 @@ using System.Collections.Generic;
 
 namespace SIL.TextEditing.LCModel
 {
-    /// <summary>FieldWorks' "TsString" clipboard form (ADR 0029), for a host to register on a field:
+    /// <summary>The field's own TsString-XML clipboard form (ADR 0029), for a host to register on a field. It is NOT FieldWorks' wire format: FieldWorks stores a
+    /// .NET-serialised TsStringWrapper under "TsString", so this form uses its own format name (<see cref="TsStringClipboard.XmlFormatName"/>) and writes nothing under
+    /// "TsString". FieldWorks interop is the host's job: it registers a form with the id and format name "TsString" that wraps and unwraps the XML with its own wrapper.
+    /// Usage:
     /// <c>field.ClipboardForms.Add(new TsStringClipboardForm(handles))</c>. Copy writes the selection as the XML of one ITsString
-    /// (<see cref="TsStringClipboard.ToPayload"/>: paragraphs joined with <see cref="TsStringClipboard.FieldWorksParagraphSeparator"/>,
+    /// (<see cref="TsStringClipboard.FragmentToXml"/>: paragraphs joined with <see cref="TsStringClipboard.FieldWorksParagraphSeparator"/>,
     /// as FieldWorks' own copy does) and paste reads one, so a FieldWorks paste of our copy agrees with its own. By default the pasted
     /// string is one paragraph, as FieldWorks pastes it; <see cref="PasteParagraphSeparator"/> splits it at a separator instead. A
     /// writing system the payload names that the host's handles do not know keeps its id (it is given a handle only for the length
@@ -28,16 +31,20 @@ namespace SIL.TextEditing.LCModel
 
         public string Id => ClipboardForms.TsStringId;
         public string DisplayName => "TsString";
-        public string FormatName => TsStringClipboard.FormatName;
+        public string FormatName => TsStringClipboard.XmlFormatName;
         public bool OffersCopyAs => false;
 
         public string? Write(IReadOnlyList<Paragraph> fragment) =>
-            fragment.Count == 0 ? null : TsStringClipboard.ToPayload(fragment, _writingSystems, WriteParagraphSeparator).TsStringXml;
+            fragment.Count == 0 ? null : TsStringClipboard.FragmentToXml(fragment, _writingSystems, WriteParagraphSeparator);
 
         public IReadOnlyList<Paragraph>? Read(string payload)
         {
             if (payload.IndexOf("<Str", StringComparison.Ordinal) < 0) return null;   // not a TsString payload
-            return TsStringClipboard.FromXmlToFragment(payload, new ReadHandles(_writingSystems), PasteParagraphSeparator);
+            try { return TsStringClipboard.FromXmlToFragment(payload, new ReadHandles(_writingSystems), PasteParagraphSeparator); }
+            catch (Exception e) when (e is System.Xml.XmlException || e is ArgumentException || e is InvalidOperationException || e is FormatException)
+            {
+                return null;   // text that only looks like TsString XML: not ours, the next form is tried
+            }
         }
 
         /// <summary>The host's handles for one read, plus a temporary handle for each id the host does not know: LCModel refuses a

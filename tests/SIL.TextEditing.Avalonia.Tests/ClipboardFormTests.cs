@@ -247,5 +247,25 @@ namespace SIL.TextEditing.Avalonia.Tests
             }
             finally { window.Close(); }
         });
+
+        [Fact]
+        public void A_serialised_object_under_the_TsString_format_name_is_skipped_and_paste_falls_through() => Headless.Run(async () =>
+        {
+            // FieldWorks stores a .NET-serialised wrapper object there, bytes that are not text. A form that reads text must see "not mine", never throw.
+            var ts = new FakeClipboardForm(ClipboardForms.TsStringId, formatName: "TsString");
+            var (window, field, top) = Shown(OneParagraph(""), ts);
+            try
+            {
+                var item = new global::Avalonia.Input.DataTransferItem();
+                item.SetText("plain fallback");
+                item.Set(global::Avalonia.Input.DataFormat.CreateBytesPlatformFormat("TsString"), new byte[] { 0, 1, 0, 0, 0, 255, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 12, 2, 0, 0, 0 });
+                var transfer = new global::Avalonia.Input.DataTransfer();
+                transfer.Add(item);
+                await top.Clipboard!.SetDataAsync(transfer);
+                await field.PasteAsync();
+                Assert.Equal("plain fallback", field.Editor.Document.Paragraphs[0].Text);
+            }
+            finally { window.Close(); }
+        });
     }
 }

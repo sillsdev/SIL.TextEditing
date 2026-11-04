@@ -19,7 +19,11 @@ the planned scope needs them; either can be added later without changing the for
 `SIL.TextEditing.Runs.v1` XML (FieldWorks Markdown now carries everything it did, as a documented format, so Runs.v1
 stays only as a test and debug dump).
 
-**Consequences:** Markdown on the clipboard always carries its front matter, so unmarked text never takes its writing
+**Consequences:** FieldWorks' "TsString" clipboard format is a .NET-serialised `TsStringWrapper` that lives in FieldWorks' own SimpleRootSite, not in
+liblcm, so the field and the LCModel adapter neither reference nor copy it. The adapter's `TsStringClipboardForm` is TsString XML under its own format name; FieldWorks, as
+the host, registers a form under "TsString" that wraps and unwraps the adapter's XML with its wrapper. Nothing writes raw XML under "TsString", and a payload a form cannot
+read is skipped so paste falls through. A TsString copy of several paragraphs joins them with "; " and pastes as one paragraph, as FieldWorks does; with TsString first in the
+paste order, a copy of several paragraphs from one field to another therefore loses its paragraph breaks unless the FieldWorks Markdown form is tried first. Markdown on the clipboard always carries its front matter, so unmarked text never takes its writing
 system from the target project's defaults. This refines ADR 0016, which put only the TsString format in the adapter
 package. FieldWorks Markdown is a back end first (agents, files, drafting); on the clipboard it is an extra form, not
 the default.

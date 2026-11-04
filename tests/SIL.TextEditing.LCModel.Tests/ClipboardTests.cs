@@ -32,22 +32,21 @@ namespace SIL.TextEditing.LCModel.Tests
                 new TextParagraph(null, Nfd(), null),
                 new TextParagraph(null, Mixed(), null),
             }, H);
-            var payload = TsStringClipboard.ToPayload(doc.Paragraphs, H);
-            Assert.Equal("\u00E9col\u00E9 \u00E0; Plain bold on bold off bold invert styled big red", payload.PlainTextNfc);
-            Assert.Contains("<Str", payload.TsStringXml);
+            var xml = TsStringClipboard.FragmentToXml(doc.Paragraphs, H);
+            Assert.Contains("<Str", xml);
             Assert.Equal("\u00E9col\u00E9 \u00E0; Plain bold on bold off bold invert styled big red",
-                TsStringClipboard.FromXml(payload.TsStringXml, H).Text.Normalize(NormalizationForm.FormC));
+                TsStringClipboard.FromXml(xml, H).Text.Normalize(NormalizationForm.FormC));
         }
 
         [Fact]
         public void Paragraph_separator_is_a_parameter_that_defaults_to_FieldWorks()
         {
             var doc = TsStringConversion.ToDocument(new[] { new TextParagraph(null, Nfd(), null), new TextParagraph(null, Fr2(), null) }, H);
-            Assert.Equal("\u00E9col\u00E9 \u00E0; deux", TsStringClipboard.ToPayload(doc.Paragraphs, H).PlainTextNfc);
-            var lf = TsStringClipboard.ToPayload(doc.Paragraphs, H, "\n");
-            Assert.Equal("\u00E9col\u00E9 \u00E0\ndeux", lf.PlainTextNfc);
-            Assert.Equal(2, TsStringClipboard.FromXmlToFragment(lf.TsStringXml, H, "\n").Count);
-            Assert.Single(TsStringClipboard.FromXmlToFragment(lf.TsStringXml, H));      // FieldWorks pastes one paragraph
+            Assert.Equal("écolé à; deux", TsStringClipboard.FromXml(TsStringClipboard.FragmentToXml(doc.Paragraphs, H), H).Text.Normalize(NormalizationForm.FormC));
+            var lf = TsStringClipboard.FragmentToXml(doc.Paragraphs, H, "\n");
+            Assert.Equal("écolé à\ndeux", TsStringClipboard.FromXml(lf, H).Text.Normalize(NormalizationForm.FormC));
+            Assert.Equal(2, TsStringClipboard.FromXmlToFragment(lf, H, "\n").Count);
+            Assert.Single(TsStringClipboard.FromXmlToFragment(lf, H));      // FieldWorks pastes one paragraph
         }
 
         static ITsString Fr2() => Build(("deux", Props(Handles.Fr)));
@@ -69,9 +68,8 @@ namespace SIL.TextEditing.LCModel.Tests
                 new TextParagraph(System.Guid.NewGuid(), Nfd(), null),
                 new TextParagraph(System.Guid.NewGuid(), Mixed(), null),
             }, H);
-            var payload = TsStringClipboard.ToPayload(doc.Paragraphs, H);
-            payload = TsStringClipboard.ToPayload(doc.Paragraphs, H, "\n");
-            var fragment = TsStringClipboard.FromXmlToFragment(payload.TsStringXml, H, "\n");
+            var xml = TsStringClipboard.FragmentToXml(doc.Paragraphs, H, "\n");
+            var fragment = TsStringClipboard.FromXmlToFragment(xml, H, "\n");
             Assert.Equal(2, fragment.Count);
             Assert.All(fragment, p => Assert.Null(p.Key));
             Assert.Equal("e\u0301cole\u0301 a\u0300", fragment[0].Text);
@@ -83,7 +81,8 @@ namespace SIL.TextEditing.LCModel.Tests
         {
             var form = new TsStringClipboardForm(H);
             Assert.Equal("TsString", form.Id);
-            Assert.Equal(TsStringClipboard.FormatName, form.FormatName);
+            Assert.Equal(TsStringClipboard.XmlFormatName, form.FormatName);
+            Assert.NotEqual("TsString", form.FormatName);   // that name is FieldWorks' wrapper, which a host registers
             Assert.False(form.OffersCopyAs);
             var doc = TsStringConversion.ToDocument(new[] { new TextParagraph(null, Nfd(), null), new TextParagraph(null, Fr2(), null) }, H);
             var xml = form.Write(doc.Paragraphs)!;
@@ -121,6 +120,14 @@ namespace SIL.TextEditing.LCModel.Tests
             var mapping = ClipboardWritingSystems.MapMissing(fragment, ws => ws == "fr", "en");
             Assert.Equal(new[] { "xx" }, mapping.Missing.ToArray());
             Assert.Equal(new[] { "fr", "en" }, fragment[0].Runs.Select(r => r.Ws).ToArray());
+        }
+
+        [Fact]
+        public void Text_that_only_looks_like_TsString_xml_reads_as_not_ours_instead_of_throwing()
+        {
+            var form = new TsStringClipboardForm(H);
+            Assert.Null(form.Read("<Str><Run ws=\"en\""));
+            Assert.Null(form.Read("garbage <Str but not xml"));
         }
     }
 }
