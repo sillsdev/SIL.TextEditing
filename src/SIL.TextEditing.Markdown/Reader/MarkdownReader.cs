@@ -36,13 +36,25 @@ namespace SIL.TextEditing.Markdown.Reader
             return new MarkdownParseResult(document, reader._context.Diagnostics);
         }
 
-        /// <summary>The paragraphs of a text, for the writer's check that what it wrote reads back. Findings are dropped.</summary>
-        public static List<Paragraph> ReadParagraphs(string markdown, MarkdownOptions options)
+        /// <summary>The paragraphs of a text, for the writer's check that what it wrote reads back. <paramref name="clean"/> is false when
+        /// the parser found a syntax, table or heading error, which the canonical form never has. Findings about the project (an unknown
+        /// writing system or link) are not the writer's concern.</summary>
+        public static List<Paragraph> ReadParagraphs(string markdown, MarkdownOptions options, out bool clean)
         {
             var reader = new MarkdownReader(options, Prepare(markdown));
             reader.ReadAll();
+            clean = true;
+            foreach (var d in reader._context.Diagnostics)
+            {
+                if (d.Severity == MarkdownSeverity.Error && IsSyntaxFinding(d.Id)) clean = false;
+            }
             return reader._paragraphs;
         }
+
+        /// <summary>True for the findings that mean the text is not well-formed notation (syntax, table and heading errors).</summary>
+        public static bool IsSyntaxFinding(string id)
+            => id.StartsWith("gdr.syntax.", StringComparison.Ordinal) || id.StartsWith("gdr.table.", StringComparison.Ordinal) || id.StartsWith("gdr.heading.", StringComparison.Ordinal)
+               || id == MarkdownDiagnosticIds.AbstractBlockSyntax;
 
         /// <summary>One inline-only text (the abstract, spec 3.5): runs, with block syntax reported.</summary>
         public static List<Run> ReadInline(string text, MarkdownOptions options, out IReadOnlyList<MarkdownDiagnostic> diagnostics)
