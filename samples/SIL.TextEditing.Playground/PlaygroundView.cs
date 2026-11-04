@@ -46,6 +46,7 @@ namespace SIL.TextEditing.Playground
             public const string SpellCheck = "SpellCheckBox";
             public const string SpellShow = "SpellShowButton";
             public const string SpellReplace = "SpellReplaceButton";
+            public const string SpellSpaces = "SpellSpacesButton";
             public const string SpellAdd = "SpellAddButton";
             public const string SpellIgnore = "SpellIgnoreButton";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
@@ -204,6 +205,7 @@ namespace SIL.TextEditing.Playground
             toolbar.Children.Add(_spellCheck);
             toolbar.Children.Add(Tool(Names.SpellShow, "Spelling at caret", "What the context menu would offer for the marked word at the caret: the word, why it is marked and the suggestions", () => ShowSpelling()));
             toolbar.Children.Add(Tool(Names.SpellReplace, "Use first suggestion", "Replace the marked word at the caret with the first suggestion (one undo step)", () => ReplaceSpelling()));
+            toolbar.Children.Add(Tool(Names.SpellSpaces, "Insert missing spaces", "For a word that mixes writing systems or holds an object: put a space between the parts, each part keeping its own writing system", () => SpacesSpelling()));
             toolbar.Children.Add(Tool(Names.SpellAdd, "Add to dictionary", "Add the marked word at the caret to its dictionary", () => AddSpelling(false)));
             toolbar.Children.Add(Tool(Names.SpellIgnore, "Ignore", "Ignore the marked word at the caret", () => AddSpelling(true)));
 
@@ -430,12 +432,19 @@ namespace SIL.TextEditing.Playground
             Log("replace: '" + at.Word + "' -> '" + at.All[0] + "': " + (_active.Field.ApplySpellingSuggestion(at, at.All[0]) ? "done" : "refused"));
         }
 
+        void SpacesSpelling()
+        {
+            var at = SpellingAtCaret("insert spaces");
+            if (at == null) return;
+            Log("insert spaces: '" + at.Word + "': " + (_active.Field.ApplySpellingSuggestion(at, at.WithMissingSpaces()) ? "done" : "refused"));
+        }
+
         void AddSpelling(bool ignore)
         {
             var at = SpellingAtCaret(ignore ? "ignore" : "add");
             if (at == null) return;
             bool done = ignore ? _active.Field.IgnoreWord(at) : _active.Field.AddToDictionary(at);
-            if (!done) Log((ignore ? "ignore" : "add") + ": '" + at.Word + "' is not a plain misspelling");
+            if (!done) Log((ignore ? "ignore" : "add") + ": '" + at.Word + "' is not a plain misspelling" + (ignore && at.CanAddToDictionary ? " or its dictionary cannot ignore" : string.Empty));
         }
 
         // ------------------------------------------------------------ label, inspector, log

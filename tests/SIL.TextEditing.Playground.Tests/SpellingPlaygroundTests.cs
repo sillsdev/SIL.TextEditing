@@ -118,7 +118,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Contains("context menu: no marked word at the caret", s.Log);
                 s.Caret(2, s.ParagraphText(2).IndexOf("Glued", StringComparison.Ordinal) + 2);
                 s.Click(PlaygroundView.Names.SpellShow);
-                Assert.Contains("(en, Mixed): No suggestions; (Add to dictionary disabled)", s.Log);
+                Assert.Contains("(fr, Mixed): No suggestions; (Add to dictionary disabled)", s.Log);
             }
         });
 
@@ -222,6 +222,68 @@ namespace SIL.TextEditing.Playground.Tests
                     }
                 Assert.True(blue > 3);
                 Assert.Equal(0, red);
+            }
+        });
+
+        [Fact]
+        public void The_insert_missing_spaces_button_separates_a_mixed_word_and_each_part_keeps_its_writing_system() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Spelling))
+            {
+                Headless.Pump();
+                s.Caret(2, s.ParagraphText(2).IndexOf("Glued", StringComparison.Ordinal) + 2);
+                s.Click(PlaygroundView.Names.SpellSpaces);
+                Assert.Contains("insert spaces: 'Gluedmots': done", s.Log);
+                Assert.Contains("A word in Glued mots is blue", s.ParagraphText(2));
+                var runs = s.Editor.Document.Paragraphs[2].Runs;
+                Assert.Equal("fr", runs.Single(r => r.Text == "mots").Ws);
+                Headless.Pump();
+                Assert.Empty(Words(s, 2, SpellingProblem.Mixed));
+                s.Click(PlaygroundView.Names.Undo);
+                Assert.Contains("Gluedmots", s.ParagraphText(2));
+            }
+        });
+
+        [Fact]
+        public void The_insert_missing_spaces_button_keeps_the_object_of_an_embedded_word() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Spelling))
+            {
+                Headless.Pump();
+                s.Caret(4, s.ParagraphText(4).IndexOf("abc", StringComparison.Ordinal) + 1);
+                s.Click(PlaygroundView.Names.SpellSpaces);
+                Assert.Contains("abc ￼ def", s.ParagraphText(4));
+                Assert.Single(s.Editor.Document.Paragraphs[4].Runs, r => r.IsObject);
+            }
+        });
+
+        [Fact]
+        public void A_squiggle_in_a_right_to_left_paragraph_is_under_the_misspelled_word_and_nowhere_else() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Spelling))
+            {
+                Headless.Pump();
+                var host = new SIL.TextEditing.Tests.FakeSpellHost().With("ar", "نص", "عربي", "بلا", "هنا");
+                host.Checkers.Remove("en");   // only Arabic is checked, so only its squiggle can be red
+                s.Field.SpellChecking = host;
+                Headless.Pump();
+                string text = s.ParagraphText(5);
+                int at = text.IndexOf("قاموس", StringComparison.Ordinal);
+                Assert.Equal(new[] { "قاموس" }, Words(s, 5));
+                var shot = new DrawingParagraphTests.Shot(s);
+                var pl = s.Field.ParagraphLayoutFor(5);
+                double top = s.Field.ParagraphTop(5);
+                var wrong = pl.SelectionRects(at, at + 5);
+                int inside = 0, outside = 0;
+                for (int x = 0; x < shot.Width; x++)
+                    for (int y = (int)top; y < (int)(top + pl.Height); y++)
+                    {
+                        var c = shot.At(x, y);
+                        if (!(c.R > 200 && c.G < 90 && c.B < 90)) continue;
+                        if (wrong.Any(r => x >= r.X - 1 && x <= r.Right + 1)) inside++; else outside++;
+                    }
+                Assert.True(inside > 5);
+                Assert.Equal(0, outside);
             }
         });
 

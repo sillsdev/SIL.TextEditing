@@ -26,26 +26,35 @@ namespace SIL.TextEditing.Playground
             _log = log ?? (_ => { });
             _checkers = new Dictionary<string, SampleChecker>
             {
-                ["en"] = new SampleChecker("en", English, _log),
-                ["fr"] = new SampleChecker("fr", French, _log),
+                ["en"] = new SampleChecker("en", English, _log, Changed),
+                ["fr"] = new SampleChecker("fr", French, _log, Changed),
             };
         }
+
+        void Changed() => DictionariesChanged?.Invoke(this, EventArgs.Empty);
 
         public ISpellChecker? GetChecker(string ws) => _checkers.TryGetValue(ws, out var c) ? c : null;
 
         public bool IsWordForming(string ws, int codePoint) => SpellScanner.DefaultIsWordForming(codePoint);
 
+        public bool JoinsWords(string ws, int codePoint) => SpellScanner.DefaultJoinsWords(codePoint);
+
+        /// <summary>Raised when a word is added or ignored: every field using this host checks again.</summary>
+        public event EventHandler? DictionariesChanged;
+
         /// <summary>What a person can see of the dictionaries: the words added or ignored.</summary>
         public IEnumerable<string> Added => _checkers.Values.SelectMany(c => c.Added);
 
-        sealed class SampleChecker : ISpellChecker
+        sealed class SampleChecker : ISpellChecker, ISpellIgnorer
         {
             readonly string _ws;
             readonly HashSet<string> _words;
             readonly Action<string> _log;
+            readonly Action _changed;
 
-            public SampleChecker(string ws, IEnumerable<string> words, Action<string> log)
+            public SampleChecker(string ws, IEnumerable<string> words, Action<string> log, Action changed)
             {
+                _changed = changed;
                 _ws = ws;
                 _words = new HashSet<string>(words, StringComparer.OrdinalIgnoreCase);
                 _log = log;
@@ -64,12 +73,14 @@ namespace SIL.TextEditing.Playground
                 _words.Add(word);
                 Added.Add(word);
                 _log("dictionary " + _ws + ": added '" + word + "' (the host records an undo)");
+                _changed();
             }
 
             public void Ignore(string word)
             {
                 _words.Add(word);
                 _log("dictionary " + _ws + ": ignoring '" + word + "'");
+                _changed();
             }
 
             static int Distance(string a, string b)
