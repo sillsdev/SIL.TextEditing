@@ -1017,7 +1017,7 @@ namespace SIL.TextEditing.Avalonia
             double taken = firstIndent + _labelWidth;
             if (label != null && source.Text.Length > 0 && taken > w)
             {
-                _labelLineHeight = SlotHeight(label.Height);
+                _labelLineHeight = label.Height;
                 _firstWidth = w;
                 _firstX = ContentLeft;
                 return;
@@ -1026,7 +1026,7 @@ namespace SIL.TextEditing.Avalonia
             _firstX = ContentLeft + (Rtl ? 0 : taken);
         }
 
-        /// <summary>The height of the line a too-wide bullet or number takes alone above the text, or 0 when it sits beside the first line.</summary>
+        /// <summary>The height of the line a too-wide bullet or number takes alone above the text (the label text's own height, whatever the line height rule), or 0 when it sits beside the first line.</summary>
         double _labelLineHeight;
 
         /// <summary>The space above the first line (space before, margin, border, padding) and below the last.</summary>
@@ -1128,7 +1128,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 var label = LabelLine(LabelText);
                 if (label == null) return default;
-                double lineTop = _labelLineHeight > 0 ? TopInset + (double.IsNaN(_exactAscentFraction) ? _labelLineHeight - label.Height : BaselineIn(_labelLineHeight) - label.Baseline) : Lines.Count > 0 ? Lines[0].TextY : EmptyLineTop;
+                double lineTop = _labelLineHeight > 0 ? TopInset : Lines.Count > 0 ? Lines[0].TextY : EmptyLineTop;
                 double width = label.WidthIncludingTrailingWhitespace;
                 double x = Rtl ? ContentLeft + ContentWidth - Format.FirstIndent - width : ContentLeft + Format.FirstIndent;
                 return new Rect(x, lineTop, width, label.Height);
