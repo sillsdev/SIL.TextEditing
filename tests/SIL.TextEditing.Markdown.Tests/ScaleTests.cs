@@ -136,6 +136,28 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Equal("| c | d |", result.Document.Paragraphs[5001].Text);
         }
 
+        // The size the review named: Markdig's limit counts cells, so four thousand rows of four columns is over it as well.
+        [Trait("Size", "Large")]
+        [Fact]
+        public void ATableOfFourThousandRowsAndFourColumnsIsOneFindingAndItsLinesAreText()
+        {
+            string text = "| a | b | c | d |\n| --- | --- | --- | --- |\n" + Repeat("| e | f | g | h |\n", 4000);
+            var result = ParseSafely(text);
+            AssertTooDeep(result, "| a | b | c | d |");
+            Assert.Equal(4002, result.Document.Paragraphs.Count);
+            Assert.Equal("| e | f | g | h |", result.Document.Paragraphs[4001].Text);
+        }
+
+        [Trait("Size", "Large")]
+        [Fact]
+        public void AValidTableOfFourThousandRowsAndFourColumnsIsWrittenAndReadsBack()
+        {
+            var paragraphs = new Paragraph[4001];
+            paragraphs[0] = B.P("GDR Table Header", B.En("a\tb\tc\td"));
+            for (int i = 1; i < paragraphs.Length; i++) paragraphs[i] = B.P("GDR Table Row", B.En("e\tf\tg\th"));
+            AssertWritesAndReadsBack(paragraphs);
+        }
+
         [Trait("Size", "Large")]
         [Fact]
         public void TenThousandEmphasesInOneParagraphAreOneFindingAndLiteralText()
