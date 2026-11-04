@@ -83,12 +83,16 @@ namespace SIL.TextEditing.Avalonia
         readonly Size _size;
         readonly TextRunProperties _properties;
 
-        public ObjectRun(IImage? image, Size size, TextRunProperties properties)
+        public ObjectRun(IImage? image, Size size, TextRunProperties properties, int sourceIndex)
         {
             _image = image;
             _size = size;
             _properties = properties;
+            SourceIndex = sourceIndex;
         }
+
+        /// <summary>Where the object's character is in the paragraph text.</summary>
+        public int SourceIndex { get; }
 
         public override Size Size => _size;
         public override double Baseline => _size.Height * 0.85;
@@ -126,7 +130,7 @@ namespace SIL.TextEditing.Avalonia
                 if (s.IsObject && ObjectAsGlyph)
                     return new TextCharacters(Text.AsMemory(textSourceIndex, 1), new RunTextProperties(s.Properties.Typeface, 28, s.Properties.ForegroundBrush ?? Brushes.Black, null, s.Properties.CultureInfo ?? CultureInfo.InvariantCulture, null));
                 if (s.IsObject)
-                    return new ObjectRun(s.Data == null ? null : ObjectImage?.Invoke(s.Data), new Size(32, 24), s.Properties);
+                    return new ObjectRun(s.Data == null ? null : ObjectImage?.Invoke(s.Data), new Size(32, 24), s.Properties, textSourceIndex);
                 return new TextCharacters(Text.AsMemory(textSourceIndex, s.End - textSourceIndex), s.Properties);
             }
             return null;
@@ -212,6 +216,26 @@ namespace SIL.TextEditing.Avalonia
         }
     }
 
+    /// <summary>A run of a line: where it is drawn (x from the line's origin) and the text it holds (<c>Start</c> and <c>Length</c>; when it is
+    /// not <c>Exact</c>, Start is only some place inside the run).</summary>
+    readonly struct RunSlot
+    {
+        public RunSlot(DrawableTextRun run, double x, int start, int length, bool exact)
+        {
+            Run = run;
+            X = x;
+            Start = start;
+            Length = length;
+            Exact = exact;
+        }
+
+        public DrawableTextRun Run { get; }
+        public double X { get; }
+        public int Start { get; }
+        public int Length { get; }
+        public bool Exact { get; }
+        public double Width => Run.Size.Width;
+    }
     public sealed class LineInfo
     {
         public LineInfo(TextLine line, double y, double x = 0, double height = -1, double baselineInSlot = double.NaN)
@@ -229,6 +253,7 @@ namespace SIL.TextEditing.Avalonia
             _offsets = offsets;
             _runs = ParagraphLayout.RunOffsets(line, offsets, out var raise, out var lower);
             HasOffsets = _runs != null;
+            if (HasOffsets) _slots = ParagraphLayout.RunSlots(line);
             Raise = raise;
             Lower = lower;
             Start = line.FirstTextSourceIndex;
@@ -272,6 +297,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>True when a run on the line has a baseline offset, so the line is drawn run by run (<see cref="Draw"/>).</summary>
         public bool HasOffsets { get; }
         readonly OffsetMap? _offsets;
+        readonly List<RunSlot>? _slots;
         Justification? _justification;
 
         /// <summary>True when the line is stretched to the edges of the text area (a justified paragraph's line that is not its last).</summary>
@@ -344,15 +370,27 @@ namespace SIL.TextEditing.Avalonia
         internal List<KeyValuePair<Rect, double>> Pieces(int from, int to)
         {
             var result = new List<KeyValuePair<Rect, double>>();
-            foreach (var tb in Line.GetTextBounds(from, to - from))
+            if (_offsets != null && _slots != null)
             {
-                var parts = _offsets != null && HasOffsets ? tb.TextRunBounds : null;
-                if (parts == null || parts.Count == 0)
-                    result.Add(new KeyValuePair<Rect, double>(Shown(tb.Rectangle), 0));
-                else
-                    foreach (var part in parts)
-                        result.Add(new KeyValuePair<Rect, double>(Shown(part.Rectangle), _offsets!.At(part.TextSourceCharacterIndex)));
+                // A line with shifted runs is read run by run, from the runs as they are drawn (see ParagraphLayout.RunSlots).
+                foreach (var slot in _slots)
+                {
+                    int a = Math.Max(from, slot.Start), b = Math.Min(to, slot.Start + slot.Length);
+                    if (!slot.Exact) { a = slot.Start; b = slot.Start + 1; if (from > a || to < b) continue; }
+                    else if (b <= a) continue;
+                    double left = 0, right = slot.Width;
+                    if (slot.Exact && (a > slot.Start || b < slot.Start + slot.Length) && (slot.Run as ShapedTextRun)?.GlyphRun is GlyphRun glyphs)
+                    {
+                        double p = glyphs.GetDistanceFromCharacterHit(new CharacterHit(a)), q = glyphs.GetDistanceFromCharacterHit(new CharacterHit(b));
+                        left = Math.Min(p, q);
+                        right = Math.Max(p, q);
+                    }
+                    result.Add(new KeyValuePair<Rect, double>(Shown(new Rect(slot.X + left, 0, right - left, Line.Height)), _offsets.At(slot.Start)));
+                }
+                return result;
             }
+            foreach (var tb in Line.GetTextBounds(from, to - from))
+                result.Add(new KeyValuePair<Rect, double>(Shown(tb.Rectangle), 0));
             return result;
         }
         public int Start { get; }
@@ -457,24 +495,46 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
+        /// <summary>Where each run of a line is drawn and which text it holds, in drawing order. Avalonia's own numbering of a line's runs (the
+        /// text run bounds and the character hits) is wrong for a right-to-left paragraph's line with two or more left-to-right runs and a wrapped
+        /// space: it takes the runs' visual order for their logical one. So a run's text is read from the run itself: the slice of the paragraph text
+        /// it was shaped from.</summary>
+        internal static List<RunSlot> RunSlots(TextLine line)
+        {
+            var result = new List<RunSlot>();
+            double x = line.Start;
+            foreach (var run in line.TextRuns)
+            {
+                if (!(run is DrawableTextRun d)) continue;
+                int start;
+                bool exact = true;
+                if (d is ObjectRun o) start = o.SourceIndex;
+                else if (d.Text.Length > 0 && System.Runtime.InteropServices.MemoryMarshal.TryGetString(d.Text, out _, out start, out _)) { }
+                else
+                {
+                    // Not a slice of the paragraph text: the character under the run's middle, which is somewhere in the run.
+                    start = line.GetCharacterHitFromDistance(x + d.Size.Width / 2).FirstCharacterIndex;
+                    exact = false;
+                }
+                result.Add(new RunSlot(d, x, start, run.Length, exact));
+                x += d.Size.Width;
+            }
+            return result;
+        }
         /// <summary>The runs of a line with their baseline offsets, or null when the line has no shifted run (<paramref name="raise"/> and
         /// <paramref name="lower"/> are then 0). Otherwise they are how far the shifted runs reach above the line's top and below its bottom.
-        /// Avalonia 11.3 hands back its own copy of each run's properties (Avalonia 12 the original), so on both a run is matched to its offset by where it is in the text, not through its properties.</summary>
+        /// Avalonia 11.3 hands back its own copy of each run's properties (Avalonia 12 the original), so on both a run is matched to its offset by the text it holds (<see cref="RunSlots"/>), not through its properties.</summary>
         internal static List<KeyValuePair<DrawableTextRun, double>>? RunOffsets(TextLine line, OffsetMap? offsets, out double raise, out double lower)
         {
             raise = 0;
             lower = 0;
             if (offsets == null || offsets.IsEmpty || line.Length <= 0) return null;
-            var starts = new Dictionary<TextRun, int>();
-            foreach (var tb in line.GetTextBounds(line.FirstTextSourceIndex, line.Length))
-                foreach (var part in tb.TextRunBounds)
-                    if (part.TextRun != null) starts[part.TextRun] = part.TextSourceCharacterIndex;
             var result = new List<KeyValuePair<DrawableTextRun, double>>();
             bool any = false;
-            foreach (var run in line.TextRuns)
+            foreach (var slot in RunSlots(line))
             {
-                if (!(run is DrawableTextRun d)) continue;
-                double offset = starts.TryGetValue(run, out int at) ? offsets.At(at) : 0;
+                var d = slot.Run;
+                double offset = offsets.At(slot.Start);
                 result.Add(new KeyValuePair<DrawableTextRun, double>(d, offset));
                 if (offset == 0) continue;
                 any = true;
