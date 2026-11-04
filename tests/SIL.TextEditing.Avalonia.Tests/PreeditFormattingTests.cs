@@ -7,7 +7,7 @@ using static SIL.TextEditing.Tests.TestDocs;
 namespace SIL.TextEditing.Avalonia.Tests
 {
     /// <summary>An IME composition is drawn in the character formatting the committed text will get (the run before the caret, as typing
-    /// does), with the composition underline.</summary>
+    /// does, or where a selection it replaces began), with the composition underline.</summary>
     public class PreeditFormattingTests
     {
         static TextRunProperties PreeditProperties(RichTextField field, string preedit)
@@ -67,6 +67,31 @@ namespace SIL.TextEditing.Avalonia.Tests
             field.Editor.SetActiveWs("fr");
             var properties = PreeditProperties(field, "xyz");
             Assert.NotEqual(FontWeight.Bold, properties.Typeface.Weight);
+        });
+
+        static Document BoldThenPlain()
+        {
+            var doc = Doc(Para("en", "en", "abc", "en", "def"));
+            doc.Paragraphs[0].Runs[0].Props.SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn);
+            return doc;
+        }
+
+        [Theory]
+        [InlineData(1, 5, true)]    // the selection began in the bold run, as the caret did not
+        [InlineData(5, 1, true)]
+        [InlineData(0, 4, false)]   // nothing before the start, so the run after what is left: plain
+        public void A_composition_over_a_selection_is_drawn_in_the_formatting_typing_over_it_would_get(int anchor, int caret, bool bold) => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(BoldThenPlain(), 400);
+            field.Editor.SetCaret(new TextPosition(0, anchor));
+            field.Editor.SetCaret(new TextPosition(0, caret), extend: true);
+            var properties = PreeditProperties(field, "xyz");
+            Assert.Equal(bold ? FontWeight.Bold : FontWeight.Normal, properties.Typeface.Weight);
+            // Committing the composition types it over the selection: it gets the same formatting.
+            field.SetPreedit(null, null);
+            field.Editor.TypeText("xyz");
+            var typed = field.Editor.Document.Paragraphs[0].Runs.First(r => r.Text.Contains("xyz"));
+            Assert.Equal(bold, typed.Props.TryGetInt(TextPropertyNumbers.Bold, out int value) && value == TextPropertyNumbers.ToggleOn);
         });
     }
 }

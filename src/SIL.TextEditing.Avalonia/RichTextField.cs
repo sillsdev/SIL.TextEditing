@@ -278,7 +278,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 preeditAt = Editor.Caret.Offset;
                 preedit = _preedit;
-                template = new Run { Ws = Editor.ActiveWs, Props = Editor.TypingProperties() };
+                template = Editor.TypingRun();
             }
             var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
             _layouts[index] = layout;
