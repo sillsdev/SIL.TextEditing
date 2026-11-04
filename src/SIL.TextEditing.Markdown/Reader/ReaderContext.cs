@@ -91,21 +91,48 @@ namespace SIL.TextEditing.Markdown.Reader
         public static ReaderContext? From(MarkdownParserContext? context)
             => context != null && context.Properties.TryGetValue(ContextKey, out var value) ? value as ReaderContext : null;
 
-        public MarkdownDiagnostic Report(string id, MarkdownSeverity severity, string message, int start, int end, string? replacement = null, IReadOnlyList<string>? choices = null)
+        public MarkdownDiagnostic Report(string id, MarkdownSeverity severity, string message, int start, int end, string? replacement = null,
+            IReadOnlyList<string>? choices = null, IReadOnlyList<string>? nearest = null)
+        {
+            var d = CreateDiagnostic(id, severity, message, start, end, replacement, choices, nearest);
+            _diagnostics.Add(d);
+            return d;
+        }
+
+        /// <summary>Makes a finding for a range of the source, with its line, column and observed text; the caller decides whether it is kept.</summary>
+        public MarkdownDiagnostic CreateDiagnostic(string id, MarkdownSeverity severity, string message, int start, int end, string? replacement = null,
+            IReadOnlyList<string>? choices = null, IReadOnlyList<string>? nearest = null)
         {
             start = Math.Max(0, Math.Min(start, Source.Length));
             end = Math.Max(start, Math.Min(end, Source.Length));
             var d = new MarkdownDiagnostic(id, severity, message, start, end) { Observed = Source.Substring(start, end - start), Replacement = replacement };
             if (choices != null) d.Choices = choices;
+            if (nearest != null) d.Nearest = nearest;
             Locate(start, out int line, out int column);
             d.Line = line;
             d.Column = column;
             Locate(end, out int endLine, out int endColumn);
             d.EndLine = endLine;
             d.EndColumn = endColumn;
-            _diagnostics.Add(d);
             return d;
         }
+
+        /// <summary>The place of a range of the source, as a host sees it on a <see cref="MarkdownObject"/>.</summary>
+        public MarkdownSourceRange RangeOf(int start, int end)
+        {
+            start = Math.Max(0, Math.Min(start, Source.Length));
+            end = Math.Max(start, Math.Min(end, Source.Length));
+            Locate(start, out int line, out int column);
+            Locate(end, out int endLine, out int endColumn);
+            return new MarkdownSourceRange(start, end, line, column, endLine, endColumn);
+        }
+
+        readonly List<MarkdownObject> _objects = new List<MarkdownObject>();
+
+        /// <summary>The objects built so far, in the order the parser read them (source order within a paragraph; fences and blocks are read in order).</summary>
+        public IReadOnlyList<MarkdownObject> Objects => _objects;
+
+        public void AddObject(MarkdownObject target) => _objects.Add(target);
 
         void IAttrIssues.Report(string id, MarkdownSeverity severity, string message, AttrItem item, string? replacement)
             => Report(id, severity, message, Base + item.Start, Base + item.End, replacement);
@@ -117,6 +144,62 @@ namespace SIL.TextEditing.Markdown.Reader
             string message = "'" + item.Key + "' is not a known " + (item.IsFlag ? "flag" : "attribute") + "." + (nearest == null ? string.Empty : " Did you mean " + nearest + "?");
             var choices = nearest == null ? null : new[] { nearest };
             Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, message, Base + item.Start, Base + item.End, null, choices);
+        }
+
+        /// <summary>Reports a writing system the host does not know, with the host's list as the choices and the closest tags as the nearest.</summary>
+        public void ReportUnknownWritingSystem(string tag, int start, int end)
+        {
+            var known = (Options.WritingSystems as IKnownWritingSystems)?.KnownTags;
+            var nearest = known == null ? null : NearestNames(tag, known);
+            string message = "'" + tag + "' is not a writing system of this project." + (nearest == null ? string.Empty : " Nearest: " + string.Join(", ", nearest) + ".");
+            Report(MarkdownDiagnosticIds.WsUnknown, MarkdownSeverity.Error, message, start, end, null, known != null && known.Count > 0 ? known : null, nearest);
+        }
+
+        /// <summary>Reports a style the host does not know; <paramref name="kind"/> is "paragraph" or "character".</summary>
+        public void ReportUnknownStyle(string name, string kind, int start, int end)
+        {
+            var listed = Options.Styles as IKnownStyles;
+            var known = listed == null ? null : kind == "paragraph" ? listed.ParagraphStyleNames : listed.CharacterStyleNames;
+            var nearest = known == null ? null : NearestNames(name, known);
+            string message = "'" + name + "' is not a " + kind + " style of this project." + (nearest == null ? string.Empty : " Nearest: " + string.Join(", ", nearest) + ".");
+            Report(MarkdownDiagnosticIds.StyleUnknown, MarkdownSeverity.Error, message, start, end, null, null, nearest);
+        }
+
+        /// <summary>The names of <paramref name="known"/> closest to <paramref name="name"/>, nearest first (at most three), or null when none is
+        /// close: within a third of the length, at least one edit, a swap of two neighbours counting as one.</summary>
+        internal static IReadOnlyList<string>? NearestNames(string name, IEnumerable<string> known)
+        {
+            int limit = Math.Max(1, name.Length / 3);
+            var found = new List<KeyValuePair<int, string>>();
+            foreach (var candidate in known)
+            {
+                int d = EditDistance(name.ToLowerInvariant(), candidate.ToLowerInvariant());
+                if (d <= limit) found.Add(new KeyValuePair<int, string>(d, candidate));
+            }
+            if (found.Count == 0) return null;
+            // Stable: equally near names keep the host's order.
+            var ordered = new List<string>();
+            for (int d = 0; d <= limit && ordered.Count < 3; d++)
+                foreach (var f in found) if (f.Key == d && ordered.Count < 3) ordered.Add(f.Value);
+            return ordered;
+        }
+
+        /// <summary>Edits to turn one string into the other: insert, delete, substitute, or swap two neighbours.</summary>
+        static int EditDistance(string a, string b)
+        {
+            var d = new int[a.Length + 1, b.Length + 1];
+            for (int i = 0; i <= a.Length; i++) d[i, 0] = i;
+            for (int j = 0; j <= b.Length; j++) d[0, j] = j;
+            for (int i = 1; i <= a.Length; i++)
+            {
+                for (int j = 1; j <= b.Length; j++)
+                {
+                    int cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                    d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + cost);
+                    if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) d[i, j] = Math.Min(d[i, j], d[i - 2, j - 2] + 1);
+                }
+            }
+            return d[a.Length, b.Length];
         }
 
         static string? Nearest(string key, IEnumerable<string> known)

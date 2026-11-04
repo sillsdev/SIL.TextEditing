@@ -204,7 +204,7 @@ namespace SIL.TextEditing.Markdown.Reader
             }
             if (link.IsImage)
             {
-                var form = new ObjectForm { IsPicture = true, Url = link.Url, Start = link.Span.Start, End = link.Span.End };
+                var form = new ObjectForm { IsPicture = true, Url = link.Url, Start = link.Span.Start, End = attrs == null ? link.Span.End : attrs.End - 1 };
                 var picture = attrs == null ? Finish(fmt.Clone(), form, null) : ApplyAttrs(attrs, fmt, form);
                 Add(Run.ObjectReplacement.ToString(), picture);
                 return null;
@@ -214,7 +214,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 Unsupported(link.Span.Start, link.Span.End, "A reference link is not supported. Escape the [ as \\[.");
                 return fmt;
             }
-            var linkForm = new ObjectForm { Url = link.Url ?? string.Empty, Start = link.Span.Start, End = link.Span.End };
+            var linkForm = new ObjectForm { Url = link.Url ?? string.Empty, Start = link.Span.Start, End = attrs == null ? link.Span.End : attrs.End - 1 };
             return attrs == null ? Finish(fmt.Clone(), linkForm, null) : ApplyAttrs(attrs, fmt, linkForm);
         }
 
@@ -270,7 +270,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 fmt.Ws = wsItem.Value!;
                 fmt.Vernacular = false;
                 if (!_options.WritingSystems.IsKnown(fmt.Ws))
-                    _context.Report(MarkdownDiagnosticIds.WsUnknown, MarkdownSeverity.Error, "'" + fmt.Ws + "' is not a writing system of this project.", Abs(wsItem.Start), Abs(wsItem.End));
+                    _context.ReportUnknownWritingSystem(fmt.Ws, Abs(wsItem.Start), Abs(wsItem.End));
             }
             else if (vItem != null) { fmt.Ws = null; fmt.Vernacular = true; }
             if (csItem != null)
@@ -283,7 +283,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     fmt.CsName = csItem.Value;
                     var catalog = _options.Styles;
                     if (catalog != null && !catalog.IsCharacterStyle(csItem.Value!))
-                        _context.Report(MarkdownDiagnosticIds.StyleUnknown, MarkdownSeverity.Error, "'" + csItem.Value + "' is not a character style of this project.", Abs(csItem.Start), Abs(csItem.End));
+                        _context.ReportUnknownStyle(csItem.Value!, "character", Abs(csItem.Start), Abs(csItem.End));
                 }
                 fmt.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
             }
@@ -361,16 +361,31 @@ namespace SIL.TextEditing.Markdown.Reader
                 target.Kind = MarkdownObjectKind.ExternalLink;
                 target.Url = form.Url;
             }
-            if (_options.Objects.TryCreateObjData(target, out string objData, out string? problem))
+            target.Source = _context.RangeOf(start, end);
+            _context.AddObject(target);
+            bool resolved;
+            string objData;
+            MarkdownProblem? problem;
+            if (_options.Objects is IObjectResolver resolver) resolved = resolver.TryResolve(target, out objData, out problem);
+            else
             {
+                resolved = _options.Objects.TryCreateObjData(target, out objData, out string? reason);
+                problem = reason == null ? null : new MarkdownProblem(reason);
+            }
+            if (resolved)
+            {
+                target.ObjData = objData;
                 fmt.ObjData = objData;
                 fmt.Scope = ++_scopes;
                 if (!form.IsPicture) fmt.IsLink = true;
             }
-            else
+            // A host's warning or suggestion comes with the data (a deleted target); a failure is always an error.
+            if (problem != null || !resolved)
             {
-                string id = form.IsPicture ? MarkdownDiagnosticIds.PictureUnknown : MarkdownDiagnosticIds.LinkNotFound;
-                _context.Report(id, MarkdownSeverity.Error, problem ?? "The object cannot be resolved.", start, end);
+                problem = problem ?? new MarkdownProblem("The object cannot be resolved.");
+                string id = problem.Id ?? (form.IsPicture ? MarkdownDiagnosticIds.PictureUnknown : MarkdownDiagnosticIds.LinkNotFound);
+                _context.Report(id, resolved ? problem.Severity : MarkdownSeverity.Error, problem.Message, start, end, problem.Replacement,
+                    problem.Choices.Count > 0 ? problem.Choices : null, problem.Nearest.Count > 0 ? problem.Nearest : null);
             }
             return fmt;
         }

@@ -34,7 +34,7 @@ namespace SIL.TextEditing.Markdown.Reader
             reader.ReadAll();
             var document = new Document();
             document.Paragraphs.AddRange(reader._paragraphs);
-            return new MarkdownParseResult(document, reader._context.Diagnostics.Select((d, i) => (d, i)).OrderBy(x => x.d.Start).ThenBy(x => x.i).Select(x => x.d).ToList());
+            return new MarkdownParseResult(document, reader._context.Diagnostics.Select((d, i) => (d, i)).OrderBy(x => x.d.Start).ThenBy(x => x.i).Select(x => x.d).ToList(), reader._context);
         }
 
         /// <summary>The paragraphs of a text, for the writer's check that what it wrote reads back. <paramref name="clean"/> is false when
@@ -58,11 +58,11 @@ namespace SIL.TextEditing.Markdown.Reader
                || id == MarkdownDiagnosticIds.AbstractBlockSyntax;
 
         /// <summary>One inline-only text (the abstract, spec 3.5): runs, with block syntax reported.</summary>
-        public static List<Run> ReadInline(string text, MarkdownOptions options, out IReadOnlyList<MarkdownDiagnostic> diagnostics)
+        public static List<Run> ReadInline(string text, MarkdownOptions options, out ReaderContext context)
         {
             var reader = new MarkdownReader(options, Prepare(text));
             var runs = reader.ReadInlineText();
-            diagnostics = reader._context.Diagnostics;
+            context = reader._context;
             return runs;
         }
 
@@ -656,7 +656,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 style = styleItem.Value!;
                 var catalog = _options.Styles;
                 if (catalog != null && style.Length > 0 && !catalog.IsParagraphStyle(style))
-                    _context.Report(MarkdownDiagnosticIds.StyleUnknown, MarkdownSeverity.Error, "'" + style + "' is not a paragraph style of this project.", styleItem.Start, styleItem.End);
+                    _context.ReportUnknownStyle(style, "paragraph", styleItem.Start, styleItem.End);
             }
             if (props.StrProps.TryGetValue(TextPropertyNumbers.NamedStyle, out var s133))
             {
@@ -671,7 +671,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 {
                     defaultWs = wsItem.Value;
                     if (!_options.WritingSystems.IsKnown(defaultWs!))
-                        _context.Report(MarkdownDiagnosticIds.WsUnknown, MarkdownSeverity.Error, "'" + defaultWs + "' is not a writing system of this project.", wsItem.Start, wsItem.End);
+                        _context.ReportUnknownWritingSystem(defaultWs!, wsItem.Start, wsItem.End);
                 }
                 else if (vItem != null) defaultWs = _options.WritingSystems.DefaultVernacular;
             }

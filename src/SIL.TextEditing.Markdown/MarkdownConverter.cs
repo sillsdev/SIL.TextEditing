@@ -9,15 +9,30 @@ namespace SIL.TextEditing.Markdown
     /// <summary>The result of reading one inline-only text.</summary>
     public sealed class MarkdownInlineResult
     {
-        internal MarkdownInlineResult(IReadOnlyList<Run> runs, IReadOnlyList<MarkdownDiagnostic> diagnostics)
+        readonly ReaderContext _context;
+
+        internal MarkdownInlineResult(IReadOnlyList<Run> runs, IReadOnlyList<MarkdownDiagnostic> diagnostics, ReaderContext context)
         {
             Runs = runs;
             Diagnostics = diagnostics;
+            _context = context;
         }
 
         public IReadOnlyList<Run> Runs { get; }
         public IReadOnlyList<MarkdownDiagnostic> Diagnostics { get; }
         public bool HasErrors => Diagnostics.Any(d => d.Severity == MarkdownSeverity.Error);
+
+        /// <summary>The text the offsets, lines and columns refer to.</summary>
+        public string Source => _context.Source;
+
+        /// <summary>Every object the parser built from the notation, in source order, each with its place in the text.</summary>
+        public IReadOnlyList<MarkdownObject> Objects => _context.Objects;
+
+        /// <summary>Makes a finding for a range of <see cref="Source"/>, with its line, column and observed text filled in. It is not added to
+        /// <see cref="Diagnostics"/>.</summary>
+        public MarkdownDiagnostic CreateDiagnostic(string id, MarkdownSeverity severity, string message, int start, int end,
+            string? replacement = null, IReadOnlyList<string>? choices = null, IReadOnlyList<string>? nearest = null)
+            => _context.CreateDiagnostic(id, severity, message, start, end, replacement, choices, nearest);
     }
 
     /// <summary>Converts between the run model and GDR Markdown (ADR 0011; the notation is Motif's spec 2026-11-03-gdr-markdown-design).
@@ -65,8 +80,8 @@ namespace SIL.TextEditing.Markdown
         public static MarkdownInlineResult ParseInline(string markdown, MarkdownOptions? options = null)
         {
             if (markdown == null) throw new ArgumentNullException(nameof(markdown));
-            var runs = MarkdownReader.ReadInline(markdown, options ?? new MarkdownOptions(), out var diagnostics);
-            return new MarkdownInlineResult(runs, diagnostics);
+            var runs = MarkdownReader.ReadInline(markdown, options ?? new MarkdownOptions(), out var context);
+            return new MarkdownInlineResult(runs, context.Diagnostics, context);
         }
 
         /// <summary>True when two paragraphs say the same as far as Markdown carries: after empty runs are dropped and neighbours of one

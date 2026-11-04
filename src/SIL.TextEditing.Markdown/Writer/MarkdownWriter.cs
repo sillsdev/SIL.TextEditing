@@ -40,7 +40,8 @@ namespace SIL.TextEditing.Markdown.Writer
             var generator = new InlineGenerator(options, BlockContext.Plain());
             bool Reads(string candidate)
             {
-                var back = MarkdownReader.ReadInline(candidate, options, out var findings);
+                var back = MarkdownReader.ReadInline(candidate, options, out var context);
+                var findings = context.Diagnostics;
                 return !findings.Any(f => f.Severity == MarkdownSeverity.Error && MarkdownReader.IsSyntaxFinding(f.Id)) && Equivalence.Equal(paragraph.Runs, back);
             }
             // The text is read with and without a final line end: a file has one, a string in a database may not.
