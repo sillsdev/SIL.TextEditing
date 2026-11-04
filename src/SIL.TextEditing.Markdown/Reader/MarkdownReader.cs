@@ -87,6 +87,7 @@ namespace SIL.TextEditing.Markdown.Reader
             var fences = new List<Fence>();
             string blanked = ScanFences(fences);
             var document = Markdig.Markdown.Parse(blanked, NotationExtension.Document, _context.NewParserContext());
+            _context.EndParse();
             var items = new List<KeyValuePair<int, object>>();
             foreach (var block in document) items.Add(new KeyValuePair<int, object>(block.Span.Start, block));
             foreach (var fence in fences) items.Add(new KeyValuePair<int, object>(fence.Start, fence));
@@ -346,12 +347,11 @@ namespace SIL.TextEditing.Markdown.Reader
         void ReadParagraph(ParagraphBlock block, string text)
         {
             string raw = text.Substring(block.Span.Start, block.Span.Length);
-            int before = _context.Diagnostics.Count;
             if (TryEmptyMarker(raw, block.Span.Start))
             {
                 // Markdig read the line as text before the marker was recognised, so a quoted value that looks like a link or a
                 // span has drawn findings of its own. The marker is read from the raw line, and those findings do not apply.
-                _context.RemoveBefore(before, block.Span.Start, block.Span.End + 1);
+                _context.RemoveParsed(block.Span.Start, block.Span.End + 1);
                 return;
             }
             _paragraphs.Add(MakeParagraph(Names.Normal, new PropertyBag(), InlineReader.Read(block.Inline, _context), null));

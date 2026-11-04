@@ -22,13 +22,50 @@ namespace SIL.TextEditing.Markdown.Reader
 
         public MarkdownOptions Options { get; }
         public string Source { get; }
-        public IReadOnlyList<MarkdownDiagnostic> Diagnostics => _diagnostics;
-
-        /// <summary>Drops the findings among the first <paramref name="count"/> that start in [start, end).</summary>
-        public void RemoveBefore(int count, int start, int end)
+        public IReadOnlyList<MarkdownDiagnostic> Diagnostics
         {
-            for (int i = Math.Min(count, _diagnostics.Count) - 1; i >= 0; i--)
-                if (_diagnostics[i].Start >= start && _diagnostics[i].Start < end) _diagnostics.RemoveAt(i);
+            get
+            {
+                if (_removed != null)
+                {
+                    _diagnostics.RemoveAll(_removed.Contains);
+                    _removed = null;
+                }
+                return _diagnostics;
+            }
+        }
+
+        // The findings Markdig's parsers made while it read the whole text, in order of where they start, and the ones dropped since.
+        MarkdownDiagnostic[]? _parsed;
+        HashSet<MarkdownDiagnostic>? _removed;
+
+        /// <summary>Called once Markdig has read the text: the findings so far are the ones <see cref="RemoveParsed"/> may drop.</summary>
+        public void EndParse()
+        {
+            var parsed = _diagnostics.ToArray();
+            var starts = new int[parsed.Length];
+            for (int i = 0; i < parsed.Length; i++) starts[i] = parsed[i].Start;
+            Array.Sort(starts, parsed);
+            _parsed = parsed;
+        }
+
+        /// <summary>Drops the findings Markdig's parsers made that start in [start, end): the line was read as text before it was known to be
+        /// a marker. Binary search and a mark, so a document with many markers and many findings is read in one pass.</summary>
+        public void RemoveParsed(int start, int end)
+        {
+            var parsed = _parsed;
+            if (parsed == null) return;
+            int lo = 0, hi = parsed.Length;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) / 2;
+                if (parsed[mid].Start < start) lo = mid + 1; else hi = mid;
+            }
+            for (int i = lo; i < parsed.Length && parsed[i].Start < end; i++)
+            {
+                if (_removed == null) _removed = new HashSet<MarkdownDiagnostic>();
+                _removed.Add(parsed[i]);
+            }
         }
 
         /// <summary>The offset in <see cref="Source"/> of the text Markdig is parsing now (a fence line is parsed on its own).</summary>
