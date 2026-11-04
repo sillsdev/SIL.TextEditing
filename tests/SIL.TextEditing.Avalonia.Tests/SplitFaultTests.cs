@@ -70,5 +70,44 @@ namespace SIL.TextEditing.Avalonia.Tests
                 Assert.True(Fixtures.Field(Doc(p), width).ParagraphLayoutFor(0).Lines.Count >= 1);
             }
         });
+
+        [Fact]
+        public void The_swap_keeps_every_offset_and_a_mark_after_a_space_stays_and_the_space_is_what_changes()
+        {
+            string text = Arabic + " " + C(0x300) + "x " + C(0xFE0F) + C(0x301) + " " + C(0xE0100) + "y";
+            foreach (int swap in new[] { 1, 2, 3, 4, 5 })
+                Assert.Equal(text.Length, ParagraphLayout.SwapFormatCharacters(text, swap).Length);
+            string three = ParagraphLayout.SwapFormatCharacters(text, 3), four = ParagraphLayout.SwapFormatCharacters(text, 4);
+            Assert.Equal(' ', three[3]);              // the space before the mark
+            Assert.Equal(C(0x300)[0], three[4]);            // the mark itself is kept
+            Assert.Equal('◌', four[3]);
+            Assert.Equal('⁠', three[7]);              // a variation selector after a space has no glyph: hidden
+            Assert.DoesNotContain(C(0x300), ParagraphLayout.SwapFormatCharacters(text, 5));
+        }
+
+        [Theory]
+        [InlineData(0x300)]
+        [InlineData(0x301)]
+        [InlineData(0x20DD)]
+        public void A_mark_after_a_space_in_a_paragraph_with_Arabic_is_drawn_though_the_formatter_is_given_it_on_another_base(int mark) => Headless.Run(() =>
+        {
+            for (double width = 100; width <= 300; width += 20)
+            {
+                long Ink(string markText)
+                {
+                    var p = Para("ar", "ar", Arabic + markText + "x");
+                    p.Rtl = true;
+                    var field = Fixtures.Field(Doc(p), width);
+                    var shot = Fixtures.Render(field, 2);
+                    long n = 0;
+                    for (int y = 0; y < shot.Height; y++)
+                        for (int x = 0; x < shot.Width; x++)
+                            if (shot.IsInk(x, y, 200)) n++;
+                    return n;
+                }
+                // The control has a word joiner, which has no glyph, where the mark is (the old way out of the fault hid the mark so): the mark's ink is what is missing.
+                Assert.True(Ink(" " + C(mark)) > Ink(" ⁠"), "width " + width + ": the mark's ink is drawn");
+            }
+        });
     }
 }

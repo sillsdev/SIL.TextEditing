@@ -1008,9 +1008,9 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
-        /// <summary>How many layouts of a paragraph are tried: as it is, with the zero width joiners swapped, with the other format characters and the marks after
-        /// a space swapped too, with every format character and mark swapped.</summary>
-        const int FormatSwaps = 4;
+        /// <summary>How many layouts of a paragraph are tried: as it is, with the zero width joiners swapped, with the other format characters swapped, with the glyphless characters after a space swapped and a space before a mark made a no-break
+        /// space, the same with a dotted circle, with every format character and mark swapped.</summary>
+        const int FormatSwaps = 6;
 
         /// <summary>The formatter refused a line (<see cref="InvalidOperationException"/> from Avalonia's text formatter).</summary>
         sealed class FormatterRefused : Exception
@@ -1068,7 +1068,7 @@ namespace SIL.TextEditing.Avalonia
             try { return TextFormatter.Current.FormatLine(source, 0, width, properties, null); }
             catch (InvalidOperationException) { }
             string text = source.Text;
-            source.Text = SwapFormatCharacters(text, 3);
+            source.Text = SwapFormatCharacters(text, 5);
             try { return TextFormatter.Current.FormatLine(source, 0, width, properties, null); }
             catch (InvalidOperationException) { return null; }
             finally { source.Text = text; }
@@ -1080,34 +1080,73 @@ namespace SIL.TextEditing.Avalonia
             catch (InvalidOperationException e) { throw new FormatterRefused(e); }
         }
 
-        /// <summary>The text the formatter is given, with characters swapped for a word joiner (U+2060) each, so every offset stays: at swap 1 every zero width
-        /// joiner; at swap 2 also every zero width non-joiner and bidirectional format character and every mark (non-spacing, enclosing, variation selector) that
-        /// follows a space or another swapped character; at swap 3 every format character and mark.</summary>
+        /// <summary>The text the formatter is given, with characters swapped, one for one, so every offset stays. Swap 1: every zero width joiner for a word joiner
+        /// (U+2060). Swap 2: also every zero width non-joiner and bidirectional format character. Swap 3: also every character with no glyph of its own (a variation
+        /// selector, a format character) that follows a space, for a word joiner, and a space before a mark for a no-break space, so the mark stays on a base the
+        /// formatter does not split it from, and is drawn (a mark on a no-break space is how a lone diacritic is shown). Swap 4: the same with a dotted circle
+        /// (U+25CC) for the space, where the no-break space is refused. Swap 5: every format character and every mark for a word joiner.</summary>
         internal static string SwapFormatCharacters(string text, int swap)
         {
             if (swap == 0) return text;
             char[]? chars = null;
+            void Put(int at, char c)
+            {
+                if (chars == null) chars = text.ToCharArray();
+                chars[at] = c;
+            }
             bool afterSpace = false;
             for (int i = 0; i < text.Length; i++)
             {
                 char c = text[i];
                 bool hit = c == '\u200D';
                 if (!hit && swap >= 2)
-                    hit = c == '\u200C' || (c >= '\u200E' && c <= '\u200F') || (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || c == '\u061C'
-                        || ((afterSpace || swap >= 3) && IsMark(text, i));
+                    hit = c == '\u200C' || (c >= '\u200E' && c <= '\u200F') || (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || c == '\u061C';
+                if (!hit && swap >= 3)
+                    hit = swap >= 5 ? IsMark(text, i, true) : afterSpace && IsMark(text, i, false);
                 if (hit)
                 {
-                    if (chars == null) chars = text.ToCharArray();
-                    chars[i] = '\u2060';
-                    afterSpace = true;   // what follows a swapped character is treated as what follows a space: a run of marks goes together
+                    Put(i, '\u2060');
+                    afterSpace = true;   // what follows a swapped character is treated as what follows a space
                 }
                 else afterSpace = c == ' ' || (afterSpace && char.IsLowSurrogate(c));
+            }
+            if (swap == 3 || swap == 4)
+            {
+                // A space that a mark with a glyph follows (the swapped characters between them, which are word joiners now, left out).
+                for (int i = 0; i < text.Length; i++)
+                {
+                    if (text[i] != ' ') continue;
+                    int j = i + 1;
+                    while (j < text.Length && (chars == null ? text[j] : chars[j]) == '\u2060') j++;
+                    if (j < text.Length && IsMark(text, j, true) && !IsInvisible(text, j)) Put(i, swap == 3 ? '\u00A0' : '\u25CC');
+                }
             }
             return chars == null ? text : new string(chars);
         }
 
-        /// <summary>Whether the UTF-16 unit at <paramref name="i"/> is (half of) a non-spacing or enclosing mark or a variation selector, or any other format character.</summary>
-        static bool IsMark(string text, int i)
+        /// <summary>Whether the UTF-16 unit at <paramref name="i"/> is (half of) a mark, a variation selector or another format character; with
+        /// <paramref name="visible"/> false only those that have no glyph of their own are meant.</summary>
+        static bool IsMark(string text, int i, bool visible)
+        {
+            if (!MarkOrFormat(text, i)) return false;
+            return visible || IsInvisible(text, i);
+        }
+
+        /// <summary>Whether a mark or format character has no glyph of its own: a variation selector, the combining grapheme joiner, a format character or a tag.</summary>
+        static bool IsInvisible(string text, int i)
+        {
+            char c = text[i];
+            if (char.IsSurrogate(c))
+            {
+                int start = char.IsHighSurrogate(c) ? i : i - 1;
+                if (start < 0 || start + 1 >= text.Length || !char.IsHighSurrogate(text[start]) || !char.IsLowSurrogate(text[start + 1])) return false;
+                int cp = char.ConvertToUtf32(text[start], text[start + 1]);
+                return (cp >= 0xE0000 && cp <= 0xE0FFF) || CharUnicodeInfo.GetUnicodeCategory(text, start) == UnicodeCategory.Format;
+            }
+            return (c >= '\uFE00' && c <= '\uFE0F') || c == '\u034F' || CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.Format;
+        }
+
+        static bool MarkOrFormat(string text, int i)
         {
             char c = text[i];
             if (char.IsSurrogate(c))

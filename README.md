@@ -205,8 +205,7 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   fault and fails when 12 stops doing it).
   On 11.3 only, the formatter throws "Cannot split: requested length N consumes entire run" for some sequences with a zero width joiner, such as one
   after a space before Arabic text in a left-to-right paragraph (`ZwjAfterSpaceTests` names it and fails when 11.3 stops doing it). The layout
-  catches the refusal and lays the paragraph out again with the joiners, and failing that every zero width joiner, non-joiner and bidirectional format
-  character, drawn as a word joiner of the same length (the model, the offsets and the grapheme boundaries are untouched).
+  catches the refusal and lays the paragraph out again with the joiners swapped for word joiners, then the other format characters, then (for a space followed by a mark, the other way the formatter refuses) the space swapped for a dotted circle so the mark is still drawn, and as a last resort every format character and mark swapped for a word joiner (the model, the offsets and the grapheme boundaries are untouched).
   On 12 only, asking for the boxes of a range that covers no width (a right-to-left mark alone before the spaces a line ends with) throws "Covered length must
   be greater than zero"; the layout catches it, in the boxes of a range and in the spaces a justified line stretches, and answers that such a range has no box (`RlmWrapTests` names it and fails when 12 stops doing it).
 - **Paragraph and character properties**: drawn, with the host's `IStyleResolver` supplying named styles (ADR 0004): weight (any 100 to

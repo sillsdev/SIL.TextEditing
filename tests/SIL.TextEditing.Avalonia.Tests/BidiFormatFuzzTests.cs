@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -83,7 +84,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 }
                 catch (Exception e)
                 {
-                    failures.Add(what + ": " + e.GetType().Name + ": " + e.Message);
+                    failures.Add(what + ": " + e.GetType().Name + ": " + e.Message + " @ " + string.Join(" < ", (e.StackTrace ?? "").Split((char)10).Where(l => l.Contains("SIL.TextEditing")).Take(3).Select(l => l.Trim().Split((char)40)[0])));
                 }
             }
             Assert.True(failures.Count == 0, failures.Count + " of " + n + " paragraphs threw:\n" + string.Join("\n", failures));
