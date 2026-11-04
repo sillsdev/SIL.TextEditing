@@ -153,6 +153,7 @@ namespace SIL.TextEditing.Avalonia
         public TextRun? GetTextRun(int textSourceIndex)
         {
             if (textSourceIndex >= Text.Length) return null;
+            { var probe = ParagraphLayout.Probe; if (probe != null) probe.RunsRead++; }
             IReadOnlyList<Segment> segments = SegmentLookup ?? Segments;
             int lo = SegmentAt(segments, textSourceIndex);
             if (lo < segments.Count)
@@ -166,6 +167,35 @@ namespace SIL.TextEditing.Avalonia
                 return new TextCharacters(Text.AsMemory(textSourceIndex, s.End - textSourceIndex), s.Properties);
             }
             return null;
+        }
+    }
+
+    /// <summary>A paragraph's text source that ends at <see cref="End"/>, so the formatter, which keeps and lays out every run it has been offered up to the end of
+    /// the text for each line it makes, is offered a few lines of a paragraph of tens of thousands of runs and not what is left of it (see
+    /// <see cref="ParagraphLayout.FormatWindowed"/>).</summary>
+    sealed class WindowedSource : ITextSource
+    {
+        readonly ParagraphSource _paragraph;
+
+        public WindowedSource(ParagraphSource paragraph)
+        {
+            _paragraph = paragraph;
+            End = paragraph.Text.Length;
+        }
+
+        /// <summary>The length of the whole paragraph's text.</summary>
+        public int Length => _paragraph.Text.Length;
+
+        /// <summary>The index the text ends at, as far as the formatter can tell.</summary>
+        public int End { get; set; }
+
+        public TextRun? GetTextRun(int textSourceIndex)
+        {
+            if (textSourceIndex >= End) return null;
+            var run = _paragraph.GetTextRun(textSourceIndex);
+            if (run is TextCharacters characters && textSourceIndex + characters.Length > End)
+                return new TextCharacters(_paragraph.Text.AsMemory(textSourceIndex, End - textSourceIndex), characters.Properties);
+            return run;
         }
     }
 
@@ -246,15 +276,45 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The offset of the run that holds the index, or 0. The runs are added in text order, so the one that holds it is found by halving.</summary>
         public double At(int index)
         {
-            int lo = 0, hi = _starts.Count;   // the first run that ends after the index
+            int lo = 0, hi = _starts.Count, steps = 0;   // the first run that ends after the index
             while (lo < hi)
             {
-                ParagraphLayout.RangeProbes++;
+                steps++;
                 int mid = (lo + hi) / 2;
                 if (_ends[mid] > index) hi = mid; else lo = mid + 1;
             }
+            ParagraphLayout.CountRangeProbes(steps);
             return lo < _starts.Count && index >= _starts[lo] ? _values[lo] : 0;
         }
+    }
+
+    /// <summary>The work a layout and a draw did, for a test that counts it (<see cref="ParagraphLayout.Probe"/>): nothing counts unless a test started a probe on
+    /// the thread.</summary>
+    internal sealed class LayoutProbe : IDisposable
+    {
+        readonly LayoutProbe? _outer;
+
+        LayoutProbe() { _outer = ParagraphLayout.Probe; ParagraphLayout.Probe = this; }
+
+        /// <summary>Starts counting on this thread until the probe is disposed.</summary>
+        public static LayoutProbe Start() => new LayoutProbe();
+
+        /// <summary>How many times a line's run slots were worked out.</summary>
+        public long RunSlotBuilds;
+
+        /// <summary>How many ranges (a run's offset, background, decoration or squiggle) were looked at.</summary>
+        public long RangeProbes;
+
+        /// <summary>How many times a line of paragraph text was formatted (a label, an ellipsis and an empty line are not counted).</summary>
+        public long LinesFormatted;
+
+        /// <summary>How many glyphs (and object runs) were handed to the renderer.</summary>
+        public long GlyphsDrawn;
+
+        /// <summary>How many times the formatter asked the paragraph's text source for a run.</summary>
+        public long RunsRead;
+
+        public void Dispose() => ParagraphLayout.Probe = _outer;
     }
 
     /// <summary>A run of a line: where it is drawn (x from the line's origin) and the text it holds (<c>Start</c> and <c>Length</c>).</summary>
@@ -401,9 +461,6 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The runs of the line as they are drawn (<see cref="ParagraphLayout.RunSlots"/>), made once when the line was.</summary>
         internal List<RunSlot> AllSlots { get; } = new List<RunSlot>();
 
-        /// <summary>The width of the line's text without the spaces it wraps on (<see cref="ParagraphLayout.NaturalWidth"/>), worked out once.</summary>
-        internal double? NaturalWidthCache;
-
         /// <summary>True for the empty last line a trailing hard line break makes: it holds no text, only a caret place.</summary>
         public bool IsEmpty { get; }
         /// <summary>Where the caret sits on an empty line, in paragraph coordinates (following the alignment).</summary>
@@ -499,7 +556,7 @@ namespace SIL.TextEditing.Avalonia
             double y = top + TextY;
             foreach (var piece in _pieces)
             {
-                ParagraphLayout.GlyphsDrawn += piece.Count;
+                { var p = ParagraphLayout.Probe; if (p != null) p.GlyphsDrawn += piece.Count; }
                 if (piece.Glyphs == null) { piece.Run!.Draw(context, new Point(piece.X, y + piece.Y)); continue; }
                 using (context.PushTransform(Matrix.CreateTranslation(piece.X, y + piece.Y)))
                 using (context.PushClip(new Rect(piece.Left - piece.X, -2500, piece.Right - piece.Left, 5000)))
@@ -572,7 +629,9 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>The x range, from the line's origin, that the words between two spaces are drawn in: from the middle of the space before them to the middle of the
         /// space after, as stretched. A letter's ink can reach past its advance (the hook of a "j", italics), into the space beside it; it stays with its letter up
-        /// to the middle of the space, which is as far as the space's own width reaches, and is not smeared across the stretched gap.</summary>
+        /// to the middle of the space, which is as far as the space's own width reaches, and is not smeared across the stretched gap. Ink of a letter beyond that
+        /// is not drawn (a hook longer than half a space loses its tip: a pixel or two of an italic "j"), where the line drawn whole and cut at each space drew
+        /// it at the wrong place, apart from its letter; <c>JustifiedDrawTests</c> pins both.</summary>
         (double Left, double Right) PieceBounds(Justification j, double shift)
         {
             const double Far = 5000;
@@ -594,7 +653,8 @@ namespace SIL.TextEditing.Avalonia
         void DrawNatural(DrawingContext context, double top)
         {
             double y = top + TextY;
-            foreach (var slot in AllSlots) ParagraphLayout.GlyphsDrawn += (slot.Run as ShapedTextRun)?.GlyphRun.GlyphInfos.Count ?? 1;
+            var probe = ParagraphLayout.Probe;
+            if (probe != null) foreach (var slot in AllSlots) probe.GlyphsDrawn += (slot.Run as ShapedTextRun)?.GlyphRun.GlyphInfos.Count ?? 1;
             if (!HasOffsets) { Line.Draw(context, new Point(X, y)); return; }
             double x = X + Line.Start;
             foreach (var run in _runs!)
@@ -793,7 +853,15 @@ namespace SIL.TextEditing.Avalonia
             var weight = (FontWeight)f.Weight;
             var style = f.Italic ? FontStyle.Italic : FontStyle.Normal;
             double size = f.SizePt > 0 ? f.SizePt : ws.Size;
-            if (f.Superscript != 0) size *= CharFormat.DefaultSuperscriptScale;
+            var typeface = new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight);
+            double scriptOffset = 0;
+            if (f.Superscript != 0)
+            {
+                // The font's own size and offset for superscripts and subscripts, from its OS/2 table; FieldWorks' two thirds where it gives none.
+                var place = ScriptPlacement.For(typeface, f.Superscript == 1);
+                scriptOffset = (f.Superscript == 1 ? 1 : -1) * place.OffsetScale * size;
+                size *= place.SizeScale;
+            }
             FontFeatureCollection? features = cache != null ? cache.Features(ws.Features, f.FontFeatures) : FormatCache.ParseFeatures(ws.Features, f.FontFeatures);
             CultureInfo culture;
             try { culture = CultureInfo.GetCultureInfo(wsTag); }
@@ -802,8 +870,8 @@ namespace SIL.TextEditing.Avalonia
             int lineKind = preedit ? 3 : f.Underline >= 1 && f.Underline <= 5 ? f.Underline : 0;
             var lineBrush = lineKind == 0 ? null : forceText ?? (preedit ? null : ColorBrush(f.UnderColor)) ?? text;
             var decorations = ownDecorations ? null : preedit ? Decorations(3, null, text) : Decorations(f.Underline, f.UnderColor, text);
-            var baseline = f.Superscript == 1 ? BaselineAlignment.Superscript : f.Superscript == 2 ? BaselineAlignment.Subscript : BaselineAlignment.Baseline;
-            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null, preedit ? 0 : f.OffsetPt, lineKind, lineBrush, lineKind == 3 && (preedit || ColorBrush(f.UnderColor) == null));
+            // The raise or drop is the run's baseline offset (the layout draws the run shifted and makes room for it), on top of the offset the run has of its own.
+            return new RunTextProperties(typeface, size, text, decorations, culture, features, ColorBrush(f.BackColor), BaselineAlignment.Baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null, (preedit ? 0 : f.OffsetPt) + scriptOffset, lineKind, lineBrush, lineKind == 3 && (preedit || ColorBrush(f.UnderColor) == null));
         }
 
         /// <summary>Where a run's top is below the top of its line, as Avalonia draws it: baselines aligned, a superscript at the top, a subscript at the bottom.</summary>
@@ -817,17 +885,13 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
-        /// <summary>How many times a line's run slots were worked out, for a test that counts the work a layout does.</summary>
-        internal static long RunSlotBuilds;
+        /// <summary>The work counts a test asks for, on this thread; null (the default, and always in a host) counts nothing. Thread-local, so a field on
+        /// another dispatcher never writes a test's counts and the counts need no locking.</summary>
+        [ThreadStatic] static LayoutProbe? _probe;
 
-        /// <summary>How many ranges (a run's offset, background, decoration or squiggle) were looked at, for a test that counts the work a layout and a draw do.</summary>
-        internal static long RangeProbes;
+        internal static LayoutProbe? Probe { get => _probe; set => _probe = value; }
 
-        /// <summary>How many times a line of paragraph text was formatted, for a test that counts the work a layout does (a label, an ellipsis and an empty line are not counted).</summary>
-        internal static long LinesFormatted;
-
-        /// <summary>How many glyphs (and object runs) were handed to the renderer, for a test that counts the work a draw does.</summary>
-        internal static long GlyphsDrawn;
+        internal static void CountRangeProbes(int n) { var p = _probe; if (p != null) p.RangeProbes += n; }
 
         /// <summary>Where each run of a line is drawn and which text it holds, in drawing order. Avalonia's own numbering of a line's runs (the
         /// text run bounds and the character hits) is wrong for a right-to-left paragraph's line with two or more left-to-right runs and a wrapped
@@ -835,7 +899,7 @@ namespace SIL.TextEditing.Avalonia
         /// it was shaped from.</summary>
         internal static List<RunSlot> RunSlots(TextLine line)
         {
-            RunSlotBuilds++;
+            { var p = _probe; if (p != null) p.RunSlotBuilds++; }
             var result = new List<RunSlot>();
             double x = line.Start;
             foreach (var run in line.TextRuns)
@@ -925,8 +989,187 @@ namespace SIL.TextEditing.Avalonia
         /// </summary>
         public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null, double previousSpaceAfter = 0, IBrush? forceText = null)
         {
+            // Avalonia's formatter throws for some sequences it cannot split a line inside (11.3: "Cannot split: requested length N consumes entire run", for a
+            // zero width joiner after a space before Arabic text, and for a space followed by a combining mark or a variation selector in a paragraph with Arabic or
+            // Hebrew in it). Typed text must not crash the layout, so a paragraph the formatter refuses is laid out again with the offending characters swapped,
+            // one for one, for ones that are drawn the same and break nowhere (the model and every offset are untouched), and each time with more of them, down
+            // to every format character and mark. If even that is refused, the formatter's own exception is the one thrown.
+            Exception? first = null;
+            for (int swap = 0; ; swap++)
+            {
+                try { return BuildWith(swap, paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, forceText); }
+                catch (FormatterRefused e)
+                {
+                    first ??= e.InnerException;
+                    if (swap < FormatSwaps - 1) continue;
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(first!).Throw();
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>How many layouts of a paragraph are tried: as it is, with the zero width joiners swapped, with the other format characters swapped, with the glyphless characters after a space swapped and a space before a mark made a no-break
+        /// space, the same with a dotted circle, with every format character and mark swapped.</summary>
+        const int FormatSwaps = 6;
+
+        /// <summary>The formatter refused a line (<see cref="InvalidOperationException"/> from Avalonia's text formatter).</summary>
+        sealed class FormatterRefused : Exception
+        {
+            public FormatterRefused(Exception inner) : base(inner.Message, inner) { }
+        }
+
+        /// <summary>A paragraph with at least this many runs (after runs that format alike are one) is formatted from windows of its text
+        /// (<see cref="FormatWindowed"/>), if it is Latin text. Settable for a test that compares the two.</summary>
+        internal static int WindowedFormatSegments = 16000;
+
+        /// <summary>Whether a text is Latin script, its marks and its punctuation and nothing else, so a window of it is shaped as the whole of it is: nothing in it can
+        /// change the order or the direction of what is round it (Avalonia resolves the directions of a paragraph's text once for all of it, and a window would
+        /// resolve them for each line), and nothing in it falls back to another font, which a neutral character at a line start would keep in the whole text and
+        /// lose in a window (CJK, Thai and the rest are formatted whole).</summary>
+        internal static bool IsWindowable(string text)
+        {
+            foreach (char c in text)
+            {
+                if (c <= 'ɏ' || (c >= '̀' && c <= 'ͯ') || (c >= '₠' && c <= '⃏')) continue;
+                if (c >= ' ' && c <= '⁯' && !(c >= '‎' && c <= '‏') && !(c >= '‪' && c <= '‮') && !(c >= '⁦' && c <= '⁩')) continue;
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>The characters of lookahead a line needs past its end in a window, before it is trusted to be the line the whole paragraph would give.</summary>
+        const int WindowLookahead = 32;
+
+        /// <summary>Formats the line at <paramref name="index"/> from a source that ends a little past the line, and not from all that is left of the
+        /// paragraph. Avalonia's formatter keeps what it has read of the text, up to its end, in the break of every line it makes and goes through it again for the next, which
+        /// for a paragraph of tens of thousands of runs is most of what a layout costs (it grows with the square of the runs). The window is
+        /// about twice as long as the line before; a line that is not at least <see cref="WindowLookahead"/> characters short of the window's end is
+        /// made again from a window twice as long, so a break is always decided with text after it, and with the rest of its own word. Each line is
+        /// formatted on its own, without the previous line's break, which carries only the runs it left over: the window starts at the line.
+        /// For Latin text (<see cref="IsWindowable"/>) the lines are those the whole text gives, to the kerning of a pair across a line start (a fraction of a pixel).</summary>
+        static TextLine? FormatWindowed(TextFormatter formatter, WindowedSource window, int index, double width, TextParagraphProperties properties, int previousLength)
+        {
+            int total = window.Length;
+            int span = Math.Max(2 * WindowLookahead, 2 * previousLength + WindowLookahead);
+            while (true)
+            {
+                window.End = (int)Math.Min((long)total, (long)index + span);
+                var line = FormatLineGuarded(formatter, window, index, width, properties, null);
+                if (line == null || window.End >= total || line.Length + WindowLookahead <= window.End - index) return line;
+                line.Dispose();
+                span *= 2;
+            }
+        }
+
+        /// <summary>Formats a short line of its own (a label, an ellipsis, a space to measure a height by): the line, or, when the formatter refuses it, the line
+        /// of its text with every format character and mark swapped (<see cref="SwapFormatCharacters"/>), or null.</summary>
+        static TextLine? FormatShort(ParagraphSource source, double width, TextParagraphProperties properties)
+        {
+            try { return TextFormatter.Current.FormatLine(source, 0, width, properties, null); }
+            catch (InvalidOperationException) { }
+            string text = source.Text;
+            source.Text = SwapFormatCharacters(text, 5);
+            try { return TextFormatter.Current.FormatLine(source, 0, width, properties, null); }
+            catch (InvalidOperationException) { return null; }
+            finally { source.Text = text; }
+        }
+
+        static TextLine? FormatLineGuarded(TextFormatter formatter, ITextSource source, int index, double width, TextParagraphProperties properties, TextLineBreak? previous)
+        {
+            try { return formatter.FormatLine(source, index, width, properties, previous); }
+            catch (InvalidOperationException e) { throw new FormatterRefused(e); }
+        }
+
+        /// <summary>The text the formatter is given, with characters swapped, one for one, so every offset stays. Swap 1: every zero width joiner for a word joiner
+        /// (U+2060). Swap 2: also every zero width non-joiner and bidirectional format character. Swap 3: also every character with no glyph of its own (a variation
+        /// selector, a format character) that follows a space, for a word joiner, and a space before a mark for a no-break space, so the mark stays on a base the
+        /// formatter does not split it from, and is drawn (a mark on a no-break space is how a lone diacritic is shown). Swap 4: the same with a dotted circle
+        /// (U+25CC) for the space, where the no-break space is refused. Swap 5: every format character and every mark for a word joiner.</summary>
+        internal static string SwapFormatCharacters(string text, int swap)
+        {
+            if (swap == 0) return text;
+            char[]? chars = null;
+            void Put(int at, char c)
+            {
+                if (chars == null) chars = text.ToCharArray();
+                chars[at] = c;
+            }
+            bool afterSpace = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                bool hit = c == '\u200D';
+                if (!hit && swap >= 2)
+                    hit = c == '\u200C' || (c >= '\u200E' && c <= '\u200F') || (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || c == '\u061C';
+                if (!hit && swap >= 3)
+                    hit = swap >= 5 ? IsMark(text, i, true) : afterSpace && IsMark(text, i, false);
+                if (hit)
+                {
+                    Put(i, '\u2060');
+                    afterSpace = true;   // what follows a swapped character is treated as what follows a space
+                }
+                else afterSpace = c == ' ' || (afterSpace && char.IsLowSurrogate(c));
+            }
+            if (swap == 3 || swap == 4)
+            {
+                // A space that a mark with a glyph follows (the swapped characters between them, which are word joiners now, left out).
+                for (int i = 0; i < text.Length; i++)
+                {
+                    if (text[i] != ' ') continue;
+                    int j = i + 1;
+                    while (j < text.Length && (chars == null ? text[j] : chars[j]) == '\u2060') j++;
+                    if (j < text.Length && IsMark(text, j, true) && !IsInvisible(text, j)) Put(i, swap == 3 ? '\u00A0' : '\u25CC');
+                }
+            }
+            return chars == null ? text : new string(chars);
+        }
+
+        /// <summary>Whether the UTF-16 unit at <paramref name="i"/> is (half of) a mark, a variation selector or another format character; with
+        /// <paramref name="visible"/> false only those that have no glyph of their own are meant.</summary>
+        static bool IsMark(string text, int i, bool visible)
+        {
+            if (!MarkOrFormat(text, i)) return false;
+            return visible || IsInvisible(text, i);
+        }
+
+        /// <summary>Whether a mark or format character has no glyph of its own: a variation selector, the combining grapheme joiner, a format character or a tag.</summary>
+        static bool IsInvisible(string text, int i)
+        {
+            char c = text[i];
+            if (char.IsSurrogate(c))
+            {
+                int start = char.IsHighSurrogate(c) ? i : i - 1;
+                if (start < 0 || start + 1 >= text.Length || !char.IsHighSurrogate(text[start]) || !char.IsLowSurrogate(text[start + 1])) return false;
+                int cp = char.ConvertToUtf32(text[start], text[start + 1]);
+                return (cp >= 0xE0000 && cp <= 0xE0FFF) || CharUnicodeInfo.GetUnicodeCategory(text, start) == UnicodeCategory.Format;
+            }
+            return (c >= '\uFE00' && c <= '\uFE0F') || c == '\u034F' || CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.Format;
+        }
+
+        static bool MarkOrFormat(string text, int i)
+        {
+            char c = text[i];
+            if (char.IsSurrogate(c))
+            {
+                int start = char.IsHighSurrogate(c) ? i : i - 1;
+                if (start < 0 || start + 1 >= text.Length || !char.IsHighSurrogate(text[start]) || !char.IsLowSurrogate(text[start + 1])) return false;
+                int cp = char.ConvertToUtf32(text[start], text[start + 1]);
+                if (cp >= 0xE0000 && cp <= 0xE0FFF) return true;   // tags and the variation selectors supplement
+                var pair = CharUnicodeInfo.GetUnicodeCategory(text, start);
+                return pair == UnicodeCategory.NonSpacingMark || pair == UnicodeCategory.EnclosingMark || pair == UnicodeCategory.Format;
+            }
+            var category = CharUnicodeInfo.GetUnicodeCategory(c);
+            return category == UnicodeCategory.NonSpacingMark || category == UnicodeCategory.EnclosingMark || category == UnicodeCategory.Format || (c >= '\uFE00' && c <= '\uFE0F') || c == '\u034F';
+        }
+
+        static ParagraphLayout BuildWith(int swap, Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph, int preeditAt, string? preedit, Run? preeditTemplate, IStyleResolver? styles, string? label, double previousSpaceAfter, IBrush? forceText)
+        {
             var layout = new ParagraphLayout(paragraph, width);
-            if (forceText == null) layout._recolour = brush => Build(paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, brush);
+            if (forceText == null)
+            {
+                layout._recolour = brush => Build(paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, brush);
+                layout._builtFrom = paragraph.ChangeStamp;
+            }
             var pf = ResolveFormat(paragraph, writingSystems, styles);
             var formats = layout._formats = new FormatCache(paragraph, writingSystems, foreground, styles, forceText);
             // Every paragraph draws its own underlines and strikethrough (DrawDecorations): Avalonia's leave a gap at each descender, and in a justified
@@ -989,8 +1232,8 @@ namespace SIL.TextEditing.Avalonia
             if (!preeditDone) AddPreedit();
             layout.PreeditAt = hasPreedit ? preeditAt : -1;
             layout.PreeditLength = hasPreedit ? preedit!.Length : 0;
-            source.Text = sb.ToString();
-            layout.EffectiveText = source.Text;
+            layout.EffectiveText = sb.ToString();   // the real text: grapheme boundaries and spaces are read from it
+            source.Text = SwapFormatCharacters(layout.EffectiveText, swap);
             foreach (var seg in source.Segments)
             {
                 if (seg.IsObject || !(seg.Properties is RunTextProperties rp)) continue;
@@ -1035,7 +1278,7 @@ namespace SIL.TextEditing.Avalonia
                 var spaceSource = new ParagraphSource { Text = " " };
                 spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
                 double slot;
-                using (var metrics = TextFormatter.Current.FormatLine(spaceSource, 0, w, paragraphProperties, null))
+                using (var metrics = FormatShort(spaceSource, w, paragraphProperties))
                 {
                     bool measured = metrics != null && metrics.Height > 0;
                     if (measured) lineHeight = metrics!.Height;
@@ -1057,6 +1300,8 @@ namespace SIL.TextEditing.Avalonia
             double y = layout.TopInset + layout._labelLineHeight;
             TextLineBreak? previous = null;
             var formatter = TextFormatter.Current;
+            var window = source.Segments.Count >= WindowedFormatSegments && !paragraph.Rtl && IsWindowable(source.Text) ? new WindowedSource(source) : null;
+            int lastLineLength = 0;
             while (index < source.Text.Length || layout.Lines.Count == 0)
             {
                 if (pf.MaxLines > 0 && layout.Lines.Count >= pf.MaxLines) { layout.Truncated = true; break; }
@@ -1064,8 +1309,8 @@ namespace SIL.TextEditing.Avalonia
                 // The first line starts where PlaceFirstLine put it; the others use the whole text area.
                 double lineWidth = first ? layout._firstWidth : w;
                 double lineX = first ? layout._firstX : layout.ContentLeft;
-                LinesFormatted++;
-                var line = formatter.FormatLine(source, index, lineWidth, paragraphProperties, previous);
+                { var p = _probe; if (p != null) p.LinesFormatted++; }
+                var line = window != null ? FormatWindowed(formatter, window, index, lineWidth, paragraphProperties, lastLineLength) : FormatLineGuarded(formatter, source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
                 double usedWidth = lineWidth;
                 if (pf.MaxLines > 0 && layout.Lines.Count == pf.MaxLines - 1 && index + line.Length < source.Text.Length)
@@ -1079,8 +1324,8 @@ namespace SIL.TextEditing.Avalonia
                         double room = dots.WidthIncludingTrailingWhitespace;
                         if (w > 3 * room)
                         {
-                            LinesFormatted++;
-                            var narrower = formatter.FormatLine(source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
+                            { var p = _probe; if (p != null) p.LinesFormatted++; }
+                            var narrower = window != null ? FormatWindowed(formatter, window, index, Math.Max(lineWidth - room, 1), paragraphProperties, lastLineLength) : FormatLineGuarded(formatter, source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
                             if (narrower != null && narrower.Length > 0)
                             {
                                 line.Dispose();
@@ -1102,6 +1347,7 @@ namespace SIL.TextEditing.Avalonia
                 layout.Width = Math.Max(layout.Width, line.WidthIncludingTrailingWhitespace);
                 if (line.Length <= 0) break;
                 index += line.Length;
+                lastLineLength = line.Length;
                 previous = line.TextLineBreak;
             }
             if (!layout.Truncated && layout.Lines.Count > 0 && layout.Lines[layout.Lines.Count - 1].End == source.Text.Length && source.Text[source.Text.Length - 1] == HardLineBreak)
@@ -1115,7 +1361,7 @@ namespace SIL.TextEditing.Avalonia
                 {
                     var spaceSource = new ParagraphSource { Text = " " };
                     spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
-                    var metrics = formatter.FormatLine(spaceSource, 0, w, paragraphProperties, null);
+                    var metrics = FormatShort(spaceSource, w, paragraphProperties);
                     if (metrics != null)
                     {
                         double slot = layout.SlotHeight(metrics.Height);
@@ -1174,7 +1420,7 @@ namespace SIL.TextEditing.Avalonia
                 for (int i = FirstEndingAfter(_backgrounds, li.Start); i < _backgrounds.Count && _backgrounds[i].Key < li.End; i++)
                 {
                     var bg = _backgrounds[i];
-                    RangeProbes++;
+                    CountRangeProbes(1);
                     // The spaces a wrapped line ends with hang outside its text and are not painted (the paragraph's last line is all text).
                     int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, li == Lines[Lines.Count - 1] ? TextEnd(li) : TextBeforeTrailingSpaces(li));
                     if (b <= a) continue;
@@ -1188,9 +1434,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The width of a line's text up to <paramref name="last"/> (the end of its last letter), without the spaces it wraps on.
         /// Avalonia 11.3 also leaves out a space at the end of one of the line's runs that is not the last, so the line's own width is
         /// not trusted when the runs' widths less those spaces come to more.</summary>
-        double NaturalWidth(LineInfo li, int last) => li.NaturalWidthCache ??= MeasureNaturalWidth(li, last);
-
-        double MeasureNaturalWidth(LineInfo li, int last)
+        double NaturalWidth(LineInfo li, int last)
         {
             double total = 0, trailing = 0;
             int to = TextEnd(li);
@@ -1227,11 +1471,23 @@ namespace SIL.TextEditing.Avalonia
                         right = Math.Max(right, piece.Key.Right - li.X);
                     }
                 else
-                    foreach (var tb in li.Line.GetTextBounds(i, 1))
+                {
+                    try
                     {
-                        left = Math.Min(left, tb.Rectangle.X);
-                        right = Math.Max(right, tb.Rectangle.Right);
+                        foreach (var tb in li.Line.GetTextBounds(i, 1))
+                        {
+                            left = Math.Min(left, tb.Rectangle.X);
+                            right = Math.Max(right, tb.Rectangle.Right);
+                        }
                     }
+                    catch (InvalidOperationException)
+                    {
+                        // Avalonia 12 refuses a range that covers no width ("Covered length must be greater than zero"), such as a space an Arabic letter mark
+                        // takes the width of: it is no gap to stretch.
+                        left = double.MaxValue;
+                        right = double.MinValue;
+                    }
+                }
                 if (right - left > 0.01) spaces.Add(new KeyValuePair<double, double>(left, right));
             }
             if (spaces.Count == 0) return;
@@ -1269,7 +1525,7 @@ namespace SIL.TextEditing.Avalonia
             int lo = 0, hi = _decorations.Count;
             while (lo < hi)
             {
-                RangeProbes++;
+                CountRangeProbes(1);
                 int mid = (lo + hi) / 2;
                 if (_decorations[mid].End > offset) hi = mid; else lo = mid + 1;
             }
@@ -1282,7 +1538,7 @@ namespace SIL.TextEditing.Avalonia
             int lo = 0, hi = ranges.Count;
             while (lo < hi)
             {
-                RangeProbes++;
+                CountRangeProbes(1);
                 int mid = (lo + hi) / 2;
                 if (ranges[mid].Value.Key > offset) hi = mid; else lo = mid + 1;
             }
@@ -1316,7 +1572,7 @@ namespace SIL.TextEditing.Avalonia
                 for (int d = FirstDecorationEndingAfter(li.Start); d < _decorations.Count && _decorations[d].Start < li.End; d++)
                 {
                     var decoration = _decorations[d];
-                    RangeProbes++;
+                    CountRangeProbes(1);
                     int a = Math.Max(decoration.Start, li.Start), b = Math.Min(decoration.End, end);
                     if (b <= a) continue;
                     // Boxes that touch are one line, so a pattern runs on across them.
@@ -1403,7 +1659,7 @@ namespace SIL.TextEditing.Avalonia
                 for (int i = ordered ? FirstEndingAfter(list, li.Start) : 0; i < list.Count; i++)
                 {
                     if (ordered && list[i].Key >= li.End) break;
-                    RangeProbes++;
+                    CountRangeProbes(1);
                     yield return list[i];
                 }
             }
@@ -1445,7 +1701,7 @@ namespace SIL.TextEditing.Avalonia
             EllipsisProperties = props;
             var source = new ParagraphSource { Text = "..." };
             source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 3, Properties = props });
-            _ellipsis = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left), null);
+            _ellipsis = FormatShort(source, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left));
             return _ellipsis;
         }
 
@@ -1619,7 +1875,7 @@ namespace SIL.TextEditing.Avalonia
             _labelRun = props;
             var source = new ParagraphSource { Text = text };
             source.Segments.Add(new ParagraphSource.Segment { Start = 0, End = text.Length, Properties = props });
-            _label = TextFormatter.Current.FormatLine(source, 0, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left), null);   // Left: drawn from its own x, not from the right of the 100000 wide line
+            _label = FormatShort(source, 100000, new ParagraphProperties(Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, props, TextAlignment.Left));   // Left: drawn from its own x, not from the right of the 100000 wide line
             _labelText = text;
             return _label;
         }
@@ -1869,12 +2125,21 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>The caret stops a click can go to instead of the layout's own answer: those drawn somewhere other than the layout has them and, when
-        /// there are any, every stop of the spaces the line ends with (their carets are drawn as a row, and the layout has no place for a click among them).</summary>
+        /// there are any, every stop of the spaces the line ends with (their carets are drawn as a row, and the layout has no place for a click among them);
+        /// on a line that <see cref="LineInfo.UsesRuns"/>, every stop.</summary>
         List<Stop> DisplacedStopsOf(LineInfo li, int core)
         {
             var result = new List<Stop>();
             if (li.IsEmpty || double.IsInfinity(LayoutWidth)) return result;
             var stops = VisualStops(li);
+            if (li.UsesRuns)
+            {
+                // A line read from its runs puts a click where its runs put the carets, and where a run's end is also the end of the run beside it, at the same x, the
+                // layout's answer is the end of the one it asked and not the other's, a space or two away. So every stop of such a line is a candidate: the click goes to the
+                // nearest, which at a stop's own x is that stop.
+                result.AddRange(stops);
+                return result;
+            }
             if (!stops.Any(stop => Math.Abs(CaretXBeforeClamp(li, stop.Hit) - stop.X) > 0.01)) return result;
             foreach (var stop in stops)
                 if (stop.Offset >= core || Math.Abs(CaretXBeforeClamp(li, stop.Hit) - stop.X) > 0.01) result.Add(stop);
@@ -2026,13 +2291,17 @@ namespace SIL.TextEditing.Avalonia
         Func<IBrush, ParagraphLayout>? _recolour;
         ParagraphLayout? _recoloured;
         Color _recolouredTo;
+        /// <summary>The paragraph's change stamp when this layout was made: it moves for a change of its runs, their text, writing systems and object data, a property
+        /// bag changed in place, its direction and its style (issue 101), so it is all it takes to know the paragraph is not what this layout was made from.</summary>
+        long _builtFrom;
 
         /// <summary>This paragraph laid out the same way (the same lines, so the same places) with all its text and its underlines in <paramref name="colour"/>,
         /// whatever colours the runs have: what the selected text is drawn in where the system gives it a colour of its own. Built once and kept with this
-        /// layout, so selecting costs a redraw and not a layout of the text each time.</summary>
+        /// layout, so selecting costs a redraw and not a layout of the text each time. Null when the paragraph is not what this layout was made from (a host
+        /// changed it in place and has not called <c>RefreshFromDocument()</c>): a second layout of the new text would be drawn over this one's selection boxes.</summary>
         internal ParagraphLayout? InColour(Color colour)
         {
-            if (_recolour == null) return null;
+            if (_recolour == null || Paragraph.ChangeStamp != _builtFrom) return null;
             if (_recoloured == null || _recolouredTo != colour)
             {
                 _recoloured?.Dispose();

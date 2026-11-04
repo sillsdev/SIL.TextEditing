@@ -29,5 +29,18 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(laid > 100);
             }
         });
+
+        [Fact]
+        public void A_justified_line_with_an_Arabic_letter_mark_and_spaces_round_an_isolate_lays_out_though_Avalonia_12_refuses_a_range_of_no_width_in_Justify() => Headless.Run(() =>
+        {
+            string text = "-  i" + char.ConvertFromUtf32(0x1F600) + "؜  ⁩ ع";
+            for (double width = 20; width <= 120; width += 1)
+            {
+                var p = Para("ja", "ja", text);
+                p.Props.SetInt(TextPropertyNumbers.Align, 5);
+                var pl = Fixtures.Field(Doc(p), width).ParagraphLayoutFor(0);
+                Assert.True(pl.Lines.Count >= 1);
+            }
+        });
     }
 }

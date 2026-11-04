@@ -31,10 +31,10 @@ namespace SIL.TextEditing.Avalonia.Tests
             long probes = 0;
             Headless.Run(() =>
             {
-            long before = ParagraphLayout.RangeProbes;
+            using var probe = LayoutProbe.Start();
             var field = Fixtures.Field(Doc(Many(runs, true)), 500);
             Fixtures.Render(field);
-            probes = ParagraphLayout.RangeProbes - before;
+            probes = probe.RangeProbes;
             });
             return probes;
         }

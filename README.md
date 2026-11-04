@@ -31,8 +31,9 @@ One source tree serves both Avalonia generations. The netstandard2.0 target comp
 versions are set per target framework in `Directory.Packages.props`. There is currently no `#if` in the source: the spike's one per-version spot (the clipboard API) is not needed,
 because Avalonia 11.3.17 already has the `DataTransfer` API that 12 uses, and `FontFeature` parsing is written
 without `FontFeatureCollection.Parse` (absent in 11.3) for both. Keep any future per-version difference small, behind
-`#if NET10_0_OR_GREATER`, and list it here. The one difference now: `SpellScanner` asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a
-one-character string on netstandard2.0 (no overload there), which only costs an allocation for a letter outside the basic plane.
+`#if NET10_0_OR_GREATER`, and list it here. The differences now: `SpellScanner` asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a
+one-character string on netstandard2.0 (no overload there), which only costs an allocation for a letter outside the basic plane; and `ScriptPlacement` reads a font's
+OS/2 and hhea tables with `IGlyphTypeface.TryGetTable` on netstandard2.0 and, as Avalonia 12 gives no access to tables, from the font file's own table directory on net10.0 (once for each font; in a font collection from the member whose family name is the typeface's, and nothing is read whole).
 
 Avalonia.Desktop, Avalonia.Themes.Fluent and Avalonia.Win32.Interoperability are used by the samples only; the
 libraries do not reference them. The playground tests load the Fluent theme so the sample's buttons and pickers have
@@ -202,9 +203,14 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   left-to-right paragraph come with glyph clusters numbered against the run's direction and answer distances and hits that do not add up
   (a click at the end of the line lands one space short); `RunSlot` places such a run by counting its spaces (`ClusterOrderTests` names the
   fault and fails when 12 stops doing it).
+  On 11.3 only, the formatter throws "Cannot split: requested length N consumes entire run" for some sequences with a zero width joiner, such as one
+  after a space before Arabic text in a left-to-right paragraph (`ZwjAfterSpaceTests` names it and fails when 11.3 stops doing it). The layout
+  catches the refusal and lays the paragraph out again with the joiners swapped for word joiners, then the other format characters, then (for a space followed by a mark, the other way the formatter refuses) the space swapped for a dotted circle so the mark is still drawn, and as a last resort every format character and mark swapped for a word joiner (the model, the offsets and the grapheme boundaries are untouched).
+  On 12 only, asking for the boxes of a range that covers no width (a right-to-left mark alone before the spaces a line ends with) throws "Covered length must
+  be greater than zero"; the layout catches it, in the boxes of a range and in the spaces a justified line stretches, and answers that such a range has no box (`RlmWrapTests` names it and fails when 12 stops doing it).
 - **Paragraph and character properties**: drawn, with the host's `IStyleResolver` supplying named styles (ADR 0004): weight (any 100 to
   900, invert), italic, foreground and background colour, underline type and colour (dotted, dashed, single, double,
-  strikethrough, and the squiggle, which the layout draws itself as a zigzag below the baseline), superscript and subscript, font size (absolute, relative, named), font
+  strikethrough, and the squiggle, which the layout draws itself as a zigzag below the baseline), superscript and subscript (sized, and raised or lowered, as the font's own OS/2 table says, with FieldWorks' two thirds where it gives nothing; the ratios are applied to the size of the text beside it, which is a default), font size (absolute, relative, named), font
   family and per-run font features; for a paragraph, alignment, first-line and hanging indents, margins, space before
   and after, line height, paragraph colour, borders and padding, a line limit, bullets and numbers. A run's baseline offset is drawn by drawing the run
   ourselves, shifted: the line's slot makes room for it and the caret, selection and squiggle follow it. A justified paragraph is stretched by
@@ -227,6 +233,10 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   spaces hang to, with the paragraph's trailing indent (property 20: the side lines end on, in either direction) of a few spaces' width; a margin around the control does not help, as
   the field cannot draw there. The mouse follows the carets as they are drawn: a click at one gives it, and a click beyond the End caret
   gives the End caret.
+- **Very long paragraphs**: runs that look alike are one stretch of text to Avalonia's formatter, and a paragraph's ranges are found by halving, so a layout grows with the runs. Avalonia's
+  formatter itself (about nine tenths of a layout's time, on both versions) carries what is left of the text from each line to the next, so a paragraph of tens of thousands of runs
+  costs more than its length: 64,000 runs lay out in about 2.0 s on 11.3 and 1.6 s on 12. From 16,000 runs (after runs that look alike are one) a paragraph of Latin text (letters, their marks, punctuation) that is not right to left
+  is formatted line by line from a window of its text instead (`ParagraphLayout.FormatWindowed`), which gives the same lines and carets, but for the kerning of a pair across a line start (widths move by a fraction of a pixel), in about 1.1 s on 11.3 and 0.46 s on 12 for those 64,000 runs; a paragraph with any other script is formatted whole, as the directions of right-to-left text are resolved for all of it at once and a neutral character at a line start keeps the fallback font of the text before it (CJK, Thai).
 - **Graphemes**: `GraphemeClusters` is `StringInfo` plus Indic conjuncts (GB9c, six scripts; .NET 10 lacks it). The
   netstandard2.0 build also fuses Extend, SpacingMark, emoji ZWJ sequences and flags per UAX #29, with approximated
   property tables; caret stops in the field come from the shaper, except on a right-to-left paragraph's line of several runs

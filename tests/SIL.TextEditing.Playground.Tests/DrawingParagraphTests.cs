@@ -580,7 +580,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(plain.FontRenderingEmSize, label.FontRenderingEmSize);
                 Assert.Equal(plain.Typeface.Weight, label.Typeface.Weight);
                 // The text itself still has them.
-                Assert.Equal(BaselineAlignment.Superscript, s.Field.ParagraphLayoutFor(Number1).Lines[0].Line.TextRuns[0].Properties!.BaselineAlignment);
+                Assert.True(s.Field.ParagraphLayoutFor(Number1).Lines[0].Line.TextRuns[0].Properties!.FontRenderingEmSize < plain.FontRenderingEmSize * 0.8);
             }
         });
 
