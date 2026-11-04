@@ -41,6 +41,12 @@ namespace SIL.TextEditing
         /// <summary>Raised on any change to the document: start paragraph, removed paragraphs, added paragraphs.</summary>
         public event Action<int, int, int>? DocumentChanged;
 
+        /// <summary>Raised just before <see cref="DocumentChanged"/> for an edit whose range is known (typing, deleting, pasting, Enter and a
+        /// line break): which text was replaced and where the new text ends, so a listener can move what it keeps by offset (a field keeps its
+        /// spelling marks outside the edit). Not raised for <see cref="Apply"/>, <see cref="ExternalReplaceParagraph"/> or an edit that
+        /// leaves the paragraph that follows the range as the one that keeps the identity; those only raise <see cref="DocumentChanged"/>.</summary>
+        public event Action<TextEdit>? TextEdited;
+
         /// <summary>Called first by everything that changes the document (typing, paste, deletion, Enter, line breaks, and the
         /// host's <see cref="Apply"/> and <see cref="ExternalReplaceParagraph"/>), before it touches anything. A host that has a
         /// thread rule sets it to throw when the caller breaks the rule. <c>RichTextField</c> sets it to require the UI thread:
@@ -167,7 +173,7 @@ namespace SIL.TextEditing
             return d;
         }
 
-        void Finish(EditDelta d, TextPosition caret)
+        void Finish(EditDelta d, TextPosition caret, TextEdit? edit = null)
         {
             AssignUndoGroup(d);
             Caret = Anchor = caret;
@@ -175,6 +181,7 @@ namespace SIL.TextEditing
             _wsOverride = false;
             RefreshWs();
             Committed?.Invoke(d);
+            if (edit != null) TextEdited?.Invoke(edit.Value);
             DocumentChanged?.Invoke(d.Start, d.Before.Count, d.After.Count);
             CaretMoved?.Invoke();
             EndSingleEditGroup();
@@ -257,10 +264,13 @@ namespace SIL.TextEditing
                 var ws = ActiveWs;
                 var d = Begin(Caret.Paragraph, Caret.Paragraph, "type");
                 var para = Document.Paragraphs[Caret.Paragraph];
+                long stamp = para.ChangeStamp;
+                var at = Caret;
                 para.Insert(Caret.Offset, text, ws, InheritProps(Caret, ws));
                 d.After.Add(para.Clone());
                 bool keepOverride = _wsOverride;
-                Finish(d, new TextPosition(Caret.Paragraph, Caret.Offset + text.Length));
+                var after = new TextPosition(at.Paragraph, at.Offset + text.Length);
+                Finish(d, after, new TextEdit(at, at, after, stamp, stamp));
                 if (keepOverride)
                 {
                     _wsOverride = true;
@@ -361,7 +371,7 @@ namespace SIL.TextEditing
             tail.Delete(0, b.Offset);
             var survivor = Document.Paragraphs[KeptParagraph(a, b)];
             var merged = survivor.Clone();
-            merged.Runs = new List<Run>();
+            merged.Runs = new RunList();
             foreach (var r in head.Runs) merged.Runs.Add(r.Clone());
             TextPosition caret;
             var newParas = new List<Paragraph>();
@@ -396,7 +406,7 @@ namespace SIL.TextEditing
                     var runs = fragment[fragment.Count - 1].Runs.Select(r => r.Clone()).ToList();
                     int off = runs.Sum(r => r.Text.Length);
                     runs.AddRange(tail.Runs.Select(r => r.Clone()));
-                    lastNew.Runs = runs;
+                    lastNew.Runs = new RunList(runs);
                     lastNew.Normalize();
                     newParas.Add(lastNew);
                     caret = new TextPosition(a.Paragraph + fragment.Count - 1, off);
@@ -405,7 +415,8 @@ namespace SIL.TextEditing
             Document.Paragraphs.RemoveRange(a.Paragraph, b.Paragraph - a.Paragraph + 1);
             Document.Paragraphs.InsertRange(a.Paragraph, newParas);
             d.After.AddRange(newParas.Select(p => p.Clone()));
-            Finish(d, caret);
+            bool sameProperties = (fragment == null || fragment.Count <= 1) && first.Style == last.Style && first.Props.ContentEquals(last.Props);
+            Finish(d, caret, survivor == first ? new TextEdit(a, b, caret, first.ChangeStamp, last.ChangeStamp, sameProperties) : (TextEdit?)null);
         }
 
         /// <summary>Enter. At offset 0 the new empty paragraph (new identity) goes before and the original identity
@@ -435,7 +446,7 @@ namespace SIL.TextEditing
             Document.Paragraphs.Insert(Caret.Paragraph + 1, right);
             d.After.Add(left.Clone());
             d.After.Add(right.Clone());
-            Finish(d, new TextPosition(Caret.Paragraph + 1, 0));
+            Finish(d, new TextPosition(Caret.Paragraph + 1, 0), new TextEdit(Caret, Caret, new TextPosition(Caret.Paragraph + 1, 0), orig.ChangeStamp, orig.ChangeStamp));
         }
 
         // ---- fragments (clipboard) ----
@@ -450,7 +461,7 @@ namespace SIL.TextEditing
                 var p = Document.Paragraphs[pi];
                 int s = pi == a.Paragraph ? a.Offset : 0;
                 int e = pi == b.Paragraph ? b.Offset : p.Length;
-                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = p.Slice(s, e) });
+                result.Add(new Paragraph { Style = p.Style, Rtl = p.Rtl, DefaultWs = p.DefaultWs, Props = p.Props.Clone(), Runs = new RunList(p.Slice(s, e)) });
             }
             return result;
         }

@@ -328,5 +328,25 @@ namespace SIL.TextEditing.Tests
             var s = SpellScanner.SuggestionsAt(p, 0, 1, new FakeSpellHost())!;
             Assert.Equal(new[] { "ab", " ", "12", " ", "cd" }, s.WithMissingSpaces().Select(r => r.Text));
         }
+
+        [Fact]
+        public void A_part_that_may_not_be_edited_is_separated_from_the_editable_text_beside_it()
+        {
+            var p = TestDocs.Para("en", "en", "ab", "en", "12", "en", "cd");
+            p.Runs[1].Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            var s = SpellScanner.SuggestionsAt(p, 0, 1, new FakeSpellHost())!;
+            Assert.Equal(SpellingProblem.Mixed, s.Problem);
+            Assert.Equal(new[] { "ab", " ", "12", " ", "cd" }, s.WithMissingSpaces().Select(r => r.Text));
+        }
+
+        [Fact]
+        public void Editable_and_semi_editable_parts_are_both_checked_but_the_rule_still_puts_a_space_between_them()
+        {
+            var p = TestDocs.Para("en", "en", "ab", "en", "cd");
+            p.Runs[1].Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableSemi);
+            var s = SpellScanner.SuggestionsAt(p, 0, 1, new FakeSpellHost())!;
+            Assert.Equal(SpellingProblem.Misspelled, s.Problem);   // one checked word, so the dictionary was asked
+            Assert.Equal(new[] { "ab", " ", "cd" }, s.WithMissingSpaces().Select(r => r.Text));
+        }
     }
 }
