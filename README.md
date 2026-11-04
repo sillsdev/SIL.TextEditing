@@ -48,7 +48,7 @@ the list directly. `RunList` has `Add`, `Insert`, `RemoveAt`, `RemoveRange`, `Ad
 change to a run's `PropertyBag` in place (`SetInt`, `SetStr`, or a write to `IntProps` or `StrProps`) is seen too: the bag tells the paragraphs that
 hold it, so `ChangeStamp` moves and a field shows the change (see the spelling section for what a host still calls).
 
-`Paragraph.Runs = list` takes a `List<Run>` directly (the paragraph adopts a new `RunList` over the same runs). `Run.Text = null` throws
+`Paragraph.Runs = list` takes a `List<Run>` directly (the paragraph adopts a new `RunList` over the same runs, not the list itself: the `Run` objects are shared, but a later `list.Add` is not seen by the paragraph). `Run.Text = null` throws
 `ArgumentNullException` (use an empty string); so do `Run.Props = null` and `Paragraph.Props = null`. Looping over `Paragraph.Runs` while the list is added to, removed from or has a run
 replaced throws `InvalidOperationException`, as it does for a `List<Run>`; changing a run's text or properties meanwhile is fine.
 `Paragraph.Text` is safe to read from any thread while nothing changes the paragraph (the model itself is edited on the UI thread only).
@@ -162,7 +162,7 @@ What a host calls (the field restarts checking itself on an edit through the edi
 directly. A paragraph tells the field when its runs, a run's text, writing system, object data or property bag (replaced, or changed in place with
 `SetInt`, `SetStr` or a write to `IntProps` or `StrProps`), or its style, direction, default writing system or property bag, change
 (`Paragraph.ChangeStamp` moves): the field measures and draws again, lays out that paragraph again (and only that one, keyed by the stamp), numbers
-the list again, drops the marks of that paragraph and checks it again when idle. A change made on another thread is followed on the field's own.
+the list again, drops the marks of that paragraph and checks it again when idle. A notice from another thread is marshalled to the field's own, but the model is not thread-safe (ADR 0024): the edit itself must still not overlap a layout, so a host edits on the UI thread.
 `RichTextField.RefreshFromDocument()` is for what a paragraph cannot tell: the list of paragraphs (`Document.Paragraphs`) changed, a paragraph
 replaced in it. It restarts checking too. When a style resolver's answers change (not the resolver itself, which the field takes again when it is set), `InvalidateAllLayouts()`, and
 `RestartSpelling()` when what is checked changed. After repairing a failed dictionary, raise `DictionariesChanged`. Setting

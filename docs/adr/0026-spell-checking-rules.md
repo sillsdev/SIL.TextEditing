@@ -98,6 +98,9 @@ owner decisions.
   characters). What is left, on purpose: a trailing zero-width joiner or non-joiner stays in the double-click's word (it is part of the cluster
   before it; the spell checker's word stops before it), and a combining mark with no letter before it to stand on (after a space or a hyphen) stays
   with that character for a double-click while the spell checker, which walks code points as FieldWorks walks UTF-16 units, starts a word at the mark.
+  A third difference, from FieldWorks, not ours to have chosen: FieldWorks stops a double-click word at a change of writing system, spell-check property or
+  significant style; the field's double-click and Ctrl+arrows cross run boundaries (the spell checker marks such a word blue, `Mixed`). So "one rule" is
+  one word-forming rule, not full parity; the parity fix is a separate issue.
   The whole-word find's use of the same rule is ours (FieldWorks' was not read), and so is a zero-width joiner or non-joiner staying with the
   grapheme cluster before it. The spell checker's word goes through an embedded object (FieldWorks widens its menu word the same way) and is
   `Embedded`, so `ContextInfo.Spelling` can reach further than `ContextInfo.Word`. Taking the host's rule for the double-click and Ctrl+arrows
@@ -144,7 +147,7 @@ owner decisions.
   the paragraph is the one that was asked about, in the state it had (a restart, a width change that moves a line limit, an edit through the editor
   or a direct change all replace or invalidate it) and at the stamp it had (`Paragraph.ChangeStamp`), in the same epoch; otherwise they are dropped and
   the text is asked again, so no mark is ever drawn for text that is not there. While a batch is out the idle work starts nothing new and does not
-  busy-wait (`CheckSpellingStep` returns false, `IsSpellingComplete` is false) and the answer asks for the next step. A checker that throws on the
+  busy-wait (`CheckSpellingStep` returns false, `IsSpellingComplete` is false) and the answer asks for the next step. A batch that is out is cancelled (a flag the worker checks before each word) when the host is replaced or removed, the field leaves the screen or checking starts over: one question already running cannot be interrupted, but no further word is asked, and a new host is not held up by a checker that never returns. A checker that throws on the
   worker is left alone for the rest of the batch (its words taken as right) and is reported through `SpellCheckerFailed` on the field's thread,
   once per writing system as before, unless checking started over meanwhile. A checker without the interface, or a step with none of its words,
   takes the synchronous path exactly as before; a step with some of each asks the others at once and the rest on the worker. `Suggest` and `Add` stay on
