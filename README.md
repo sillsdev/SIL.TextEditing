@@ -20,6 +20,7 @@ change, and the list under "Known gaps" is the work still to do.
 | `tests/SIL.TextEditing.Tests` | net48, net10.0 | Unit tests for the model. |
 | `tests/SIL.TextEditing.Avalonia.Tests` | net48, net10.0 | Avalonia.Headless tests for the surface (Skia, real shaping). |
 | `tests/SIL.TextEditing.SecondDispatcher.Tests` | net10.0 | The tests that make a dispatcher on a second thread (Avalonia 12 allows it). `Dispatcher.UIThread` is process-wide, so they run in a test host of their own and cannot change it for the other tests (issue #72). |
+| `tests/SIL.TextEditing.RealClipboard.Tests` | net48, net10.0 | Bytes and Arabic text through the default clipboard backend and the real Windows clipboard, in a real Avalonia window (Avalonia.Desktop), not Avalonia.Headless. Windows only (skipped elsewhere); it overwrites the clipboard of whoever runs it, and the two target frameworks take turns through a named mutex. |
 | `tests/SIL.TextEditing.LCModel.Tests` | net48, net10.0 | Round trips of the adapter against real `TsStrFactory` strings, edits that leave undrawn properties alone, and the clipboard XML. |
 | `samples/SIL.TextEditing.Playground` | netstandard2.0, net10.0 | The shared playground UI: a `RichTextField`, scenario picker, writing-system bar, format and undo buttons, live model inspector and event log. Both hosts and the integration tests use it. |
 | `samples/Playground.Desktop` | net48, net10.0 | Plain Avalonia desktop app showing the playground: Avalonia 11.3.17 on net48, Avalonia 12 on net10.0 (Motif's shape). |
