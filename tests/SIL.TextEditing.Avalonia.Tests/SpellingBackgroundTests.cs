@@ -192,10 +192,14 @@ namespace SIL.TextEditing.Avalonia.Tests
         {
             var host = BgHost(out var en);
             var (window, field) = Fixtures.InWindow(Two());
+            var signal = new ManualResetEventSlim();         // set whenever the field posts to its dispatcher: an idle request or the worker's answer
+            field.SpellIdlePost = a => { global::Avalonia.Threading.Dispatcher.UIThread.Post(a, global::Avalonia.Threading.DispatcherPriority.Background); signal.Set(); };
             field.SpellChecking = host;
-            for (int i = 0; i < 2000 && !field.IsSpellingComplete; i++)
+            Headless.Pump();
+            while (!field.IsSpellingComplete)
             {
-                Thread.Sleep(2);                             // only to give the worker a turn; the test waits for the result, not for a time
+                Assert.True(signal.Wait(60000), "the field never asked for more idle time");   // an event, not a poll; the limit only stops a broken field hanging the run
+                signal.Reset();
                 Headless.Pump();
             }
             Assert.True(field.IsSpellingComplete);

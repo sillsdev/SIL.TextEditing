@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Xunit;
 
 namespace SIL.TextEditing.Playground.Tests
@@ -14,14 +15,26 @@ namespace SIL.TextEditing.Playground.Tests
             s.Field.SpellingMarks(paragraph).Select(m => s.ParagraphText(paragraph).Substring(m.Start, m.Length)).ToArray();
 
         /// <summary>Lets the worker have turns until the field has everything in view checked; it waits for the result, not for a time.</summary>
-        static void UntilChecked(Session s)
+        /// <summary>Has every idle request and every answer from the worker signal an event as it is posted to the dispatcher, so a test waits for the
+        /// next one instead of polling. Call before the step that starts the checking.</summary>
+        static ManualResetEventSlim Arm(Session s)
         {
-            for (int i = 0; i < 4000 && !s.Field.IsSpellingComplete; i++)
+            var signal = new ManualResetEventSlim();
+            s.Field.SpellIdlePost = a => { Dispatcher.UIThread.Post(a, DispatcherPriority.Background); signal.Set(); };
+            return signal;
+        }
+
+        /// <summary>Runs what is posted, and waits for the next post, until everything in view is checked. The wait is for an event; the generous limit only
+        /// stops a broken field hanging the run.</summary>
+        static void UntilChecked(Session s, ManualResetEventSlim signal)
+        {
+            Headless.Pump();
+            while (!s.Field.IsSpellingComplete)
             {
-                Thread.Sleep(2);
+                Assert.True(signal.Wait(60000), "the field never asked for more idle time");
+                signal.Reset();
                 Headless.Pump();
             }
-            Assert.True(s.Field.IsSpellingComplete);
         }
 
         [Fact]
@@ -33,10 +46,11 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Equal(new[] { "jumpd", "teh" }, Words(s, 0));          // the plain dictionary: asked on the UI thread
                 Assert.Empty(s.View.Spelling!.CheckThreads);
 
+                var signal = Arm(s);
                 s.Find<CheckBox>(PlaygroundView.Names.SpellBackground).IsChecked = true;
                 Headless.Pump();
                 Assert.Contains("dictionary: slow, asked off the UI thread", s.Log);
-                UntilChecked(s);
+                UntilChecked(s, signal);
                 Assert.Equal(new[] { "jumpd", "teh" }, Words(s, 0));
                 Assert.Equal(new[] { "abc123" }, Words(s, 1));
                 Assert.Equal(new[] { "Gluedmots" }, s.Field.SpellingMarks(2).Where(m => m.Problem == SpellingProblem.Mixed).Select(m => s.ParagraphText(2).Substring(m.Start, m.Length)));
@@ -46,7 +60,7 @@ namespace SIL.TextEditing.Playground.Tests
 
                 s.Find<CheckBox>(PlaygroundView.Names.SpellBackground).IsChecked = false;   // and back to the plain dictionary
                 Headless.Pump();
-                UntilChecked(s);
+                UntilChecked(s, signal);
                 Assert.Equal(new[] { "jumpd", "teh" }, Words(s, 0));
             }
         });
@@ -56,11 +70,12 @@ namespace SIL.TextEditing.Playground.Tests
         {
             using (var s = new Session(Scenarios.Spelling))
             {
+                var signal = Arm(s);
                 s.Find<CheckBox>(PlaygroundView.Names.SpellBackground).IsChecked = true;
                 Headless.Pump();
                 s.Caret(6, s.ParagraphText(6).Length);
                 s.Type("teh ");                                                 // while the worker may be in the middle of its batches
-                UntilChecked(s);
+                UntilChecked(s, signal);
                 Assert.Equal(new[] { "jumpd", "teh" }, Words(s, 0));
                 Assert.Equal(new[] { "teh" }, Words(s, 6));
                 Assert.Equal(SpellScanner.Check(s.Editor.Document.Paragraphs[6], s.Field.SpellChecking!), s.Field.SpellingMarks(6).ToList());
