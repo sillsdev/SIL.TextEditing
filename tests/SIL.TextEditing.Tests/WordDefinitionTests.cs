@@ -89,11 +89,11 @@ namespace SIL.TextEditing.Tests
             var p = TestDocs.Para("en", "en", "foo_bar baz");
             Assert.True(SpellScanner.TryWordAt(p, 5, host, out int a, out int b));
             Assert.Equal((0, 7), (a, b));
-            var editor = new DocumentEditor(TestDocs.Doc(p)) { WordFinder = (para, i) => SpellScanner.TryWordAt(para, i, host, out int x, out int y) ? (x, y) : ((int, int)?)null };
+            var editor = new DocumentEditor(TestDocs.Doc(p)) { WordRules = host };
             var info = editor.DescribeContext(new TextPosition(0, 5), false);
             Assert.Equal("foo_bar", info.Word);
             Assert.Equal(new TextRange(0, 0, 7), info.WordRange);
-            editor.WordFinder = null;
+            editor.WordRules = null;
             info = editor.DescribeContext(new TextPosition(0, 5), false);
             Assert.Equal("bar", info.Word);
         }

@@ -138,6 +138,7 @@ namespace SIL.TextEditing.Tests
             Assert.True(host.Checker.Asked.Count == 1);
         }
 
+#if TEXTEDITING_COUNTERS
         [Fact]
         public void Asking_at_the_end_of_a_long_paragraph_in_many_runs_is_as_cheap_as_at_the_start()
         {
@@ -150,5 +151,6 @@ namespace SIL.TextEditing.Tests
             Assert.True(p.Runs.ElementReads - before < 100, (p.Runs.ElementReads - before) + " runs read");
             Assert.True(host.WordFormingCalls < 50);
         }
+#endif
     }
 }

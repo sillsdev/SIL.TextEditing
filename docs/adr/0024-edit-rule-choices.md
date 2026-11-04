@@ -117,6 +117,16 @@ one, and can change without superseding anything.
   when focus has gone to a control of its own application that is not a field, switches to its default; the field raises no
   event for losing focus and never restores anything itself (ADR 0008). Read from FieldWorks' focus handling; the field's part
   is a default, not an owner decision.
+- **Run model follow-ups (issue 107).** Defaults, ours, none an owner decision. `Paragraph.Text` is safe to read from any thread while nothing changes the
+  paragraph (the joined text and the stamp it was joined at are one immutable object, so a reader never takes a new stamp with an old string); the
+  model itself is still edited on the UI thread only (see "Edits belong on the UI thread"). A loop over `Paragraph.Runs` throws
+  `InvalidOperationException` when the list is added to, removed from or has a run replaced meanwhile, as a `List<Run>` does (a version counter
+  of the list; changing a run is allowed). `paragraph.Runs = list` takes a `List<Run>` through an implicit conversion (a new `RunList` over the same
+  runs, adopted by the paragraph) instead of a `SetRuns` method, so existing assignment code keeps its shape. `Run.Text = null` and, from issue 101,
+  `Run.Props = null` and `Paragraph.Props = null` throw `ArgumentNullException`. The work counters tests use (`Paragraph.TextReads`,
+  `RunList.ElementReads`) count only in a build that defines `TEXTEDITING_COUNTERS` (every configuration but Release, set in
+  `Directory.Build.props`), so a release build has no counting on its hot paths; the tests that read them sit inside `#if TEXTEDITING_COUNTERS`, and one
+  test pins that a build without the symbol counts nothing.
 
 **Still open:** whether a host closes its undo task when it receives `UndoGroupEnded`, or when the next delta with
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo

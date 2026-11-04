@@ -45,15 +45,24 @@ owner decisions.
   character style and the run's own properties, later layers winning, as FieldWorks' drawing engine layers its
   properties. FieldWorks' menu code disagrees: there the character style overrides the run's own value and the
   paragraph style is not read. The field has one answer for marks and menu and follows the first.
-- **Edits made behind the editor's back.** A paragraph keeps a change stamp (`Paragraph.ChangeStamp`) that moves when its runs, a run's text,
-  writing system, object data or property bag (replaced), or its style or property bag (replaced) change, and a result remembers the
-  stamp it was made for, so a direct change to the model is noticed without the host saying so, and the marks of that paragraph are
-  dropped. A property bag changed in place and a changed paragraph list are not seen: the host calls `RefreshFromDocument()`, which
-  restarts checking. A change of `DocumentEditor.IsReadOnly` raises `IsReadOnlyChanged`, which restarts checking whoever changed it.
+- **Edits made behind the editor's back (issue 101).** A paragraph keeps a change stamp (`Paragraph.ChangeStamp`) that moves when its runs, a run's
+  text, writing system, object data or property bag, or its style, direction, default writing system or property bag, change, a bag being changed
+  in place (`SetInt`, `SetStr`, a write to `IntProps` or `StrProps`) as well as replaced: a bag tells the runs and paragraphs that hold it. A result
+  remembers the stamp it was made for, so a direct change to the model is noticed without the host saying so. The field keys the paragraph's
+  format, bullet or number label and layout by it too, so a changed paragraph is laid out again (only that one) and the numbers after it are worked
+  out again; and it listens to its paragraphs (a weak link, so a field that is dropped is not kept alive by the document), so it measures, draws and
+  checks again by itself, on its own thread when the change was made on another. The marks of the paragraph are dropped. This replaces "call
+  `RefreshFromDocument()` after a direct change", which stays for what a paragraph cannot tell: a changed or replaced paragraph in
+  `Document.Paragraphs`, and a style resolver whose answers changed (`InvalidateAllLayouts()`, `RestartSpelling()`). A default, ours (not an owner decision). A change of `DocumentEditor.IsReadOnly` raises `IsReadOnlyChanged`, which restarts
+  checking, ends a composition and tells automation, whoever changed it.
 - **An edit keeps the marks it leaves alone.** A mark outside the edit moves with the text, and only the words around the edit are checked
   again: the stretch the edit touched, widened to whole words and past an apostrophe or joiner next to it (a mark that ends one
   character before the edit stays unless that character joins words). The word being typed has no squiggle until the next idle step; no other
-  squiggle blinks. This is ours: FieldWorks checks a changed paragraph again from scratch. An undo, a redo, an external replacement, an edit the
+  squiggle blinks. A mark the edit drops is checked again over its own stretch, so an edit that splits a surrogate pair (a host's or a regular
+  expression's; the field's own caret never does) cannot lose the mark of a word beside it. A stale squiggle can show beside the edit for one idle
+  step: a mark that ends just before the edit is kept unless that character joins words, so when the edit changes what the neighbouring word is (it
+  mixes writing systems or unchecked runs now, so it is blue, or is no longer wrong) the old red mark stays until the next step checks that stretch.
+  Once the idle work has caught up the marks equal a full recheck. This is ours: FieldWorks checks a changed paragraph again from scratch. An undo, a redo, an external replacement, an edit the
   field was not told the range of (the host's `Apply`) and any edit to a paragraph with a line limit (the edit moves where the limit cuts
   it) check the paragraphs they replace again from scratch. A result is for one state of its paragraph
   (`Paragraph.ChangeStamp`) and is never used for another.
@@ -75,12 +84,27 @@ owner decisions.
   object, is not a word to mark: a lone object, an object between spaces and a footnote marker get no squiggle. FieldWorks
   counts the object and U+FEFF as word-forming and asks the dictionary about them, which the field does not. A word with an object
   next to text is `Embedded` and is not asked.
-- **One word definition for the other word rules.** The double-click, Ctrl+Left and Right and the whole-word find (`WordBreaks`) use the defaults
-  (`SpellScanner.DefaultIsWordForming`, digits, the apostrophes and joiners that stay inside a word) so that they agree with the spell checker.
-  FieldWorks gives a double-click and its Ctrl+arrow word moves the writing system's rule too; the field gives them the defaults only: with a host,
-  only the context request and the marks follow the host's word rules. The whole-word find's use of the same rule is ours (FieldWorks' was not
-  read), and so is a zero-width joiner or non-joiner staying with the grapheme cluster before it. The spell checker's word goes through an
-  embedded object (FieldWorks widens its menu word the same way) and is `Embedded`, so `ContextInfo.Spelling` can reach further than `ContextInfo.Word`.
+- **One word rule (issue 102).** The double-click, Ctrl+Left and Right, the whole-word find, the word of a context request and the spell checker use
+  one rule, as FieldWorks' views use the writing system's rule for all of them: a code point forms words as the host says for the writing system of
+  that character (`IWordRules.IsWordForming`; digits always), and a joiner (`IWordRules.JoinsWords`: the apostrophes and the zero-width joiners by
+  default) between two word-forming code points stays in the word. An `ISpellCheckHost` is an `IWordRules`. The host can also give the rule with no spell
+  checking (`RichTextField.WordRules`, which wins over the spell checker's for everything, the marks included, and starts checking over when set;
+  `DocumentEditor.WordRules` for the editor's own context request and find, which a field sets itself, so a host with a field sets the field's);
+  with neither the defaults apply. A rule that throws is traced once and the defaults answer instead. `WordBreaks` has overloads that take the paragraph
+  (so the writing system of each character is known) and the rule; the string overloads keep the defaults. The classification is the spell
+  checker's, over code points; `WordBreaks` then keeps a grapheme cluster whole (the caret's unit) and gives it the class of its first code point. That
+  reconciles the two exotic differences the first version had: an apostrophe followed by a combining mark stays in the word for both, and a zero-width
+  non-joiner between a word and an apostrophe, or two in a row, no longer joins what follows (a joiner is in the word only between two word-forming
+  characters). What is left, on purpose: a trailing zero-width joiner or non-joiner stays in the double-click's word (it is part of the cluster
+  before it; the spell checker's word stops before it), and a combining mark with no letter before it to stand on (after a space or a hyphen) stays
+  with that character for a double-click while the spell checker, which walks code points as FieldWorks walks UTF-16 units, starts a word at the mark.
+  A third difference, from FieldWorks, not ours to have chosen: FieldWorks stops a double-click word at a change of writing system, spell-check property or
+  significant style; the field's double-click and Ctrl+arrows cross run boundaries (the spell checker marks such a word blue, `Mixed`). So "one rule" is
+  one word-forming rule, not full parity; the parity fix is a separate issue.
+  The whole-word find's use of the same rule is ours (FieldWorks' was not read), and so is a zero-width joiner or non-joiner staying with the
+  grapheme cluster before it. The spell checker's word goes through an embedded object (FieldWorks widens its menu word the same way) and is
+  `Embedded`, so `ContextInfo.Spelling` can reach further than `ContextInfo.Word`. Taking the host's rule for the double-click and Ctrl+arrows
+  matches FieldWorks, which uses the writing system's rule there; the cluster handling and the joiners are ours.
 - **`SpellingSuggestions.WritingSystems` leaves out an object's writing system.** FieldWorks counts every run's, an object's included; an
   object in another writing system alone makes the word `Embedded`, not `Mixed`, so the field does not offer the whole-word items for it.
 - **Insert missing spaces splits at every difference.** FieldWorks puts spaces only where the writing system changes when a word has several, and
@@ -111,8 +135,25 @@ owner decisions.
   span (2000 device-independent pixels) below its top. FieldWorks checks the whole view, including paragraphs out of sight; the field's choice
   is ADR 0020's, and it is bounded so a long document in a host that scrolls some other way is not checked whole. Scrolling, an edit to a
   paragraph, a new host, `RestartSpelling` and a change of the read-only state make paragraphs due again. Idle means the dispatcher's
-  background priority, one request pending at a time; a test replaces the post (`SpellIdlePost`). The host's checker is still called on the
-  UI thread; a host that cannot answer quickly answers from a cache and raises `DictionariesChanged` when it has more.
+  background priority, one request pending at a time; a test replaces the post (`SpellIdlePost`). A host's checker is called on the UI thread, as
+  FieldWorks' is; a host that cannot answer quickly answers from a cache and raises `DictionariesChanged` when it has more, or opts in to the next entry.
+- **A checker may answer off the UI thread (issue 103).** A checker that is also an `IBackgroundSpellChecker` (the optional capability, as `ISpellIgnorer` is
+  for ignoring; adding a member to `ISpellCheckHost` would have broken every host) says that `Check` may be called on a worker thread, and a host whose
+  dictionary is slow does not hold up input for even one word. The field still finds and judges the words of a step (at most 25) on its own thread,
+  where it reads the model, and sends only the dictionary questions (the checker, the NFC word) to a worker, one batch at a time and one question at a
+  time within it. The checker must be fully thread-safe all the same: a context menu or request asks `Check` on the UI thread (through
+  `SpellingSuggestionsAt`) while a batch is out, so `Check` can run on the UI thread and a worker at the same time. (The field does not lock around
+  it: that would make the menu wait for the batch.) The answers are posted back and applied on the field's thread only if
+  the paragraph is the one that was asked about, in the state it had (a restart, a width change that moves a line limit, an edit through the editor
+  or a direct change all replace or invalidate it) and at the stamp it had (`Paragraph.ChangeStamp`), in the same epoch; otherwise they are dropped and
+  the text is asked again, so no mark is ever drawn for text that is not there. While a batch is out the idle work starts nothing new and does not
+  busy-wait (`CheckSpellingStep` returns false, `IsSpellingComplete` is false) and the answer asks for the next step. A batch that is out is cancelled (a flag the worker checks before each word) when the host is replaced or removed, the field leaves the screen or checking starts over: one question already running cannot be interrupted, but no further word is asked, and a new host is not held up by a checker that never returns. A checker that throws on the
+  worker is left alone for the rest of the batch (its words taken as right) and is reported through `SpellCheckerFailed` on the field's thread,
+  once per writing system as before, unless checking started over meanwhile. A checker without the interface, or a step with none of its words,
+  takes the synchronous path exactly as before; a step with some of each asks the others at once and the rest on the worker. `Suggest` and `Add` stay on
+  the UI thread (a menu asks one word on purpose, and the checker must be safe to call from the UI thread while a worker is in its `Check`). Defaults,
+  ours: a tested seam (`SpellBackgroundRun`, with `SpellIdlePost` for the way back) makes the order deterministic; the real scheduler is the thread pool
+  and the field's dispatcher.
 - **Menu answers are remembered.** `SpellingSuggestionsAt` looks at the word at the position only, however long the paragraph is, and remembers its
   last answer for the paragraph state, the checkers (until a restart) and the read-only state, so a hover over one word asks the host nothing
   the second time; the checker's suggestions for a word are remembered until a restart too.

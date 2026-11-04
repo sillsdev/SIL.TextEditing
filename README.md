@@ -46,7 +46,15 @@ run tells it when its text changes, so `Paragraph.Length`, `RunBefore`, `RunAfte
 paragraph keeps current (a binary search, not a walk over the runs) however a host changes the runs. A host may edit `Run.Text` or
 the list directly. `RunList` has `Add`, `Insert`, `RemoveAt`, `RemoveRange`, `AddRange`, `Clear`, an indexer and `IEnumerable<Run>`
 (use LINQ for `ConvertAll`, `FindIndex` and the like); assign a `new RunList(runs)` to `Paragraph.Runs` to replace the runs. A
-change to a run's `PropertyBag` in place is not seen (see the spelling section for what to call).
+change to a run's `PropertyBag` in place (`SetInt`, `SetStr`, or a write to `IntProps` or `StrProps`) is seen too: the bag tells the paragraphs that
+hold it, so `ChangeStamp` moves and a field shows the change (see the spelling section for what a host still calls).
+
+`Paragraph.Runs = list` takes a `List<Run>` directly (the paragraph adopts a new `RunList` over the same runs, not the list itself: the `Run` objects are shared, but a later `list.Add` is not seen by the paragraph). `Run.Text = null` throws
+`ArgumentNullException` (use an empty string); so do `Run.Props = null` and `Paragraph.Props = null`. Looping over `Paragraph.Runs` while the list is added to, removed from or has a run
+replaced throws `InvalidOperationException`, as it does for a `List<Run>`; changing a run's text or properties meanwhile is fine.
+`Paragraph.Text` is safe to read from any thread while nothing changes the paragraph (the model itself is edited on the UI thread only).
+The work counters tests use (`TextReads`, `ElementReads`) exist in a build that defines `TEXTEDITING_COUNTERS` (every configuration but
+Release) and cost nothing in a Release build.
 
 ## Build and test
 
@@ -134,7 +142,7 @@ The field owns one text; the window around it belongs to the host. These are the
 The host gives the field its dictionaries: set `RichTextField.SpellChecking` to an `ISpellCheckHost` that returns an
 `ISpellChecker` (`Check`, `Suggest`, `Add`; `ISpellIgnorer` adds `Ignore` when a dictionary has it) for each writing system, says which
 characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. Derive from
-`SpellCheckHostBase` to write only `GetChecker`: it has the default word rules and `RaiseDictionariesChanged()` (any thread). The
+`SpellCheckHostBase` to write only `GetChecker`: it has the default word rules and `RaiseDictionariesChanged()` (any thread). The same word rules (`IWordRules`) serve the double-click, Ctrl+arrows and whole-word find; `RichTextField.WordRules` gives them without spell checking. The
 field checks the paragraphs in view when idle, a few words at a time, and draws red squiggles (misspelled, or a word with an object in it) and blue
 ones (a word that mixes writing systems or has unchecked text inside). The rules are in `SpellScanner` (UI-free): words
 break at characters that are not word-forming, and do-not-check text and text that may not be edited (unless forced) are
@@ -145,13 +153,21 @@ are one definition (an underscore ends both, as in FieldWorks). A checker
 that throws raises `SpellCheckerFailed` (written to `Trace` once per writing system when nothing handles it) and is left alone; it does not end
 the application. A host that repairs the dictionary raises `DictionariesChanged` (or calls `RestartSpelling`), which tries that writing system again. The playground's "Spell checking" scenario shows it with a
 short English and French word list.
+A dictionary that is slow can be asked off the UI thread: its checker also implements `IBackgroundSpellChecker` (`Check` may then run on a worker; the field finds the words and applies the answers on its own thread, and drops an answer for a paragraph that has changed since).
+`CheckSpellingStep` then returns false while a batch is out, and `IsSpellingComplete` says when everything in view is checked. A loop of
+`while (!field.CheckSpellingStep()) { }` on the UI thread therefore never ends with such a checker (the answer is applied by the dispatcher the loop blocks):
+let the dispatcher run and wait for `IsSpellingComplete`, or use a checker without the interface where a synchronous check is wanted.
 
 What a host calls (the field restarts checking itself on an edit through the editor, `Apply`, `ExternalReplaceParagraph`, a change of
-`IsReadOnly` on the field or its editor, a word added or ignored, and a `DictionariesChanged` notice): after it changes the document
-directly, `RichTextField.RefreshFromDocument()`, which restarts checking too. A paragraph notices a change to its runs, a run's text, writing
-system or object data, a replaced property bag and a new style (`Paragraph.ChangeStamp`) and its marks go at the next draw, but the layout and a
-property bag changed in place are seen only after `RefreshFromDocument()`. After a style change that alters what is checked,
-`RestartSpelling()`. After repairing a failed dictionary, raise `DictionariesChanged`.
+`IsReadOnly` on the field or its editor, a word added or ignored, and a `DictionariesChanged` notice): nothing, after it changes a paragraph
+directly. A paragraph tells the field when its runs, a run's text, writing system, object data or property bag (replaced, or changed in place with
+`SetInt`, `SetStr` or a write to `IntProps` or `StrProps`), or its style, direction, default writing system or property bag, change
+(`Paragraph.ChangeStamp` moves): the field measures and draws again, lays out that paragraph again (and only that one, keyed by the stamp), numbers
+the list again, drops the marks of that paragraph and checks it again when idle. A notice from another thread is marshalled to the field's own, but the model is not thread-safe (ADR 0024): the edit itself must still not overlap a layout, so a host edits on the UI thread.
+`RichTextField.RefreshFromDocument()` is for what a paragraph cannot tell: the list of paragraphs (`Document.Paragraphs`) changed, a paragraph
+replaced in it. It restarts checking too. When a style resolver's answers change (not the resolver itself, which the field takes again when it is set), `InvalidateAllLayouts()`, and
+`RestartSpelling()` when what is checked changed. After repairing a failed dictionary, raise `DictionariesChanged`. Setting
+`DocumentEditor.IsReadOnly` directly tells automation as `RichTextField.IsReadOnly` does.
 
 ## Colours and themes
 
@@ -174,7 +190,10 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   keyboard (Shift+arrows, Ctrl+arrows by word, Home/End by visual line, Ctrl+Home/End, Ctrl+A, Up/Down with the
   preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with
   an apostrophe between letters inside the word; no dictionary, so Thai and Chinese are not split, and it is not UAX #29
-  word breaking. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
+  word breaking. It is also the host's: one rule (`IWordRules`: which code points form words in a writing system, and which join the words on
+  each side of them) serves the double-click, Ctrl+Left and Right, the whole-word find, the word of a context request and the spell checker
+  (set `RichTextField.WordRules`, or the rule of `SpellChecking` is used), so a writing system that makes a hyphen a letter makes "foo-bar" one word
+  everywhere. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
 - **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2), and on
   both 11.3.17 and 12.1.2 the caret, hit testing and selection of a left-to-right run are wrong on a right-to-left paragraph's line
   of two or more runs, and likewise on a left-to-right paragraph's line of two or more runs with a right-to-left run in it (on 12 some of its ranges throw); an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by

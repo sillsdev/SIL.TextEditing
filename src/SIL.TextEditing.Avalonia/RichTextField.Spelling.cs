@@ -33,10 +33,11 @@ namespace SIL.TextEditing.Avalonia
             set
             {
                 StopListening();
+                ReleaseBatch();
                 _spellHost = value;
                 _spellGuard = value == null ? null : new GuardedHost(this, value);
-                // A context request names the word by the spell checker's rule while there is one, so it is the word that is squiggled.
-                Editor.WordFinder = value == null ? (Func<Paragraph, int, (int Start, int End)?>?)null : (paragraph, index) => SpellScanner.TryWordAt(paragraph, index, _spellGuard!, out int a, out int b) ? (a, b) : ((int, int)?)null;
+                // The word of a double-click, Ctrl+arrow, find and context request is the word the spell checker marks while the host has no word rule of its own (WordRules).
+                UpdateWordRules();
                 if (_onScreen) StartListening();
                 RestartSpelling();
             }
@@ -73,15 +74,16 @@ namespace SIL.TextEditing.Avalonia
         /// (<see cref="AddToDictionary"/>) or ignored, when the read-only state changes (<c>IsReadOnly</c> of the field or of its editor), when
         /// the host raises <see cref="ISpellCheckHost.DictionariesChanged"/>, and in <see cref="RefreshFromDocument"/>. A writing system that failed is
         /// tried again.
-        /// <para>What a host calls when it changes text itself, not through the editor: the paragraph notices a change to its runs, a run's
-        /// text, writing system or object data, a replaced property bag and a new style (<see cref="Paragraph.ChangeStamp"/>), so the marks of
-        /// that paragraph are dropped at the next draw or query and it is checked again; call <see cref="RefreshFromDocument"/> as well so the
-        /// layout follows the new text (it restarts spelling too). A property bag changed in place, a changed paragraph list, or changed styles
-        /// are not noticed: call <see cref="RefreshFromDocument"/> (or this, when only what is checked changed). Edits made through the editor,
+        /// <para>What a host calls when it changes text itself, not through the editor: nothing. The paragraph notices a change to its runs, a run's
+        /// text, writing system, object data or property bag (replaced or changed in place), its style, direction or property bag
+        /// (<see cref="Paragraph.ChangeStamp"/>), tells the field, and the field lays that paragraph out again, drops its marks and checks it again.
+        /// A changed or replaced entry of <c>Document.Paragraphs</c> is not noticed: call <see cref="RefreshFromDocument"/>; a style resolver whose
+        /// answers changed, <see cref="InvalidateAllLayouts"/> and, when what is checked changed, this. Edits made through the editor,
         /// <see cref="DocumentEditor.Apply"/> and <see cref="DocumentEditor.ExternalReplaceParagraph"/> need no call.</para></summary>
         public void RestartSpelling()
         {
             SpellRestarts++;
+            CancelBatch();
             _spellFailed.Clear();
             (_spellGuard as GuardedHost)?.Forget();
             _spellEpoch++;
@@ -98,7 +100,7 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>True when every paragraph in view has been checked (or there is no spell checking). Cheap: it looks at the paragraphs in
         /// view only.</summary>
-        public bool IsSpellingComplete => NextUncheckedVisible() < 0;
+        public bool IsSpellingComplete => NextUncheckedVisible() < 0 && !_spellInFlight;
 
         /// <summary>For a test: how many words one idle step checks at most. A step looks at the words of one paragraph in view that is not
         /// checked, and goes on from where it stopped the next time, so a slow checker holds up input for at most this many words.</summary>
@@ -107,15 +109,20 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Checks the next few words of the first paragraph in view that is not checked, in document order (FieldWorks checks a step at a
         /// time during idle time), and returns true when nothing in view is left to check. A step is bounded by words, not by paragraphs: a long
         /// paragraph takes many steps and a short one, or what an edit left to check, one. The idle work calls it; a host or test may too. A
-        /// checker that throws is reported through <see cref="SpellCheckerFailed"/>, not thrown.</summary>
+        /// checker that throws is reported through <see cref="SpellCheckerFailed"/>, not thrown.
+        /// <para>When the words of the step are for a checker that is an <see cref="IBackgroundSpellChecker"/>, their dictionary questions are sent to a
+        /// worker and the step returns false, whatever is left: the marks arrive on this thread when the worker has answered (the idle work then goes on by
+        /// itself), and until then a further call starts nothing new. A host or test that wants to wait for the end uses <see cref="IsSpellingComplete"/> as
+        /// the dispatcher runs.</para></summary>
         public bool CheckSpellingStep()
         {
             if (_spellHost == null) return true;
+            if (_spellInFlight) return false;
             int i = NextUncheckedVisible();
             if (i < 0) return true;
             CheckSomeWords(i);
             InvalidateVisual();
-            return NextUncheckedVisible() < 0;
+            return !_spellInFlight && NextUncheckedVisible() < 0;
         }
 
         /// <summary>What has been checked of a paragraph: the marks found so far and the stretches of text still to check, both for the paragraph as it was
@@ -151,25 +158,40 @@ namespace SIL.TextEditing.Avalonia
                 int zoneStart = pos, words = 0;
                 bool done = false;
                 var fresh = new List<SpellingMark>();
+                List<SpellScanner.Judged>? asked = null;   // words for a checker that answers off this thread, in order
                 while (true)
                 {
                     if (words >= SpellStepWords) break;
                     // A word that starts one character after the stretch (past a joiner) may have been one word with what was edited, so it is looked at too.
                     if (!scan.NextWord(pos, out int a, out int b) || a > rangeEnd + 1 || a >= limit) { done = true; break; }
-                    var judged = scan.Judge(a, b);
-                    if (judged != null) fresh.Add(new SpellingMark(judged.Value.Start, judged.Value.End - judged.Value.Start, judged.Value.Problem));
+                    var judged = scan.Prepare(a, b);
+                    if (judged != null)
+                    {
+                        var j = judged.Value;
+                        if (j.NeedsDictionary && j.Checker is GuardedChecker background && background.Background) (asked ??= new List<SpellScanner.Judged>()).Add(j);
+                        else
+                        {
+                            if (j.NeedsDictionary) judged = j.Checker!.Check(j.Word) ? (SpellScanner.Judged?)null : j.Misspelled();
+                            if (judged != null) fresh.Add(MarkOf(judged.Value));
+                        }
+                    }
                     words++;
                     pos = b;
                 }
-                // The words just looked at replace whatever marks lay over them.
-                state.Marks.RemoveAll(m => m.End > zoneStart && m.Start < pos);
-                if (fresh.Count > 0)
+                if (asked == null)
                 {
-                    state.Marks.AddRange(fresh);
-                    state.Marks.Sort((x, y) => x.Start.CompareTo(y.Start));
+                    // The words just looked at replace whatever marks lay over them.
+                    ApplyStep(state, zoneStart, pos, done, rangeEnd, fresh);
                 }
-                if (done) { state.Pending.RemoveAt(0); state.ResumeAt = -1; }
-                else { state.Pending[0] = (pos, rangeEnd); state.ResumeAt = pos; }
+                else
+                {
+                    // The words are found and judged; the dictionary questions are out. The marks are applied when the answers come back, if nothing changed.
+                    SendToWorker(new SpellBatch
+                    {
+                        Info = _info[index], State = state, Paragraph = paragraph, Stamp = paragraph.ChangeStamp, Epoch = _spellEpoch,
+                        ZoneStart = zoneStart, Pos = pos, RangeEnd = rangeEnd, Done = done, Fresh = fresh, Asked = asked,
+                    });
+                }
             }
             _layouts[index]?.SetSpellingMarks(state.Marks);
         }
@@ -351,22 +373,27 @@ namespace SIL.TextEditing.Avalonia
             /// <summary>Forgets the wrappers: a restart starts from what the host says now.</summary>
             public void Forget() => _wrappers.Clear();
 
+            // The word rule is the field's own (RichTextField.WordRules) when the host set one, else the spell host's, so the marks and the double-click agree.
             public bool IsWordForming(string ws, int codePoint)
             {
-                try { return _inner.IsWordForming(ws, codePoint); }
+                var own = _field._wordRules;
+                try { return (own ?? _inner).IsWordForming(ws, codePoint); }
                 catch (Exception e)
                 {
-                    _field.SpellFailure(ws, e);
+                    if (own != null) _field.WordRulesFailed(e);
+                    else _field.SpellFailure(ws, e);
                     return SpellScanner.DefaultIsWordForming(codePoint);
                 }
             }
 
             public bool JoinsWords(string ws, int codePoint)
             {
-                try { return _inner.JoinsWords(ws, codePoint); }
+                var own = _field._wordRules;
+                try { return (own ?? _inner).JoinsWords(ws, codePoint); }
                 catch (Exception e)
                 {
-                    _field.SpellFailure(ws, e);
+                    if (own != null) _field.WordRulesFailed(e);
+                    else _field.SpellFailure(ws, e);
                     return SpellScanner.DefaultJoinsWords(codePoint);
                 }
             }
@@ -399,6 +426,15 @@ namespace SIL.TextEditing.Avalonia
                     return true;
                 }
             }
+
+            internal string Ws => _ws;
+
+            /// <summary>True when the host says the checker may be asked on a worker thread.</summary>
+            internal bool Background => Inner is IBackgroundSpellChecker;
+
+            /// <summary>The host's checker asked directly, for the worker: nothing of the field is touched, so an exception is the caller's to catch and
+            /// report on the field's thread.</summary>
+            internal bool CheckOnWorker(string word) => Inner.Check(word);
 
             // The suggestions for a word do not change until the field restarts (it makes new wrappers then), so asking again is free.
             readonly Dictionary<string, IReadOnlyList<string>> _suggestions = new Dictionary<string, IReadOnlyList<string>>();
@@ -504,7 +540,13 @@ namespace SIL.TextEditing.Avalonia
                 {
                     // A mark that ends one character before the edit is safe unless that character joins words: then the edit may have made one word of it and
                     // what follows.
-                    foreach (var m in head.Marks) if (m.End < headEnd && !(m.End == headEnd - 1 && joinerAt(m.End))) state.Marks.Add(m);
+                    foreach (var m in head.Marks)
+                    {
+                        if (m.End < headEnd && !(m.End == headEnd - 1 && joinerAt(m.End))) state.Marks.Add(m);
+                        // A mark that goes is checked again over its own stretch, whatever the edit did to the text beside it: an edit that splits a
+                        // surrogate pair leaves a lone surrogate that ends the word the recheck from the edit would start at, so the mark would never be looked at again.
+                        else if (m.Start < headEnd) pending.Add((m.Start, m.End));
+                    }
                     foreach (var (s, en) in head.Pending) if (s < headEnd) pending.Add((s, Math.Min(en, headEnd)));
                 }
             }
@@ -515,7 +557,10 @@ namespace SIL.TextEditing.Avalonia
                 else
                 {
                     foreach (var m in tail.Marks)
+                    {
                         if (m.Start > tailStart && !(m.Start + shift == dirtyEnd + 1 && joinerAt(m.Start + shift - 1))) state.Marks.Add(new SpellingMark(m.Start + shift, m.Length, m.Problem));
+                        else if (m.End > tailStart) pending.Add((m.Start + shift, m.End + shift));   // likewise
+                    }
                     foreach (var (s, en) in tail.Pending) if (en > tailStart) pending.Add((Math.Max(s, tailStart) + shift, en + shift));
                 }
             }
@@ -635,7 +680,8 @@ namespace SIL.TextEditing.Avalonia
             void Step()
             {
                 _spellPosted = false;
-                if (_spellHost != null && _onScreen && !CheckSpellingStep()) RequestSpellingIdle();
+                // A batch that is out asks for the next step itself when it comes back.
+                if (_spellHost != null && _onScreen && !CheckSpellingStep() && !_spellInFlight) RequestSpellingIdle();
             }
             var post = SpellIdlePost;
             if (post != null) post(Step);
@@ -673,13 +719,6 @@ namespace SIL.TextEditing.Avalonia
         {
             if (_spellListening != null) _spellListening.DictionariesChanged -= OnDictionariesChanged;
             _spellListening = null;
-        }
-
-        /// <summary>The editor's read-only flag changed, on whatever thread changed it: checking starts over on the field's own.</summary>
-        void OnEditorReadOnlyChanged()
-        {
-            if (CheckAccess()) RestartSpelling();
-            else OwnDispatcher.Post(RestartSpelling, global::Avalonia.Threading.DispatcherPriority.Background);
         }
 
         void OnDictionariesChanged(object? sender, EventArgs e)

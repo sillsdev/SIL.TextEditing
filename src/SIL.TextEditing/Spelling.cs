@@ -6,8 +6,8 @@ using System.Text;
 namespace SIL.TextEditing
 {
     /// <summary>The dictionary of one writing system, supplied by the host (ADR 0020). The field never loads a dictionary: it
-    /// asks this, one word at a time, and the host answers from whatever engine it has. Called on the UI thread. A checker that
-    /// can also ignore a word implements <see cref="ISpellIgnorer"/> too.</summary>
+    /// asks this, one word at a time, and the host answers from whatever engine it has. Called on the UI thread, <see cref="Check"/> on a worker thread
+    /// instead when the checker is an <see cref="IBackgroundSpellChecker"/>. A checker that can also ignore a word implements <see cref="ISpellIgnorer"/> too.</summary>
     public interface ISpellChecker
     {
         /// <summary>True when the word is spelled correctly. The word is in Unicode form NFC, as the dictionary expects it.</summary>
@@ -22,6 +22,20 @@ namespace SIL.TextEditing
         void Add(string word);
     }
 
+    /// <summary>The optional capability of an <see cref="ISpellChecker"/> that can answer off the UI thread (issue 103): its <see cref="ISpellChecker.Check"/> may
+    /// be called on a worker thread, so a slow dictionary does not hold up input. The field finds and judges the words on its own thread, sends the
+    /// dictionary questions for one idle step (at most <c>25</c> words) to a worker, one batch at a time and one question at a time within it, and applies
+    /// the answers on its own thread, only if the paragraph and the checking are as they were when the questions were sent (<see cref="Paragraph.ChangeStamp"/>):
+    /// an answer for text that has changed since is dropped and the text is asked again. The checker must be fully thread-safe: <see cref="ISpellChecker.Check"/>
+    /// can run on the UI thread (a context menu or request judges its word there) and on the worker at the same time, and its other members
+    /// (<see cref="ISpellChecker.Suggest"/>, <see cref="ISpellChecker.Add"/>) stay on the UI thread meanwhile. A <c>Check</c> that is running cannot be
+    /// interrupted, but no further word is asked once the field has let go of the host. A checker that throws on the
+    /// worker is reported through <c>RichTextField.SpellCheckerFailed</c>, on the UI thread, as before. A checker without this interface is asked on the
+    /// UI thread, one step at a time, as it always was.</summary>
+    public interface IBackgroundSpellChecker : ISpellChecker
+    {
+    }
+
     /// <summary>The optional second capability of an <see cref="ISpellChecker"/>: ignoring a word, for this session or as the host
     /// decides. FieldWorks' dictionaries have no such operation, so a checker need not have one; without it the field offers no
     /// "Ignore" (<see cref="SpellingSuggestions.CanIgnore"/>).</summary>
@@ -32,22 +46,12 @@ namespace SIL.TextEditing
     }
 
     /// <summary>What the host tells the field about spelling: the dictionary of each writing system and which characters make words.</summary>
-    public interface ISpellCheckHost
+    public interface ISpellCheckHost : IWordRules
     {
         /// <summary>The checker for a writing system, or null when the writing system has no dictionary (its text is then not
-        /// checked, though a word that mixes writing systems is still marked).</summary>
+        /// checked, though a word that mixes writing systems is still marked). The word rule is the host's <see cref="IWordRules"/>; the field
+        /// uses it for the double-click, Ctrl+arrows and find too (<c>RichTextField.WordRules</c> overrides it there).</summary>
         ISpellChecker? GetChecker(string ws);
-
-        /// <summary>True when the code point forms words in the writing system. FieldWorks asks the writing system (its valid
-        /// characters can make an apostrophe or a hyphen a letter); a host with no opinion returns
-        /// <see cref="SpellScanner.DefaultIsWordForming"/>. Digits, which this is not asked about, always form words. (FieldWorks asks about
-        /// a UTF-16 unit; the field asks about a code point, so a supplementary-plane letter arrives whole.)</summary>
-        bool IsWordForming(string ws, int codePoint);
-
-        /// <summary>True when the code point, between two word-forming characters, stays in the word: the apostrophes and the zero-width
-        /// joiners, so "don't" is one word. A host with no opinion returns <see cref="SpellScanner.DefaultJoinsWords"/>; false for every
-        /// code point turns the rule off, and then "don't" is "don" and "t" unless <see cref="IsWordForming"/> says the apostrophe forms words.</summary>
-        bool JoinsWords(string ws, int codePoint);
 
         /// <summary>Raised by the host when what its checkers answer has changed: a word added or removed (an add, or the undo of one), a
         /// dictionary installed or changed. Every field using the host checks again. It may be raised on any thread; the field handles it on
@@ -316,22 +320,31 @@ namespace SIL.TextEditing
         /// system): the apostrophes U+0027 and U+2019 and the zero-width joiner and non-joiner U+200D and U+200C.</summary>
         public static bool DefaultJoinsWords(int codePoint) => codePoint == '\'' || codePoint == 0x2019 || codePoint == 0x200C || codePoint == 0x200D;
 
-        static bool IsNumber(int cp)
+        internal static bool IsNumber(int cp)
         {
             var c = CategoryOf(cp);
             return c == UnicodeCategory.DecimalDigitNumber || c == UnicodeCategory.LetterNumber || c == UnicodeCategory.OtherNumber;
         }
 
+        /// <summary>The one word-forming test of the field: an embedded object by <paramref name="objectsInWords"/> (the spell checker's reading
+        /// counts it, a double-click's does not), a digit or other number always, anything else as the host says for the writing system of the character.</summary>
+        internal static bool IsWordFormingIn(IWordRules rules, string ws, int codePoint, bool objectsInWords)
+        {
+            if (codePoint == Run.ObjectReplacement) return objectsInWords;
+            return IsNumber(codePoint) || rules.IsWordForming(ws, codePoint);
+        }
+
         /// <summary>One word the scanner found and judged: its range, why it is marked, the text the dictionary saw and its checker (null for a mixed word).</summary>
         internal readonly struct Judged
         {
-            public Judged(int start, int end, SpellingProblem problem, string word, ISpellChecker? checker)
+            public Judged(int start, int end, SpellingProblem problem, string word, ISpellChecker? checker, bool needsDictionary = false)
             {
                 Start = start;
                 End = end;
                 Problem = problem;
                 Word = word;
                 Checker = checker;
+                NeedsDictionary = needsDictionary;
             }
 
             public int Start { get; }
@@ -339,6 +352,10 @@ namespace SIL.TextEditing
             public SpellingProblem Problem { get; }
             public string Word { get; }
             public ISpellChecker? Checker { get; }
+            /// <summary>True for a word whose problem is only provisional: the dictionary has not been asked yet (<see cref="Window.Prepare"/>). The mark stands when it says no.</summary>
+            public bool NeedsDictionary { get; }
+            /// <summary>The same word with the dictionary's no recorded: it is a misspelling.</summary>
+            public Judged Misspelled() => new Judged(Start, End, SpellingProblem.Misspelled, Word, Checker);
         }
 
         /// <summary>The marks of a paragraph, in order. <paramref name="readOnly"/> is the field-wide read-only flag: text in a
@@ -458,23 +475,9 @@ namespace SIL.TextEditing
                 return _runStart;
             }
 
-            bool WordForming(int index, int cp)
-            {
-                if (cp == Run.ObjectReplacement) return _objectsInWords;
-                return IsNumber(cp) || _host.IsWordForming(WsAt(index), cp);
-            }
+            bool WordForming(int index, int cp) => IsWordFormingIn(_host, WsAt(index), cp, _objectsInWords);
 
-            int CodePointBefore(int index, out int width)
-            {
-                char c = _text[index - 1];
-                if (char.IsLowSurrogate(c) && index >= 2 && char.IsHighSurrogate(_text[index - 2]))
-                {
-                    width = 2;
-                    return char.ConvertToUtf32(_text[index - 2], c);
-                }
-                width = 1;
-                return char.IsSurrogate(c) ? 0xFFFD : c;
-            }
+            int CodePointBefore(int index, out int width) => SpellScanner.CodePointBefore(_text, index, out width);
 
             /// <summary>Where the word that contains or ends at <paramref name="pos"/> starts, so that scanning forward from there finds the same words a
             /// scan from the start of the paragraph would: back over word-forming characters and over a joiner between two of them.</summary>
@@ -542,6 +545,17 @@ namespace SIL.TextEditing
             /// there is none), else the problem, with the ends that are not checked cut off.</summary>
             public Judged? Judge(int a, int b)
             {
+                var prepared = Prepare(a, b);
+                if (prepared == null || !prepared.Value.NeedsDictionary) return prepared;
+                var p = prepared.Value;
+                return p.Checker!.Check(p.Word) ? (Judged?)null : p.Misspelled();
+            }
+
+            /// <summary>Everything <see cref="Judge"/> does except asking the dictionary: a word whose problem is decided without it (mixed, embedded) or
+            /// that is to be left alone comes back as <see cref="Judge"/> returns it; a word that only the dictionary can judge comes back with
+            /// <see cref="Judged.NeedsDictionary"/> set, for the caller to ask (on this thread or another) and, when the answer is no, to mark.</summary>
+            public Judged? Prepare(int a, int b)
+            {
                 // Cut the ends back to text that is checked.
                 while (b > a && !IsChecked(a)) a = RunEndOf(a);
                 while (b > a && !IsChecked(b - 1)) b = RunStartOf(b - 1);
@@ -568,12 +582,24 @@ namespace SIL.TextEditing
                 var normal = Nfc(word);
                 if (normal == null) return null;
                 // Numbers alone are not words; no dictionary has them, and FieldWorks' dictionaries accept them.
-                if (IsAllNumbers(normal) || checker.Check(normal)) return null;
-                return new Judged(a, b, SpellingProblem.Misspelled, normal, checker);
+                if (IsAllNumbers(normal)) return null;
+                return new Judged(a, b, SpellingProblem.Misspelled, normal, checker, needsDictionary: true);
             }
         }
 
-        static int CodePointAt(string text, int index, out int width)
+        internal static int CodePointBefore(string text, int index, out int width)
+        {
+            char c = text[index - 1];
+            if (char.IsLowSurrogate(c) && index >= 2 && char.IsHighSurrogate(text[index - 2]))
+            {
+                width = 2;
+                return char.ConvertToUtf32(text[index - 2], c);
+            }
+            width = 1;
+            return char.IsSurrogate(c) ? 0xFFFD : c;
+        }
+
+        internal static int CodePointAt(string text, int index, out int width)
         {
             char c = text[index];
             if (char.IsHighSurrogate(c) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))

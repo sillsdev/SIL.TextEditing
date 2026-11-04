@@ -31,9 +31,11 @@ namespace SIL.TextEditing
         readonly bool _diacriticsMatter;
         readonly char[] _key = Array.Empty<char>();
         readonly Regex? _regex;
+        readonly IWordRules? _rules;
 
-        FindPlan(FindOptions options)
+        FindPlan(FindOptions options, IWordRules? rules)
         {
+            _rules = rules;
             _o = options.Clone();
             _diacriticsMatter = _o.MatchDiacritics || _o.MatchCase;
             var nfd = TextNormalizer.Normalize(_o.Pattern, NormalizationForm.FormD);
@@ -50,7 +52,8 @@ namespace SIL.TextEditing
             }
         }
 
-        public static FindPlan Create(FindOptions options) => new FindPlan(options);
+        /// <param name="rules">The word rule a whole-word search uses (<see cref="DocumentEditor.WordRules"/>); null for the default.</param>
+        public static FindPlan Create(FindOptions options, IWordRules? rules = null) => new FindPlan(options, rules);
 
         /// <summary>False when the pattern is a regular expression that does not compile: nothing matches.</summary>
         public bool Valid { get; } = true;
@@ -161,6 +164,7 @@ namespace SIL.TextEditing
             var map = NfdMap.Build(text);
             bool[]? boundaries = null;
             string? stripped = null;
+            int[]? backToText = null;
             bool Accept(int ns, int ne, string? expansion)
             {
                 // Matching is over decomposed text, so a match must not split a Hangul syllable (a lead jamo alone, or a lead and vowel
@@ -177,7 +181,15 @@ namespace SIL.TextEditing
                     if (boundaries == null)
                     {
                         stripped = text.IndexOf(Run.ObjectReplacement) < 0 ? null : text.Replace(Run.ObjectReplacement.ToString(), string.Empty);
-                        boundaries = WordBreaks.Boundaries(stripped ?? text);
+                        var wsOf = WordBreaks.WsOf(para);
+                        if (stripped != null)
+                        {
+                            // The writing system of a character is looked up where it is in the paragraph's own text, not in the text without its objects.
+                            backToText = new int[stripped.Length];
+                            for (int i = 0, j = 0; i < text.Length; i++) if (text[i] != Run.ObjectReplacement) backToText[j++] = i;
+                        }
+                        var back = backToText;
+                        boundaries = WordBreaks.Boundaries(stripped ?? text, _rules, back == null ? wsOf : j => wsOf(back[j]));
                     }
                     if (!boundaries[Unobjected(text, os, stripped != null)] || !boundaries[Unobjected(text, oe, stripped != null)]) return false;
                 }
