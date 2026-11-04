@@ -60,9 +60,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                     for (int i = 0; i < pl.Lines.Count - 1; i++)
                     {
                         var li = pl.Lines[i];
-                        // Only lines with room for their spaces, and for as many again beside a centred one: one whose spaces do not fit is the other test's.
-                        double hang = li.Line.WidthIncludingTrailingWhitespace - li.Line.Width;
-                        if (li.Line.WidthIncludingTrailingWhitespace > pl.ContentWidth || (centre && li.Line.Width + 2 * hang > pl.ContentWidth)) continue;
+                        if (li.Line.Width > pl.ContentWidth) continue;
                         var (a, b) = Ink(pl, li);
                         string where = "width " + width + ", " + spaces + " spaces, line " + i + ": text " + a + " to " + b + " in " + leftEdge + " to " + rightEdge;
                         if (centre) Assert.True(Math.Abs((a + b) / 2 - (leftEdge + rightEdge) / 2) < 0.75, where);
@@ -74,6 +72,80 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(checkedLines > 30, "lines checked: " + checkedLines);
         });
 
+
+        public static readonly object[][] AllCases =
+        {
+            new object[] { English, false, 0 },
+            new object[] { English, false, 1 },
+            new object[] { English, false, 2 },
+            new object[] { English, false, 3 },
+            new object[] { English, false, 4 },
+            new object[] { Arabic, true, 0 },
+            new object[] { Arabic, true, 1 },
+            new object[] { Arabic, true, 2 },
+            new object[] { Arabic, true, 3 },
+            new object[] { Arabic, true, 4 },
+        };
+
+        [Theory]
+        [MemberData(nameof(AllCases))]
+        public void A_line_whose_text_fits_but_whose_spaces_do_not_is_still_aligned_by_its_text_inside_the_area(string text, bool rtl, int align) => Headless.Run(() =>
+        {
+            // Avalonia keeps such a line against the leading edge, so its text, and not only its spaces, reaches past the edge on the other side.
+            bool left = align == 1 || (align == 4 && rtl) || ((align == 0 || align == 5) && !rtl);
+            bool centre = align == 2;
+            int checkedLines = 0;
+            for (double width = 200; width <= 300; width += 1)
+            {
+                var pl = Layout(text, rtl, align, width);
+                double leftEdge = pl.ContentLeft, rightEdge = pl.ContentLeft + pl.ContentWidth;
+                for (int i = 0; i < pl.Lines.Count - 1; i++)
+                {
+                    var li = pl.Lines[i];
+                    if (li.Line.Width > pl.ContentWidth || li.Line.WidthIncludingTrailingWhitespace <= pl.ContentWidth) continue;
+                    var (a, b) = Ink(pl, li);
+                    string where = "width " + width + ", line " + i + ": text " + a + " to " + b + " in " + leftEdge + " to " + rightEdge;
+                    Assert.True(a >= leftEdge - 0.75 && b <= rightEdge + 0.75, where);
+                    if (centre) Assert.True(Math.Abs((a + b) / 2 - (leftEdge + rightEdge) / 2) < 0.75, where);
+                    else if (left) Assert.True(Math.Abs(a - leftEdge) < 0.75, where);
+                    else Assert.True(Math.Abs(b - rightEdge) < 0.75, where);
+                    checkedLines++;
+                }
+            }
+            Assert.True(checkedLines > 5, "lines checked: " + checkedLines);
+        });
+
+        [Theory]
+        [MemberData(nameof(AllCases))]
+        public void No_caret_stop_in_the_text_of_a_line_is_outside_the_text_area_before_the_control_edge_holds_it(string text, bool rtl, int align) => Headless.Run(() =>
+        {
+            // The End caret of a line with hanging spaces is meant to be past its text (and is then held at the edge of the control); every other
+            // place is in the text area as it is. The control's own clamp must not be what puts it there.
+            int checkedStops = 0;
+            foreach (int spaces in new[] { 1, 3 })
+                for (double width = 200; width <= 300; width += 3)
+                {
+                    var pl = Layout(text, rtl, align, width, spaces);
+                    double leftEdge = pl.ContentLeft, rightEdge = pl.ContentLeft + pl.ContentWidth;
+                    foreach (var li in pl.Lines)
+                    {
+                        int core = pl.TextEnd(li);
+                        while (core > li.Start && pl.EffectiveText[core - 1] == ' ') core--;
+                        for (int o = li.Start; o <= core; o++)
+                        {
+                            var hits = new System.Collections.Generic.List<global::Avalonia.Media.CharacterHit> { new global::Avalonia.Media.CharacterHit(o) };
+                            if (o > li.Start) hits.Add(new global::Avalonia.Media.CharacterHit(o - 1, 1));
+                            foreach (var hit in hits)
+                            {
+                                double x = pl.CaretXBeforeClamp(li, hit);
+                                Assert.True(x >= leftEdge - 1 && x <= rightEdge + 1, "width " + width + ", " + spaces + " spaces: the stop at " + o + " is at " + x + ", the text area is " + leftEdge + " to " + rightEdge);
+                                checkedStops++;
+                            }
+                        }
+                    }
+                }
+            Assert.True(checkedStops > 1000, "stops checked: " + checkedStops);
+        });
         [Fact]
         public void The_text_of_a_right_aligned_wrapped_line_reaches_the_right_edge_in_the_picture() => Headless.Run(() =>
         {

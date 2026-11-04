@@ -78,9 +78,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                     if (rtl ? atEnd < left - 1 : atEnd > right + 1) beyond++;
                 }
             }
-            // (Avalonia lays a start-aligned right-to-left line out with its hanging spaces inside the area and its text outside it, so there the
-            // End caret is at the area's edge.)
-            Assert.True((rtl && align == 0) || beyond > 5, "lines whose End caret is past the text area: " + beyond);
+            Assert.True(beyond > 5, "lines whose End caret is past the text area: " + beyond);
         });
 
         [Theory]

@@ -878,7 +878,7 @@ namespace SIL.TextEditing.Avalonia
                 double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
                 if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = ExactFraction(line);
                 var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl);
-                if (index + line.Length < source.Text.Length && line.NewLineLength == 0) shown.Move(layout.HangingShift(line, pf.Align));
+                if (index + line.Length < source.Text.Length && line.NewLineLength == 0) shown.Move(layout.HangingShift(line, pf.Align, usedWidth));
                 layout.Lines.Add(shown);
                 if (pf.Align == 5 && index + line.Length < source.Text.Length) layout.Justify(shown, usedWidth);
                 y += slot;
@@ -911,18 +911,24 @@ namespace SIL.TextEditing.Avalonia
             return layout;
         }
 
-        /// <summary>How far a wrapped line is moved so that its text, and not the spaces it ends with, is what the alignment puts at the edge. Avalonia
-        /// aligns a line by its width with those spaces, so against the right edge in a left-to-right paragraph (and the left edge in a right-to-left
-        /// one) the text stops a space width short of it, and is moved out by that much, as FieldWorks leaves the spaces out of the width it aligns by.</summary>
-        double HangingShift(TextLine line, int align)
+        /// <summary>How far a wrapped line is moved so that its text, and not the spaces it ends with, is what the alignment places in the
+        /// <paramref name="available"/> width. Avalonia aligns a line by its width with those spaces: against the right edge in a left-to-right
+        /// paragraph (and the left edge in a right-to-left one) the text stops a space width short of it, and a line whose text fits but whose spaces
+        /// do not is kept against its leading edge, so its text reaches past the other. Both are put right, as FieldWorks leaves the spaces out of the
+        /// width it aligns by. A line whose text alone is wider than the area keeps its leading edge.</summary>
+        double HangingShift(TextLine line, int align, double available)
         {
             double hang = line.WidthIncludingTrailingWhitespace - line.Width;
             if (hang <= 0) return 0;
-            bool toRight = align == 3 || (align == 4 && !Rtl);
-            bool toLeft = align == 1 || (align == 4 && Rtl);
-            if (!Rtl && toRight) return hang;
-            if (Rtl && toLeft) return -hang;
-            return 0;
+            // Where Avalonia has the text: after the spaces' room at the left edge only when the spaces come first (a right-to-left line).
+            double now = line.Start + (Rtl ? hang : 0);
+            double textWidth = line.Width;
+            bool left = align == 1 || (align == 4 && Rtl) || ((align == 0 || align == 5) && !Rtl);
+            double target;
+            if (textWidth > available) target = Rtl ? available - textWidth : 0;
+            else if (align == 2) target = (available - textWidth) / 2;
+            else target = left ? 0 : available - textWidth;
+            return target - now;
         }
 
         /// <summary>The hard line break (Shift+Enter), U+2028: it ends its line, takes no room and is not drawn.</summary>
@@ -1422,10 +1428,13 @@ namespace SIL.TextEditing.Avalonia
         /// the control so that it is always seen.</summary>
         double CaretX(LineInfo li, CharacterHit h)
         {
-            double x = li.X + li.Map(li.DistanceOf(h));
+            double x = CaretXBeforeClamp(li, h);
             if (li.IsEmpty || double.IsInfinity(LayoutWidth)) return x;
             return Math.Max(0, Math.Min(x, LayoutWidth - CaretWidth));
         }
+
+        /// <summary>Where a caret hit is on a line before the control's edge holds it (<see cref="CaretX"/>): the place the line's layout says.</summary>
+        internal double CaretXBeforeClamp(LineInfo li, CharacterHit h) => li.X + li.Map(li.DistanceOf(h));
 
         /// <summary>The width of the caret as the field draws it.</summary>
         internal const double CaretWidth = 1.5;
