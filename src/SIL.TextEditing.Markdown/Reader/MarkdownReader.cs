@@ -576,7 +576,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     cellRuns.Add(runs);
                 }
                 bool isHeader = row.IsHeader;
-                if (isHeader) headerCells = cellRuns.Count;
+                if (isHeader) { headerCells = cellRuns.Count; ReportDelimiterWidth(table, headerCells); }
                 else if (headerCells >= 0 && cellRuns.Count != headerCells)
                     _context.Report(MarkdownDiagnosticIds.TableRagged, MarkdownSeverity.Error,
                         "Row " + rowNumber + " has " + cellRuns.Count + (cellRuns.Count == 1 ? " cell" : " cells") + ", the header has " + headerCells + ". Add an empty cell or remove one.",
@@ -591,6 +591,36 @@ namespace SIL.TextEditing.Markdown.Reader
             }
         }
 
+        /// <summary>The second line of the table, the delimiter row: its start, and its end before the line end.</summary>
+        void DelimiterLine(Table table, out int lineStart, out int lineEnd)
+        {
+            string s = _source;
+            int headerEnd = table.Span.Start;
+            while (headerEnd < s.Length && s[headerEnd] != '\n' && s[headerEnd] != '\r') headerEnd++;
+            lineStart = headerEnd < s.Length ? headerEnd + (s[headerEnd] == '\r' && headerEnd + 1 < s.Length && s[headerEnd + 1] == '\n' ? 2 : 1) : headerEnd;
+            lineEnd = lineStart;
+            while (lineEnd < s.Length && s[lineEnd] != '\n' && s[lineEnd] != '\r') lineEnd++;
+        }
+
+        /// <summary>A delimiter row with another number of cells than the header is a finding of the table's own (<c>gdr.table.ragged</c>, the
+        /// same fault as a row of another width); Markdig reads such a table by the header's width and says nothing.</summary>
+        void ReportDelimiterWidth(Table table, int headerCells)
+        {
+            DelimiterLine(table, out int lineStart, out int lineEnd);
+            int a = lineStart, b = lineEnd;
+            while (a < b && (_source[a] == ' ' || _source[a] == '\t')) a++;
+            while (b > a && (_source[b - 1] == ' ' || _source[b - 1] == '\t')) b--;
+            if (a < b && _source[a] == '|') a++;
+            if (b > a && _source[b - 1] == '|') b--;
+            int cells = 1;
+            for (int i = a; i < b; i++) if (_source[i] == '|') cells++;
+            if (cells == headerCells) return;
+            string replacement = "|" + string.Concat(Enumerable.Repeat(" --- |", headerCells));
+            _context.Report(MarkdownDiagnosticIds.TableRagged, MarkdownSeverity.Error,
+                "The delimiter row has " + cells + (cells == 1 ? " cell" : " cells") + ", the header has " + headerCells + ". Write one --- for each column of the header.",
+                lineStart, lineEnd, replacement);
+        }
+
         /// <summary>A column alignment (<c>:---</c>, <c>---:</c>, <c>:---:</c>) has nowhere to be stored (spec 3.1). Each aligned cell of the
         /// delimiter row, the second line of the table, is a finding of its own, and replacing it with <c>---</c> is the fix.</summary>
         void ReportAlignments(Table table)
@@ -600,11 +630,7 @@ namespace SIL.TextEditing.Markdown.Reader
             if (!aligned) return;
             const string message = "A column alignment can't be stored. Use ---.";
             string s = _source;
-            int headerEnd = table.Span.Start;
-            while (headerEnd < s.Length && s[headerEnd] != '\n' && s[headerEnd] != '\r') headerEnd++;
-            int lineStart = headerEnd < s.Length ? headerEnd + (s[headerEnd] == '\r' && headerEnd + 1 < s.Length && s[headerEnd + 1] == '\n' ? 2 : 1) : headerEnd;
-            int lineEnd = lineStart;
-            while (lineEnd < s.Length && s[lineEnd] != '\n' && s[lineEnd] != '\r') lineEnd++;
+            DelimiterLine(table, out int lineStart, out int lineEnd);
             bool any = false;
             int i = lineStart;
             while (i < lineEnd)

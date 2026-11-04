@@ -160,7 +160,7 @@ namespace SIL.TextEditing.Markdown.Writer
         /// away in blocks: a block whose removal reads back goes in one read, one that does not is split in halves, the upper half first.
         /// Where a removal that fails is not rescued by another, which is the usual case, that is the same result as taking them one at a
         /// time, in about two reads per escape that stays, not one per candidate.</summary>
-        string? Search(InlineGenerator generator, IReadOnlyList<List<Run>> cells, Func<string, bool> accepts)
+        string? Search(InlineGenerator generator, IReadOnlyList<List<Run>> cells, Func<string, bool> accepts, bool keepEscapes = false)
         {
             bool anyStar = false, anyParen = false;
             for (int step = 0; step < 4; step++)
@@ -173,12 +173,14 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (step == 2 && !anyParen) continue;
                 string bare = generator.Generate(cells, mode, null, out int count);
                 if (step == 0) { anyStar = generator.UsedStar; anyParen = generator.UsedParenLink; }
-                if (accepts(bare)) return bare;
+                bool bareReads = accepts(bare);
+                if (bareReads && (!keepEscapes || count == 0)) return bare;
                 if (count == 0) continue;
                 var mask = new bool[count];
                 for (int k = 0; k < count; k++) mask[k] = true;
                 string all = generator.Generate(cells, mode, mask, out _);
-                if (!accepts(all)) continue;
+                if (!accepts(all)) { if (bareReads) return bare; continue; }
+                if (keepEscapes) return all; // the caller wants every escape that is allowed, not the fewest
                 // The state of the mask always reads back: it starts as "every escape" and only a removal that was just read is kept.
                 long reads = Math.Max(MinReads, ReadBudgetChars / Math.Max(1, all.Length));
                 int mid = count / 2;
@@ -286,7 +288,9 @@ namespace SIL.TextEditing.Markdown.Writer
 
         /// <summary>Writes a header and the rows after it that fit. A bracket one cell leaves open can pair with a closing bracket in
         /// another row, which no single row shows, so every row is checked with a row of closing brackets after it: a bracket left open
-        /// is caught in its own row. The whole table is read once more at the end.</summary>
+        /// is caught in its own row. The whole table is read once more at the end. If rows still disturb one another there (a bracket
+        /// opened in the header and closed in a row), every cell is written with all its optional escapes, which cannot pair with
+        /// anything, and the table is read again; only when that does not read back either is the table left to the fences.</summary>
         string? TryTable(List<Entry> entries, int start, out int used)
         {
             used = 0;
@@ -296,38 +300,64 @@ namespace SIL.TextEditing.Markdown.Writer
             int width = headerCells.Count;
             var context = new BlockContext { InTable = true };
             var expected = new List<Paragraph> { header.Paragraph };
+            var cellsOf = new List<List<List<Run>>> { headerCells };
+            var acceptsOf = new List<Func<string, bool>>();
             var lines = new List<string>();
 
-            string? headerLine = Search(new InlineGenerator(_options, context), headerCells, candidate =>
+            Func<string, bool> headerAccepts = candidate =>
             {
                 var read = MarkdownReader.ReadParagraphs(candidate + "\n" + Delimiter(width) + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
                 return clean && read.Count == 2 && Equivalence.Equal(header.Paragraph, read[0]);
-            });
+            };
+            string? headerLine = Search(new InlineGenerator(_options, context), headerCells, headerAccepts);
             if (headerLine == null) return null;
+            acceptsOf.Add(headerAccepts);
             lines.Add(headerLine);
-            lines.Add(Delimiter(width));
             int j = start + 1;
             while (j < entries.Count)
             {
                 var row = entries[j];
-                if (row.IsEmpty || row.Props.Count > 0 || row.Paragraph.Style != Names.TableRow || !CellEligible(row)) break;
+                // A row with no runs is one empty cell, a row of a one-column table; in a wider table its cell count ends the table.
+                if (row.Props.Count > 0 || row.Paragraph.Style != Names.TableRow || !CellEligible(row)) break;
                 var cells = SplitCells(row.Paragraph);
                 if (cells.Count != width) break;
-                string? line = Search(new InlineGenerator(_options, context), cells, candidate =>
+                Func<string, bool> rowAccepts = candidate =>
                 {
                     var read = MarkdownReader.ReadParagraphs(PlaceholderHeader(width) + "\n" + Delimiter(width) + "\n" + candidate + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
                     return clean && read.Count == 3 && Equivalence.Equal(row.Paragraph, read[1]);
-                });
+                };
+                string? line = Search(new InlineGenerator(_options, context), cells, rowAccepts);
                 if (line == null) break;
                 expected.Add(row.Paragraph);
+                cellsOf.Add(cells);
+                acceptsOf.Add(rowAccepts);
                 lines.Add(line);
                 j++;
             }
-            var all = MarkdownReader.ReadParagraphs(string.Join("\n", lines) + "\n", _options, out bool wholeIsClean);
-            if (!wholeIsClean || all.Count != expected.Count) return null;
-            for (int i = 0; i < expected.Count; i++) if (!Equivalence.Equal(expected[i], all[i])) return null;
+            if (!TableReadsBack(lines, width, expected))
+            {
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    string? safe = Search(new InlineGenerator(_options, context), cellsOf[i], acceptsOf[i], keepEscapes: true);
+                    if (safe == null) return null;
+                    lines[i] = safe;
+                }
+                if (!TableReadsBack(lines, width, expected)) return null;
+            }
             used = j - start;
-            return string.Join("\n", lines);
+            return TableText(lines, width);
+        }
+
+        static string TableText(List<string> lines, int width)
+            => lines[0] + "\n" + Delimiter(width) + (lines.Count > 1 ? "\n" + string.Join("\n", lines.Skip(1)) : string.Empty);
+
+        /// <summary>True when the table made of these lines (header first, then the rows) reads back as exactly the paragraphs expected.</summary>
+        bool TableReadsBack(List<string> lines, int width, List<Paragraph> expected)
+        {
+            var all = MarkdownReader.ReadParagraphs(TableText(lines, width) + "\n", _options, out bool clean);
+            if (!clean || all.Count != expected.Count) return false;
+            for (int i = 0; i < expected.Count; i++) if (!Equivalence.Equal(expected[i], all[i])) return false;
+            return true;
         }
     }
 }
