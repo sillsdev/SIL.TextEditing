@@ -109,6 +109,21 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void A_right_click_in_the_empty_space_past_the_end_of_a_line_reports_no_word() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.FindReplace))
+            {
+                var onText = s.PointAt(4, 20);
+                Right(s, new Point(onText.X + 250, onText.Y));
+                var info = s.View.LastContextInfo!;
+                Assert.Equal(string.Empty, info.Word);
+                Assert.Null(info.EmbeddedObject);
+                Right(s, onText);
+                Assert.NotEqual(string.Empty, s.View.LastContextInfo!.Word);
+            }
+        });
+
+        [Fact]
         public void A_picture_and_its_data_are_reported_when_it_is_under_the_pointer() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.FindReplace))

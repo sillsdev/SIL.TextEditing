@@ -18,7 +18,8 @@ take a `FindOptions`; a match is a `TextRange` inside one paragraph.
   the document's own text. A match never starts inside a precomposed letter (the accent alone does not find the accent of
   "é" stored precomposed, but does find it in decomposed text) and never splits a surrogate pair. Case is folded per UTF-16
   unit with the invariant culture, and combining marks are removed from the comparison by our own rule, not by the platform's
-  culture-aware comparison, because .NET Framework and .NET disagree on those and the field must give one answer on both.
+  culture-aware comparison, because .NET Framework and .NET disagree on those (and the field wants one answer on both).
+  **Known gap:** the case folding (`char.ToLowerInvariant`) and the mark test (the runtime's Unicode category tables) are still the runtime's, so the two lines can differ for characters that one runtime's Unicode version has and the other's lacks (U+1E9E, capital sharp s, lowers to a sharp s on .NET and not on .NET Framework, so a search for the one finds the other on one line only). Own fold and mark tables would close it; not done, so this is a default until then.
   This is a default: FieldWorks compares with the writing system's own ICU collation, which the field does not have, so a
   language whose rules treat "ch" or "ñ" as one letter will not match as it does in FieldWorks.
 - **Case and diacritics, as FieldWorks' collation strengths do.** Default is to ignore case and match diacritics. Matching case
@@ -30,7 +31,7 @@ take a `FindOptions`; a match is a `TextRange` inside one paragraph.
 - **Whole word** uses the field's word rule (`WordBreaks`), the same one as double-click: a match must start and end where a
   word, a run of white space or a run of punctuation starts or ends. A default for the rule; FieldWorks uses the writing
   system's ICU word breaker. Whole word and diacritics are not used with regular expressions (FieldWorks disables them too).
-- **Embedded objects are ignorable.** A match may span one (the pattern "abcd" finds "ab", an object and "cd"), and one never
+- **Embedded objects are ignorable.** Whole word judges word boundaries on the text without objects too, so "cat", an object and "s" is the word "cats" and not the word "cat". A regular expression sees the text without objects as well. A match may span one (the pattern "abcd" finds "ab", an object and "cd"), and one never
   forms the start or end of a match. Replacing keeps the objects of the match, after the new text, as FieldWorks does. Read from
   FieldWorks' replace, which re-appends the objects of the replaced range; whether its search ignores them was not confirmed,
   so ignoring them is a default.
@@ -39,7 +40,7 @@ take a `FindOptions`; a match is a `TextRange` inside one paragraph.
   style (the replacement's own writing system and style, when given). With neither set, an empty pattern finds nothing.
 - **Regular expressions** are .NET's, over the NFD text, with case folded unless match case is on. FieldWorks uses ICU's
   syntax, which differs in the corners. A pattern that does not compile matches nothing, and `FindOptions.IsValid` says why. A
-  zero-length match is skipped (FieldWorks widens one to a character); a default.
+  zero-length match is skipped (FieldWorks widens one to a character); a default. Every search of a paragraph has a time limit (`FindOptions.RegexTimeout`, a quarter of a second): a pattern that runs over it finds nothing and `DocumentEditor.FindTimedOut` says so, and the field gives up the highlight of all matches without running the expression again from the paint. A match that starts or ends beside a combining mark, so would cut a letter from its marks, is refused, in every stored form (`\p{L}+` over a word with an accent finds nothing; `\p{L}\p{M}*` finds whole letters); a default.
 - **Find Next and Find Previous start from the selection** (after its end, before its start), as FieldWorks does. Wrapping is
   the host's to ask for: `TryFind(..., wrap: true, ...)` continues from the other end and says it wrapped. A backward search
   finds overlapping matches a forward one steps over (the forward set is greedy, left to right); a default.
@@ -63,8 +64,8 @@ The host builds the menu; the field reports what it was asked about. `RichTextFi
 
 - **One request, one event.** The field rides on Avalonia's own context request, which both lines raise for a right click
   (on release, as FieldWorks opens its menu on right-button up) and for the Menu key. Neither line raises it for Shift+F10, so the
-  field raises that itself. A host builds its menu from the event or sets Avalonia's `ContextMenu` on the field; when it does both the event wins, because the field marks the request handled and the `ContextMenu` does not open (a test pins this). If
-  Avalonia ever raises one for Shift+F10 too, a host would see two events for that key; a default to revisit then.
+  field raises the standard request itself, which gives the event to a host that listens and opens the `ContextMenu` of a host that only sets one. A host builds its menu from the event or sets Avalonia's `ContextMenu` on the field; when it does both the event wins, because the field marks the request handled and the `ContextMenu` does not open (a test pins this). If
+  Avalonia ever raises one for Shift+F10 too, a host would see two events for that key; a default to revisit then. A right click in the empty space past the end of a line reports no word and no object. A find match asks the host to show the whole match (`ScrollRequestedEventArgs.Target` is its rectangle), not only its end.
 - **Right click inside a selection keeps it; outside it moves the caret there first.** "Inside" means the pointer is over a
   selected character, so a click on the character just after the selection moves the caret. FieldWorks' rule for a click at the
   very edge was not confirmed; a default.

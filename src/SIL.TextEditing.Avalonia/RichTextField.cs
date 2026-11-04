@@ -654,7 +654,7 @@ namespace SIL.TextEditing.Avalonia
                     return RaiseLeave(shift ? LeaveDirection.Previous : LeaveDirection.Next, LeaveKey.Tab, ctrl, double.NaN);
                 }
                 case Key.Up: MoveVertical(false, shift); return true;
-                case Key.F10 when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0 && ContextMenuRequested != null: RaiseContextMenuRequested(false, default); return true;
+                case Key.F10 when shift && (modifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0: RaiseKeyboardContextRequest(); return true;
                 case Key.PageUp when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: MovePage(false, shift); return true;
                 case Key.PageDown when (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta)) == 0: MovePage(true, shift); return true;
                 case Key.Down: MoveVertical(true, shift); return true;

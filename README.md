@@ -117,6 +117,7 @@ The field owns one text; the window around it belongs to the host. These are the
   (`VisibleBounds`, or `PageHeight` when the host sets it); a drag past the edge extends the selection and asks for
   scrolling. The field never scrolls anything itself: it raises `ScrollRequested` (reason, the part to show, the distance)
   and a scroll viewer round the field answers when no handler marks it handled.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48

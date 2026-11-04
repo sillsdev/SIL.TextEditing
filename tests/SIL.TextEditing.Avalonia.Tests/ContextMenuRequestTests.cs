@@ -44,6 +44,20 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void A_find_match_that_runs_over_several_lines_asks_the_host_to_show_all_of_it() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(OneParagraph(string.Join(" ", System.Linq.Enumerable.Repeat("word", 40))), 90);
+            var targets = new List<Rect>();
+            field.ScrollRequested += (o, e) => { if (e.Reason == ScrollReason.FindMatch) { targets.Add(e.Target); e.Handled = true; } };
+            Assert.True(field.Find(new FindOptions { Pattern = "word word word word word word word" }));
+            var match = field.CurrentMatch!.Value;
+            var first = field.ParagraphLayoutFor(0).SelectionRects(match.Start.Offset, match.End.Offset);
+            Assert.True(first.Count > 1, "the match should wrap");
+            Assert.Single(targets);
+            Assert.True(targets[0].Top <= first[0].Top + 0.5 && targets[0].Bottom >= first[first.Count - 1].Bottom - 0.5);
+        });
+
+        [Fact]
         public void A_slow_regular_expression_is_given_up_in_the_highlight_and_the_paint_never_runs_it_again() => Headless.Run(() =>
         {
             var field = Fixtures.Field(OneParagraph(new string('a', 40) + "!"));
@@ -57,14 +71,14 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
-        public void Shift_F10_raises_the_request_only_when_a_host_listens_and_leaves_the_key_alone_otherwise() => Headless.Run(() =>
+        public void Shift_F10_gives_one_request_for_the_caret_and_other_F10_presses_are_left_alone() => Headless.Run(() =>
         {
             var (window, field) = Fixtures.InWindow(OneParagraph("hello world"));
-            Assert.False(field.HandleKey(Key.F10, KeyModifiers.Shift));
             var seen = new List<ContextMenuRequestedEventArgs>();
             field.ContextMenuRequested += (o, e) => seen.Add(e);
             Assert.True(field.HandleKey(Key.F10, KeyModifiers.Shift));
             Assert.Single(seen);
+            Assert.Equal(ContextMenuTrigger.Keyboard, seen[0].Trigger);
             Assert.False(field.HandleKey(Key.F10, KeyModifiers.Shift | KeyModifiers.Control));
             Assert.False(field.HandleKey(Key.F10, KeyModifiers.None));
             window.Close();

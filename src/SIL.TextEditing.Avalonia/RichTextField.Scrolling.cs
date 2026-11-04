@@ -74,6 +74,20 @@ namespace SIL.TextEditing.Avalonia
             RequestScroll(reason, new Rect(r.X, r.Y - r.Height, Math.Max(r.Width, 1), r.Height * 3), 0);
         }
 
+        /// <summary>Asks the host to show a found range: <see cref="ScrollRequestedEventArgs.Target"/> is the whole match, so a match
+        /// that runs over several lines is shown from its start, not only its end.</summary>
+        void RequestRangeIntoView(TextRange range)
+        {
+            if (ScrollRequested == null && !this.GetVisualAncestors().OfType<ScrollViewer>().Any()) return;
+            var layout = ParagraphLayoutFor(range.Start.Paragraph);
+            double top = ParagraphTop(range.Start.Paragraph);
+            Rect? union = null;
+            foreach (var r in layout.SelectionRects(range.Start.Offset, range.End.Offset))
+                union = union == null ? r : union.Value.Union(r);
+            var target = union ?? CaretRect();
+            RequestScroll(ScrollReason.FindMatch, union == null ? target : new Rect(target.X, target.Y + top, target.Width, target.Height), 0);
+        }
+
         void RequestScroll(ScrollReason reason, Rect target, double delta)
         {
             var args = new ScrollRequestedEventArgs(reason, target, delta);

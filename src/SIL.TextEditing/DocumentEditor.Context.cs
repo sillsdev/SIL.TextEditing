@@ -9,7 +9,7 @@ namespace SIL.TextEditing
         /// <summary>Describes the place at <paramref name="position"/> for a context menu. With <paramref name="atCaret"/> the
         /// place is an insertion point (a keyboard request): the character after it counts, and when that is not part of a word or
         /// an object, the one before it. Otherwise it is the character at the position (the one under the pointer).</summary>
-        public ContextInfo DescribeContext(TextPosition position, bool atCaret)
+        public ContextInfo DescribeContext(TextPosition position, bool atCaret, bool onText = true)
         {
             int pi = Math.Max(0, Math.Min(Document.Paragraphs.Count - 1, position.Paragraph));
             var para = Document.Paragraphs[pi];
@@ -18,7 +18,7 @@ namespace SIL.TextEditing
             var info = new ContextInfo { Position = new TextPosition(pi, offset) };
 
             // The character the place means: at the offset, or for an insertion point the one before when none follows.
-            int ch = offset < text.Length ? offset : text.Length > 0 ? text.Length - 1 : -1;
+            int ch = !onText ? -1 : offset < text.Length ? offset : text.Length > 0 ? text.Length - 1 : -1;
             int word0 = 0, word1 = 0;
             bool onWord = ch >= 0 && WordBreaks.TryWordAt(text, ch, out word0, out word1);
             if (!onWord && atCaret && offset > 0 && offset <= text.Length)
@@ -48,7 +48,7 @@ namespace SIL.TextEditing
 
             // An embedded object: the one the place means, which for an insertion point is the one after it, else the one before.
             int obj = -1;
-            if (offset < text.Length && text[offset] == Run.ObjectReplacement) obj = offset;
+            if (onText && offset < text.Length && text[offset] == Run.ObjectReplacement) obj = offset;
             else if (atCaret && offset > 0 && text[offset - 1] == Run.ObjectReplacement) obj = offset - 1;
             if (obj >= 0)
             {

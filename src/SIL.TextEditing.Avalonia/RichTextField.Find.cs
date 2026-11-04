@@ -49,7 +49,7 @@ namespace SIL.TextEditing.Avalonia
             _hit = null;
             _currentMatch = match;
             InvalidateVisual();
-            RequestCaretIntoView(ScrollReason.FindMatch);
+            RequestRangeIntoView(match);
         }
 
         /// <summary>Highlights every match of the options (all = true) as the host's dialog is open, or none (null) when it closes. The

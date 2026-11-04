@@ -1,4 +1,8 @@
 using Avalonia;
+using Avalonia.Controls;
+#if NET10_0_OR_GREATER
+using Avalonia.Input;
+#endif
 
 namespace SIL.TextEditing.Avalonia
 {
@@ -26,13 +30,35 @@ namespace SIL.TextEditing.Avalonia
             };
         }
 
+        /// <summary>Shift+F10: Avalonia raises no context request for it, so the field raises the standard one (as for the Menu key), which gives
+        /// the event to a host that listens and opens a ContextMenu for a host that only sets one.</summary>
+        void RaiseKeyboardContextRequest()
+        {
+            RaiseEvent(new ContextRequestedEventArgs { RoutedEvent = ContextRequestedEvent, Source = this });
+        }
+
+        /// <summary>True when the pointer is over the character it hit, not in the empty space past the end of a line.</summary>
+        bool PointerIsOverText(Located loc, Point at)
+        {
+            int index = loc.Character.Offset;
+            var para = Editor.Document.Paragraphs[loc.Character.Paragraph];
+            if (index >= para.Length) return false;
+            double y = at.Y - ParagraphTop(loc.Character.Paragraph);
+            foreach (var r in ParagraphLayoutFor(loc.Character.Paragraph).SelectionRects(index, index + 1))
+                if (at.X >= r.X && at.X <= r.Right && y >= r.Y && y <= r.Bottom) return true;
+            return false;
+        }
+
         /// <summary>Raises <see cref="ContextMenuRequested"/>: for the character under the pointer, or for the caret.</summary>
         void RaiseContextMenuRequested(bool pointer, Point at)
         {
             var handler = ContextMenuRequested;
             if (handler == null) return;
             if (pointer)
-                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Pointer, at, Editor.DescribeContext(Locate(at).Character, false)));
+                {
+                var loc = Locate(at);
+                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Pointer, at, Editor.DescribeContext(loc.Character, false, PointerIsOverText(loc, at))));
+            }
             else
             {
                 var caret = CaretRect();

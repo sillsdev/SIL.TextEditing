@@ -46,6 +46,21 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void Shift_F10_opens_a_ContextMenu_a_host_set_without_listening_to_the_event() => Headless.Run(() =>
+        {
+            var (window, field, at) = Open();
+            var menu = new ContextMenu { ItemsSource = new[] { new MenuItem { Header = "Host item" } } };
+            field.ContextMenu = menu;
+            field.Focus();
+            Headless.Pump();
+            Assert.True(field.HandleKey(Key.F10, KeyModifiers.Shift));
+            Headless.Pump();
+            Assert.True(menu.IsOpen);
+            menu.Close();
+            window.Close();
+        });
+
+        [Fact]
         public void A_host_that_listens_gets_the_event_and_its_ContextMenu_is_not_opened_too() => Headless.Run(() =>
         {
             var (window, field, at) = Open();
