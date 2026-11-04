@@ -207,7 +207,7 @@ Scenarios *Find and replace* (the find bar under the writing-system bar) and *Lo
 | 11.7 | Find `cat`, Replace with `catalog`, press Replace All, then Undo. | Every editable match is replaced (the one in the read-only label is not), the new text is not searched again, and one Undo restores everything. | | | | |
 | 11.8 | Right-click a word, then a picture, then inside a selection, then just after it. | The log says what the host was told: the word, its range and writing system, the picture's data, the selection. Inside a selection keeps it; elsewhere moves the caret first. A menu opens with the word and no spelling suggestions. | | | | |
 | 11.9 | Put the caret in a word and press the Menu key, then Shift+F10. | One request each, for the word at the caret. | | | | |
-| 11.10 | In *Long document* press PageDown and PageUp, then with Shift. | The caret moves by what shows in the window and keeps its place on the screen; Shift extends the selection; the log says `scroll requested: Page`. At the ends the caret stops on the first or last line. | | | | |
+| 11.10 | In *Long document* press PageDown and PageUp, then with Shift. | The caret moves by what shows in the window and keeps its place on the screen; Shift extends the selection; the log says `scroll requested: Page`. At the ends the caret stops on the first or last line. Ctrl+PageDown puts the caret at the end of the last visible line and Ctrl+PageUp at the start of the first, without scrolling. | | | | |
 | 11.11 | Drag from the middle of the field to well below its bottom edge, and above its top edge. | The selection grows and the view scrolls a little at each mouse movement (more when far outside); it stops when the mouse stops. | | | | |
 ## Record
 

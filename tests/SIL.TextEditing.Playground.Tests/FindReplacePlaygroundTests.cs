@@ -148,6 +148,33 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void A_host_that_changes_the_document_directly_and_refreshes_the_field_leaves_no_stale_highlight_or_match() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.FindReplace))
+            {
+                s.Field.FindHighlightBrush = Brushes.Lime;
+                s.Field.CurrentMatchBrush = Brushes.Red;
+                Find(s, "cat");
+                Check(s, PlaygroundView.Names.HighlightAll, true);
+                s.Click(PlaygroundView.Names.FindNext);
+                Assert.NotNull(s.Field.CurrentMatch);
+
+                var doc = s.Editor.Document;
+                doc.Paragraphs.Clear();
+                doc.Paragraphs.Add(new Paragraph { DefaultWs = "en", Runs = { new Run { Ws = "en", Text = "x" } } });
+                s.Editor.Anchor = s.Editor.Caret = new TextPosition(0, 0);
+                s.Field.RefreshFromDocument();
+                Headless.Pump();
+
+                var shot = new DrawingParagraphTests.Shot(s);   // drawing the old ranges against the new text would throw
+                Assert.Null(s.Field.CurrentMatch);
+                for (int y = 0; y < shot.Height; y += 3)
+                    for (int x = 0; x < shot.Width; x += 3)
+                        Assert.NotEqual(Colors.Lime, shot.At(x, y));
+            }
+        });
+
+        [Fact]
         public void A_match_in_read_only_text_is_selected_exactly_and_Replace_leaves_it_alone() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.FindReplace))

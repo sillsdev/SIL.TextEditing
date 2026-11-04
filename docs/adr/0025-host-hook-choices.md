@@ -84,9 +84,12 @@ Scrolling the view that shows the field is the host's (ADR 0021); the field move
 
 - **PageUp and PageDown move the caret by the field's visible height**, as FieldWorks moves it by the height of its window, and
   keep its place along the line (the caret's own horizontal place, not the remembered one Up and Down keep). Shift extends the
-  selection from the anchor. Ctrl and Ctrl+Shift do the same as without Ctrl, as in FieldWorks, which ignores the Ctrl. The
-  move stops on the first or last line. With a range selected, the move starts from the end the caret is at; a default (FieldWorks
-  measures from the lower end whichever it is). PageUp and PageDown never leave the field.
+  selection from the anchor. Ctrl+PageUp and Ctrl+PageDown (with Shift, extending) do not page: as in FieldWorks' root site they put the caret at the
+  top-left or bottom-right corner of what shows, the start of the first visible line or the end of the last, and scroll nothing. A page move
+  stops on the first or last line. With a range selected, the move starts from the end the caret is at; a default (FieldWorks
+  measures from the lower end whichever it is). PageUp and PageDown never leave the field and the key is always consumed, even when the field fits (then
+  the caret goes to its first or last line): FieldWorks' root site consumes it and its detail tree has no paging of its own, so a slice never hands the key on.
+  A host that wants to page its own view from inside a field handles the key before the field gets it.
 - **The visible height** is the part of the field that shows: its bounds cut down to the scroll viewers round it, so a field that
   fits moves to its first or last line. A host that knows its view height can set `PageHeight`.
 - **The field asks the host to scroll** through `ScrollRequested` (a reason, the part of the field to show in its own
@@ -102,8 +105,8 @@ Scrolling the view that shows the field is the host's (ADR 0021); the field move
 
 ## Window reactivation (issue #71)
 
-Checked in real windows on both lines (a field in one window, a second window shown and activated, then the first activated again
-with no click; Avalonia 11.3.17 on net48 and 12.1.2 on net10.0, Win32 backend): the field gets `LostFocus` when its window is
+Checked in real windows on both lines (a field in one window, a second window of the same application shown and activated, then the first activated again
+with no click; switching to another application with Alt+Tab was not driven; Avalonia 11.3.17 on net48 and 12.1.2 on net10.0, Win32 backend): the field gets `LostFocus` when its window is
 deactivated and `GotFocus` (navigation method unspecified) when it is activated again, so the field already raises
 `ActiveWsChanged` on the return (old and new equal), raised nothing while its window was in the background, and a caret change made
 meanwhile is reported once, in that event. No activation event is added: FieldWorks does not reset the keyboard when focus returns
@@ -112,3 +115,5 @@ focus was not in its own process (README, "Keyboards"), as before. The event arg
 gain (the navigation method is unspecified for both); a host that must tell uses its window's `Activated` event. The report in the
 issue of `ActiveWsChanged` firing while another window was active came from headless windows, where activating a second window
 leaves the first window's focused control focused; headless activation is approximate and is not a fault of the field.
+
+Written for the host-hook work, 2026-11-03. Entries marked as defaults are not owner decisions and can change without superseding this ADR; the entries not so marked follow FieldWorks' behaviour as read for this work or are facts of Avalonia's behaviour that a test pins.
