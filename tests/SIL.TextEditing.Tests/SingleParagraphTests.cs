@@ -240,11 +240,14 @@ namespace SIL.TextEditing.Tests
             var line = new string('x', 49) + "\n";
             var text = string.Concat(System.Linq.Enumerable.Repeat(line, 8000));   // 400,000 characters in one run
             var e = Single(string.Empty);
-            var clock = System.Diagnostics.Stopwatch.StartNew();
+            // Counted, not timed: what the paste allocates grows with the text when it is linear, and with its square when each
+            // character is appended to a string of the run so far (a 400,000-character run would allocate over 100 GB that way).
+            // The runtime's own count for this thread does not depend on how busy the machine is.
+            long before = System.GC.GetAllocatedBytesForCurrentThread();
             e.Paste(new List<Paragraph> { Para("en", "en", text) });
-            clock.Stop();
+            long allocated = System.GC.GetAllocatedBytesForCurrentThread() - before;
             Assert.Equal(text.Length - 1, e.Document.Paragraphs[0].Text.Length);
-            Assert.True(clock.Elapsed < System.TimeSpan.FromSeconds(5), $"took {clock.Elapsed}");
+            Assert.True(allocated < 200L * text.Length, $"{allocated} bytes allocated for {text.Length} characters");
         }
 
         [Fact]

@@ -10,4 +10,7 @@
     <IsTrimmable>true</IsTrimmable>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SIL.TextEditing.Tests" />
+  </ItemGroup>
 </Project>

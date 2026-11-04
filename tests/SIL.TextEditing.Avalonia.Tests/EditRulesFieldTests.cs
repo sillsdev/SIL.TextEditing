@@ -54,24 +54,45 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(new TextPosition(0, 3), field.Editor.Caret);
         });
 
-        [Fact]
-        public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_takes_linear_time() => Headless.Run(() =>
+        sealed class CountingList : IReadOnlyList<ParagraphSource.Segment>
         {
-            // The joined paragraph has one run per paragraph (the writing system alternates), and the field lays it out as the
-            // caret lands in it, so the layout is part of what the paste costs. Counted, not timed, so a busy machine cannot
-            // fail it: the layout looks up the run for a character a few times per run (binary search), where a scan from the
-            // first run would make about runs times runs / 2 lookups.
+            readonly ParagraphSource.Segment[] _items;
+            public int Reads;
+            public CountingList(ParagraphSource.Segment[] items) { _items = items; }
+            public int Count => _items.Length;
+            public ParagraphSource.Segment this[int index] { get { Reads++; return _items[index]; } }
+            public IEnumerator<ParagraphSource.Segment> GetEnumerator() => ((IEnumerable<ParagraphSource.Segment>)_items).GetEnumerator();
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        }
+
+        [Fact]
+        public void The_layout_finds_the_segment_of_a_character_by_binary_search_not_a_scan_from_the_first_run()
+        {
+            // A paragraph of many runs is laid out one segment lookup per run. Counted, not timed, so a busy machine cannot fail
+            // it: each lookup reads a few segments (log2 of the count), where a scan from the first run reads about half of them.
+            const int runs = 8000;
+            var items = new ParagraphSource.Segment[runs];
+            for (int i = 0; i < runs; i++) items[i] = new ParagraphSource.Segment { Start = i * 10, End = i * 10 + 10 };
+            var list = new CountingList(items);
+            for (int i = 0; i < runs; i++)
+                Assert.Equal(i, ParagraphSource.SegmentAt(list, i * 10 + 3));
+            Assert.Equal(runs, ParagraphSource.SegmentAt(list, runs * 10));   // past the end: none
+            Assert.True(list.Reads > 0);
+            Assert.True(list.Reads < 20L * runs, $"{list.Reads} segment reads for {runs} lookups");
+        }
+
+        [Fact]
+        public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_joins_them_into_one_laid_out_paragraph() => Headless.Run(() =>
+        {
             const int paragraphsPasted = 8000;
             var paragraphs = new List<Paragraph>();
             for (int i = 0; i < paragraphsPasted; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
             var field = Fixtures.Field(OneParagraph(string.Empty), 520, f => f.SingleParagraph = true);
-            long before = ParagraphSource.Probes;
             field.Editor.Paste(paragraphs);
             Fixtures.Layout(field, 520);
-            long probes = ParagraphSource.Probes - before;
             Assert.Single(field.Editor.Document.Paragraphs);
-            Assert.True(probes > 0);   // the layout did go through the lookup
-            Assert.True(probes < 100L * paragraphsPasted, $"{probes} segment probes for {paragraphsPasted} runs");
+            Assert.Equal(paragraphsPasted, field.Editor.Document.Paragraphs[0].Runs.Count);
+            Assert.True(field.ParagraphLayoutFor(0).Lines.Count > 0);
         });
 
         [Fact]

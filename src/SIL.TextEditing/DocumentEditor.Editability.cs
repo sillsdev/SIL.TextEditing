@@ -28,10 +28,15 @@ namespace SIL.TextEditing
             return limit == null ? len : Math.Max(0, Math.Min(len, limit(paragraph)));
         }
 
+        /// <summary>Called each time an insertion point is asked whether it takes typing, so a test can count that work (and stop a
+        /// scan that asks about every offset) instead of timing it.</summary>
+        internal Action? EditableAtProbe { get; set; }
+
         /// <summary>True when an insertion point at <paramref name="p"/> can take typing: the paragraph is empty, or the
         /// run on either side is editable (FieldWorks asks for both sides of the point).</summary>
         public bool IsEditableAt(TextPosition p)
         {
+            EditableAtProbe?.Invoke();
             var para = Document.Paragraphs[p.Paragraph];
             if (para.Length == 0) return true;
             var before = para.RunBefore(p.Offset, out _);
