@@ -3,16 +3,42 @@ using System.Collections.Generic;
 
 namespace SIL.TextEditing.Markdown
 {
-    /// <summary>What the converter needs from its host: the writing systems that unmarked text and <c>v</c> stand for, the
-    /// style names the block notation uses, which styles exist, and what an object run's data means. Everything is
-    /// optional; the defaults need no project (ADR 0011).</summary>
+    /// <summary>What a link is written as (spec 4.4). The caller chooses; the writer never guesses. Forms B to D need a path, and a link with no
+    /// known path is written as <see cref="ObjectAlias"/> whatever was asked.</summary>
+    public enum MarkdownLinkForm
+    {
+        /// <summary>A: a path from the project root with <c>guid=</c>: <c>[palit](/lexicon/palit(2)){.name guid=...}</c>. The default (agents, MCP, source mode, the clipboard).</summary>
+        RootPath,
+        /// <summary>B: a path relative to the file (<see cref="MarkdownOptions.LinkBase"/>), for a full export to files.</summary>
+        FileRelative,
+        /// <summary>C: a <c>silfw://</c> back-link that opens FieldWorks.</summary>
+        SilfwUrl,
+        /// <summary>D: a <c>motif://projects/&lt;project&gt;/&lt;path&gt;?guid=</c> back-link that opens Motif.</summary>
+        MotifUrl,
+        /// <summary>E: <c>/objects/&lt;guid&gt;</c>.</summary>
+        ObjectAlias,
+    }
+
+    /// <summary>What the reader does with a link whose <c>guid=</c> is unknown in the project (spec 4.8).</summary>
+    public enum UnknownGuidPolicy
+    {
+        /// <summary>The checker for agent submissions: never rebind; mark the link broken and warn (<c>fwmd.link.broken</c>).</summary>
+        MarkBroken,
+        /// <summary>Interactive paste: bind the link by its path when exactly one object matches, and say so (<c>fwmd.link.rebound</c>).</summary>
+        RebindByPath,
+    }
+
+    /// <summary>What the converter needs from its host: the writing systems that unmarked text and <c>.v</c> stand for, the style names the block
+    /// notation uses, which styles exist, how paths and object data relate, and how links are written. Everything is optional; the defaults
+    /// need no project (ADR 0011, ADR 0028).</summary>
     public sealed class MarkdownOptions
     {
         IWritingSystemMapper _writingSystems = new FixedWritingSystems("en", "en");
         MarkdownStyleNames _styleNames = new MarkdownStyleNames();
         IObjectMapper _objects = DefaultObjectMapper.Instance;
 
-        /// <summary>The writing system of unmarked text and of <c>v</c>. Default: <see cref="FixedWritingSystems"/> with "en" for both. Never null.</summary>
+        /// <summary>The writing system of unmarked text and of <c>.v</c> when the text has no front matter (the front matter's own defaults win when
+        /// it has). Default: <see cref="FixedWritingSystems"/> with "en" for both. Never null.</summary>
         /// <exception cref="ArgumentNullException">The value is null.</exception>
         public IWritingSystemMapper WritingSystems
         {
@@ -33,7 +59,7 @@ namespace SIL.TextEditing.Markdown
 
         /// <summary>True (the default) when <see cref="MarkdownConverter.Parse"/> and <see cref="MarkdownConverter.ParseInline"/> return the text of
         /// every run as NFD, the form the editor stores (ADR 0018, issue 75). Only run text is normalised: attribute values (<c>s6</c> object data,
-        /// <c>url</c>, <c>guid</c>, <c>cs</c> and other <c>sN</c> or <c>pN</c> strings) are opaque and come back byte for byte. Finding and object
+        /// <c>url</c>, <c>guid</c>, <c>sN</c> or <c>pN</c> strings) are opaque and come back byte for byte. Finding and object
         /// offsets refer to the source as written either way. False leaves the text as written.</summary>
         public bool NormalizeText { get; set; } = true;
 
@@ -45,19 +71,81 @@ namespace SIL.TextEditing.Markdown
             set => _objects = value ?? throw new ArgumentNullException(nameof(value));
         }
 
+        /// <summary>Turns a path into a GUID and back (spec 4.1). Null: the core reads and writes paths verbatim and keeps <c>guid=</c>.</summary>
+        public IProjectPathResolver? Paths { get; set; }
+
+        /// <summary>True (the default) when <see cref="MarkdownConverter.ToMarkdown(Document, MarkdownOptions)"/> starts the text with the front matter of
+        /// spec 2.1 (<c>fwmd: 1</c>, the two default writing systems and the table of the writing systems the text uses). False writes the body only.</summary>
+        public bool WriteFrontMatter { get; set; } = true;
+
+        /// <summary>The form links are written in. Default: <see cref="MarkdownLinkForm.RootPath"/> (A).</summary>
+        public MarkdownLinkForm LinkForm { get; set; } = MarkdownLinkForm.RootPath;
+
+        /// <summary>For <see cref="MarkdownLinkForm.FileRelative"/>: the path of the file being written, such as <c>/lists/GDR/GDR-47.fw.md</c>. Also the
+        /// base against which the reader resolves a relative link; without one a relative link is <c>fwmd.link.relative-without-base</c>.</summary>
+        public string? LinkBase { get; set; }
+
+        /// <summary>For <see cref="MarkdownLinkForm.MotifUrl"/>: the Known project's name in <c>motif://projects/&lt;project&gt;/...</c>. The reader takes a Motif
+        /// link that names another project to be a cross-project link.</summary>
+        public string? ProjectName { get; set; }
+
+        /// <summary>The <c>database=</c> a <c>silfw://</c> URL names for this project. Default: <c>this$</c>, which FieldWorks writes for the current project.</summary>
+        public string SilfwDatabase { get; set; } = SilfwUrl.CurrentProject;
+
+        /// <summary>What the reader does with a <c>guid=</c> the project does not know. Default: <see cref="UnknownGuidPolicy.MarkBroken"/>.</summary>
+        public UnknownGuidPolicy UnknownGuids { get; set; } = UnknownGuidPolicy.MarkBroken;
     }
 
-    /// <summary>The writing systems the notation leaves implicit (spec 3.2). A run's <see cref="Run.Ws"/> is a language tag, so
-    /// the host supplies the two defaults and says which tags exist; it needs no libpalaso type here.</summary>
+    /// <summary>The language tag, direction and default font of one writing system, as the front matter lists them (spec 2.1).</summary>
+    public sealed class WritingSystemInfo
+    {
+        public WritingSystemInfo(string language, string direction, string font)
+        {
+            Language = language ?? throw new ArgumentNullException(nameof(language));
+            Direction = direction ?? throw new ArgumentNullException(nameof(direction));
+            Font = font ?? throw new ArgumentNullException(nameof(font));
+        }
+
+        public string Language { get; }
+        /// <summary><c>ltr</c> or <c>rtl</c>.</summary>
+        public string Direction { get; }
+        public string Font { get; }
+
+        /// <summary>The fallback for a host that does not describe its writing systems: the id as the language tag, left to right unless the language is
+        /// written right to left, and FieldWorks' default font.</summary>
+        public static WritingSystemInfo Default(string id)
+        {
+            string primary = id;
+            int dash = id.IndexOf('-');
+            if (dash > 0) primary = id.Substring(0, dash);
+            bool rtl = Array.IndexOf(RtlLanguages, primary.ToLowerInvariant()) >= 0
+                || id.IndexOf("-Arab", StringComparison.OrdinalIgnoreCase) >= 0 || id.IndexOf("-Hebr", StringComparison.OrdinalIgnoreCase) >= 0
+                || id.IndexOf("-Thaa", StringComparison.OrdinalIgnoreCase) >= 0 || id.IndexOf("-Syrc", StringComparison.OrdinalIgnoreCase) >= 0;
+            return new WritingSystemInfo(id, rtl ? "rtl" : "ltr", "Charis SIL");
+        }
+
+        static readonly string[] RtlLanguages = { "ar", "he", "fa", "ur", "yi", "ps", "sd", "ug", "dv", "ckb", "syr" };
+    }
+
+    /// <summary>Optional: a writing-system mapper that also says what the front matter lists for each writing system. When
+    /// <see cref="MarkdownOptions.WritingSystems"/> implements it the writer uses it; otherwise <see cref="WritingSystemInfo.Default"/>.</summary>
+    public interface IWritingSystemDetails
+    {
+        /// <summary>The language tag, direction and font of the writing system, or null when the project does not know it.</summary>
+        WritingSystemInfo? DescribeWritingSystem(string id);
+    }
+
+    /// <summary>The writing systems the notation leaves implicit (spec 3.2). A run's <see cref="Run.Ws"/> is a writing-system id, so
+    /// the host supplies the two defaults and says which ids exist; it needs no libpalaso type here.</summary>
     public interface IWritingSystemMapper
     {
         /// <summary>The writing system of unmarked text: the project's default analysis (or the base's, at import).</summary>
         string DefaultAnalysis { get; }
 
-        /// <summary>The writing system <c>v</c> stands for: the project's default vernacular.</summary>
+        /// <summary>The writing system <c>.v</c> stands for: the project's default vernacular.</summary>
         string DefaultVernacular { get; }
 
-        /// <summary>True when the tag is a writing system of the project; false makes the parser report <c>fwmd.ws.unknown</c>.</summary>
+        /// <summary>True when the id is a writing system of the project; false makes the parser report <c>fwmd.ws.unknown</c>.</summary>
         bool IsKnown(string tag);
     }
 
@@ -65,7 +153,7 @@ namespace SIL.TextEditing.Markdown
     /// implements it, <c>fwmd.ws.unknown</c> carries them as its choices and the closest ones as its nearest.</summary>
     public interface IKnownWritingSystems
     {
-        /// <summary>The tags of the project's writing systems (the spec's choices for <c>fwmd.ws.unknown</c>: its analysis and vernacular systems).</summary>
+        /// <summary>The ids of the project's writing systems (the spec's choices for <c>fwmd.ws.unknown</c>: its analysis and vernacular systems).</summary>
         IReadOnlyList<string> KnownTags { get; }
     }
 
@@ -95,7 +183,8 @@ namespace SIL.TextEditing.Markdown
     }
 
     /// <summary>The paragraph styles the block notation maps to (spec 3.1) and the character style a link implies (spec 3.2).
-    /// The defaults are the names a new FieldWorks project already has, plus the two GDR table styles.</summary>
+    /// The defaults are the names a new FieldWorks project already has, plus the two table styles a GDR template creates (spec 9); a host with other
+    /// table styles names them here.</summary>
     public sealed class MarkdownStyleNames
     {
         string _normal = "Normal", _heading1 = "Heading 1", _heading2 = "Heading 2", _heading3 = "Heading 3", _bulletedList = "Bulleted List",
@@ -114,7 +203,7 @@ namespace SIL.TextEditing.Markdown
         public string BlockQuote { get => _blockQuote; set => _blockQuote = Name(value); }
         public string TableHeader { get => _tableHeader; set => _tableHeader = Name(value); }
         public string TableRow { get => _tableRow; set => _tableRow = Name(value); }
-        /// <summary>The character style a link run has unless the notation says otherwise.</summary>
+        /// <summary>The character style a link run has unless the notation says otherwise (<c>.nostyle</c>, or <c>custom-style=</c>).</summary>
         public string Hyperlink { get => _hyperlink; set => _hyperlink = Name(value); }
 
         internal string? Heading(int level) => level == 1 ? Heading1 : level == 2 ? Heading2 : level == 3 ? Heading3 : null;
@@ -143,165 +232,5 @@ namespace SIL.TextEditing.Markdown
         /// warning or suggestion for a style that is accepted but worth a word. The host's <see cref="MarkdownProblem.Nearest"/> is reported; when it
         /// leaves it empty and also implements <see cref="IKnownStyles"/>, the closest names fill it.</summary>
         MarkdownProblem? CheckStyle(string name, bool paragraph);
-    }
-
-    /// <summary>Where a piece of notation is in the text that was read: UTF-16 offsets (the end is exclusive) and the 1-based line and
-    /// column of each end, the same numbers a finding carries.</summary>
-    public sealed class MarkdownSourceRange
-    {
-        public MarkdownSourceRange(int start, int end, int line, int column, int endLine, int endColumn)
-        {
-            Start = start;
-            End = end;
-            Line = line;
-            Column = column;
-            EndLine = endLine;
-            EndColumn = endColumn;
-        }
-
-        public int Start { get; }
-        public int End { get; }
-        public int Line { get; }
-        public int Column { get; }
-        public int EndLine { get; }
-        public int EndColumn { get; }
-    }
-
-    /// <summary>What a host found wrong, or worth saying, about an object the notation spells: the same parts as a finding. The parser places it
-    /// on the object's range and reports it. A problem that comes with a failure is an error; one that comes with success is a warning
-    /// (<c>fwmd.link.broken</c>) or a suggestion.</summary>
-    public sealed class MarkdownProblem
-    {
-        /// <summary>A problem with the default id: <c>fwmd.link.not-found</c> for a link, <c>fwmd.picture.unknown</c> for a picture.</summary>
-        public MarkdownProblem(string message) : this(null, MarkdownSeverity.Error, message) { }
-
-        public MarkdownProblem(string? id, MarkdownSeverity severity, string message)
-        {
-            Id = id;
-            Severity = severity;
-            Message = message ?? throw new ArgumentNullException(nameof(message));
-        }
-
-        /// <summary>The finding's id, for example <see cref="MarkdownDiagnosticIds.LinkAmbiguous"/>; null for the default of the object's kind.</summary>
-        public string? Id { get; }
-        public MarkdownSeverity Severity { get; }
-        public string Message { get; }
-
-        /// <summary>The ways to fix it when intent is ambiguous, for example one <c>[[w:palit]]{guid=...}</c> for each entry that matches.</summary>
-        public IReadOnlyList<string> Choices { get; set; } = Array.Empty<string>();
-
-        /// <summary>The names the host suggests (<c>palit</c>, <c>palito</c> for <c>[[w:palt]]</c>).</summary>
-        public IReadOnlyList<string> Nearest { get; set; } = Array.Empty<string>();
-
-        /// <summary>One exact replacement of the observed text that fixes it, or null.</summary>
-        public string? Replacement { get; set; }
-    }
-
-    /// <summary>What kind of target an object run's data holds, as far as the notation distinguishes them.</summary>
-    public enum MarkdownObjectKind
-    {
-        /// <summary>A link to a path or URL: <c>[text](url)</c>.</summary>
-        ExternalLink,
-        /// <summary>A link to an object of the project: <c>[[kind:Name]]{guid=...}</c> or <c>[text]{link=kind:Name guid=...}</c>.</summary>
-        InternalLink,
-        /// <summary>A picture: <c>![caption](fw:picture/guid)</c>.</summary>
-        Picture,
-    }
-
-    /// <summary>The notation-level description of an object run's data. The host fills it when exporting and receives it when
-    /// importing; the converter never looks inside the data string.</summary>
-    public sealed class MarkdownObject
-    {
-        public MarkdownObjectKind Kind { get; set; }
-
-        /// <summary>External link: the path or URL. Internal link: the stored URL, set only when it differs from what the host
-        /// builds from kind, guid and tool (written <c>url="..."</c>).</summary>
-        public string? Url { get; set; }
-
-        /// <summary>Internal link: the kind (<c>w</c>, <c>rule</c>, ...).</summary>
-        public string? LinkKind { get; set; }
-
-        /// <summary>Internal link: the target's current name, which the name form shows.</summary>
-        public string? Name { get; set; }
-
-        /// <summary>Internal link or picture: the target's GUID.</summary>
-        public Guid? Guid { get; set; }
-
-        /// <summary>Internal link: the FLEx tool, set only when the host's table does not know it (written <c>tool=...</c>).</summary>
-        public string? Tool { get; set; }
-
-        /// <summary>Internal link: the target was deleted (<c>broken</c>).</summary>
-        public bool Broken { get; set; }
-
-        /// <summary>Picture: the caption shown as alt text on export; ignored on import.</summary>
-        public string? Caption { get; set; }
-
-        /// <summary>Import: where the object is in the text (the whole <c>[[kind:Name]]{...}</c>, <c>[text]{...}</c>, <c>[text](url){...}</c> or
-        /// <c>![caption](url)</c>). The host can place its own findings with it. Null on export.</summary>
-        public MarkdownSourceRange? Source { get; set; }
-
-        /// <summary>Import: the object data the host made for it, once it has; null when it could not.</summary>
-        public string? ObjData { get; set; }
-    }
-
-    /// <summary>Maps an object run's data string (property 6) to the notation and back. Data it does not describe is written as
-    /// <c>[...]{s6="..."}</c>, so nothing is lost.</summary>
-    public interface IObjectMapper
-    {
-        /// <summary>Export: describes the data, or returns null for "write it generically".</summary>
-        MarkdownObject? Describe(string objData);
-
-        /// <summary>Import: builds the data for an object the notation spelled. On failure <paramref name="problem"/> says what
-        /// was not found, and the parser reports <c>fwmd.link.not-found</c> or <c>fwmd.picture.unknown</c>.</summary>
-        bool TryCreateObjData(MarkdownObject target, out string objData, out string? problem);
-
-        /// <summary>True when <paramref name="kind"/> is a link kind the host resolves; the name form <c>[[kind:Name]]</c> only
-        /// triggers for these.</summary>
-        bool IsKnownLinkKind(string kind);
-    }
-
-    /// <summary>Optional: an object mapper that can say more than yes or no. When <see cref="MarkdownOptions.Objects"/> implements it, the parser
-    /// calls <see cref="TryResolve"/> instead of <see cref="IObjectMapper.TryCreateObjData"/>, so the host's own findings (the spec's
-    /// <c>fwmd.link.not-found</c> with its nearest names, <c>fwmd.link.ambiguous</c> with its choices, <c>fwmd.link.broken</c> as a warning) reach
-    /// the result with the line and column of the object.</summary>
-    public interface IObjectResolver
-    {
-        /// <summary>Import: builds the data for an object the notation spelled. Returns true with the data when it can, and then
-        /// <paramref name="problem"/> may still hold a warning or suggestion to report (a deleted target: <c>fwmd.link.broken</c>). Returns false when it
-        /// cannot, and <paramref name="problem"/> says why (null for a plain "cannot be resolved"); that is always an error.
-        /// <paramref name="target"/> carries the object's place in the text (<see cref="MarkdownObject.Source"/>).</summary>
-        bool TryResolve(MarkdownObject target, out string objData, out MarkdownProblem? problem);
-    }
-
-    /// <summary>The mapper with no project: an object whose data starts with U+0004 (FieldWorks' external path name type) is an
-    /// external link to the rest of the string; every other object is generic. Pictures and project links need a host.</summary>
-    public sealed class DefaultObjectMapper : IObjectMapper
-    {
-        public static readonly DefaultObjectMapper Instance = new DefaultObjectMapper();
-
-        /// <summary>FieldWorks' kodtExternalPathName (4): an ObjData string is this character, then the path or URL.</summary>
-        public const char ExternalPathNameType = '\u0004';
-
-        public MarkdownObject? Describe(string objData)
-        {
-            if (objData.Length > 0 && objData[0] == ExternalPathNameType)
-                return new MarkdownObject { Kind = MarkdownObjectKind.ExternalLink, Url = objData.Substring(1) };
-            return null;
-        }
-
-        public bool TryCreateObjData(MarkdownObject target, out string objData, out string? problem)
-        {
-            if (target.Kind == MarkdownObjectKind.ExternalLink && target.Url != null)
-            {
-                objData = ExternalPathNameType + target.Url;
-                problem = null;
-                return true;
-            }
-            objData = string.Empty;
-            problem = target.Kind == MarkdownObjectKind.Picture ? "pictures need a host" : "links to project objects need a host";
-            return false;
-        }
-
-        public bool IsKnownLinkKind(string kind) => false;
     }
 }

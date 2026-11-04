@@ -75,6 +75,15 @@ namespace SIL.TextEditing.Markdown
             string? replacement = null, IReadOnlyList<string>? choices = null, IReadOnlyList<string>? nearest = null)
             => _context.CreateDiagnostic(id, severity, message, start, end, replacement, choices, nearest);
 
+        /// <summary>The front matter the text started with (spec 2.1), or null when it had none (or not one that names <c>fwmd</c>). Its <c>analysis</c> and <c>vernacular</c> were used for unmarked text and <c>.v</c>.</summary>
+        public MarkdownFrontMatter? FrontMatter => _context.FrontMatter;
+
+        /// <summary>The writing system unmarked text was read as: the front matter's analysis, or the host's default.</summary>
+        public string DefaultAnalysis => _context.DefaultAnalysis;
+
+        /// <summary>The writing system <c>.v</c> was read as.</summary>
+        public string DefaultVernacular => _context.DefaultVernacular;
+
         /// <summary>The paragraphs read. Paragraph keys are null. When there are errors the document is a best effort.</summary>
         public Document Document { get; }
 
@@ -95,6 +104,19 @@ namespace SIL.TextEditing.Markdown
     public static class MarkdownDiagnosticIds
     {
         public const string UnclosedMark = "fwmd.syntax.unclosed-mark";
+        public const string VersionUnsupported = "fwmd.version.unsupported";
+        /// <summary>Reported by hosts: unmarked text that looks like it is vernacular (a suggestion).</summary>
+        public const string WsUnmarkedVernacular = "fwmd.ws.unmarked-vernacular";
+        /// <summary>The URL of a back-link names one GUID and <c>guid=</c> another.</summary>
+        public const string LinkGuidMismatch = "fwmd.link.guid-mismatch";
+        /// <summary>A file-relative link with no base to resolve it against (<see cref="MarkdownOptions.LinkBase"/>).</summary>
+        public const string LinkRelativeWithoutBase = "fwmd.link.relative-without-base";
+        /// <summary>The GUID resolves but the object is now at another path (information); the next export writes the current path.</summary>
+        public const string LinkStalePath = "fwmd.link.stale-path";
+        /// <summary>The GUID is unknown here and the link was bound to the one object at its path (information).</summary>
+        public const string LinkRebound = "fwmd.link.rebound";
+        /// <summary>A link with a stored <c>url=</c> was retargeted, so the URL was rebuilt (information).</summary>
+        public const string LinkUrlRebuilt = "fwmd.link.url-rebuilt";
         public const string UnknownAttribute = "fwmd.syntax.unknown-attribute";
         public const string DuplicateAttribute = "fwmd.syntax.duplicate-attribute";
         public const string UnsupportedMarkup = "fwmd.syntax.unsupported-markup";
@@ -104,7 +126,7 @@ namespace SIL.TextEditing.Markdown
         public const string TooDeep = "fwmd.syntax.too-deep";
         public const string WsUnknown = "fwmd.ws.unknown";
         public const string LinkNotFound = "fwmd.link.not-found";
-        /// <summary>Reported by hosts (through <see cref="MarkdownProblem"/>): a link name matches more than one target.</summary>
+        /// <summary>Reported by hosts (through <see cref="MarkdownProblem"/>): a link path matches more than one target.</summary>
         public const string LinkAmbiguous = "fwmd.link.ambiguous";
         /// <summary>Reported by hosts (through <see cref="MarkdownProblem"/>): the link's target was deleted; a warning.</summary>
         public const string LinkBroken = "fwmd.link.broken";

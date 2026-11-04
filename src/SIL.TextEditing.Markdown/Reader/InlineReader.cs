@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using Markdig.Syntax.Inlines;
 using SIL.TextEditing.Markdown.Notation;
@@ -77,7 +78,7 @@ namespace SIL.TextEditing.Markdown.Reader
         string ResolveWs(Fmt fmt)
         {
             if (fmt.Ws != null) return fmt.Ws;
-            return fmt.Vernacular ? _options.WritingSystems.DefaultVernacular : _options.WritingSystems.DefaultAnalysis;
+            return fmt.Vernacular ? _context.DefaultVernacular : _context.DefaultAnalysis;
         }
 
         /// <summary>Reads the inlines under <paramref name="root"/> in document order. The walk keeps its own stack instead of calling itself,
@@ -98,12 +99,16 @@ namespace SIL.TextEditing.Markdown.Reader
                     case LiteralInline literal:
                         Add(literal.Content.ToString(), fmt);
                         break;
-                    case CharRefInline charRef:
-                        Add(charRef.Text, fmt);
-                        break;
                     case HtmlEntityInline entity:
                         Add(entity.Transcoded.ToString(), fmt);
                         break;
+                    case SupSubInline supSub:
+                    {
+                        var inner = fmt.Clone();
+                        inner.Props.IntProps[TextPropertyNumbers.Superscript] = new IntPropValue(PropertyKeys.VarEnum, supSub.IsSuper ? 1 : 2);
+                        Add(supSub.Text, inner);
+                        break;
+                    }
                     case EmphasisInline emphasis:
                     {
                         var inner = fmt.Clone();
@@ -116,11 +121,11 @@ namespace SIL.TextEditing.Markdown.Reader
                         Add(lineBreak.IsHard && lineBreak.IsBackslash ? Chars.LineSeparatorText : " ", fmt);
                         break;
                     case SpanInline span:
+                    {
+                        if (TryReadCharacterSpan(span, fmt)) break;
                         pending.Push(new KeyValuePair<Inline?, Fmt>(span.FirstChild, ReadSpan(span, fmt)));
                         break;
-                    case NameLinkInline nameLink:
-                        ReadNameLink(nameLink, fmt);
-                        break;
+                    }
                     case AttrsInline _:
                         break; // consumed by the link before it
                     case LinkInline link:
@@ -178,19 +183,34 @@ namespace SIL.TextEditing.Markdown.Reader
 
         // -------------------------------------------------------------- spans and links
 
-        /// <summary>The formatting of the text inside a span.</summary>
-        Fmt ReadSpan(SpanInline span, Fmt fmt)
+        /// <summary><c>[]{.nul}</c> is a NUL and <c>[]{.surrogate x=D800}</c> an unpaired surrogate (spec 3.4): characters CommonMark cannot carry.
+        /// They take the formatting of the run they stand in.</summary>
+        bool TryReadCharacterSpan(SpanInline span, Fmt fmt)
         {
-            // The text form [text]{link=...} is placed on the whole span: from the opening bracket to the closing brace.
-            return ApplyAttrs(span.Attrs, fmt, new ObjectForm { Start = span.OpenAt, End = span.Attrs.End - 1 });
+            AttrItem? special = null;
+            foreach (var item in span.Attrs.Items) if (item.IsClass && (item.Key == "nul" || item.Key == "surrogate")) { special = item; break; }
+            if (special == null) return false;
+            int start = Abs(span.OpenAt), end = Abs(span.Attrs.End);
+            if (span.FirstChild != null || span.Attrs.Items.Count != (special.Key == "nul" ? 1 : 2))
+            {
+                Malformed(special, "[]{." + special.Key + "}" + (special.Key == "nul" ? string.Empty : " with x=") + " stands alone: it has no text and no other attribute");
+                return false;
+            }
+            if (special.Key == "nul") { Add("\0", fmt); return true; }
+            AttrItem? x = null;
+            foreach (var item in span.Attrs.Items) if (!item.IsClass) x = item;
+            if (x == null || x.Key != "x" || x.IsFlag || x.Value!.Length == 0 || x.Value.Length > 4 || !int.TryParse(x.Value, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out int unit) || unit < 0xD800 || unit > 0xDFFF)
+            {
+                _context.Report(MarkdownDiagnosticIds.MalformedAttribute, MarkdownSeverity.Error, ".surrogate takes x= and the hex code unit, D800 to DFFF: []{.surrogate x=D800}", start, end);
+                return true;
+            }
+            Add(((char)unit).ToString(), fmt);
+            return true;
         }
 
-        void ReadNameLink(NameLinkInline link, Fmt fmt)
-        {
-            var form = new ObjectForm { Kind = link.Kind, Name = link.Name, IsInternal = true, Start = link.Span.Start, End = link.Span.End };
-            var inner = link.Attrs == null ? Finish(fmt.Clone(), form, null) : ApplyAttrs(link.Attrs, fmt, form);
-            Add(link.Name, inner);
-        }
+        /// <summary>The formatting of the text inside a span.</summary>
+        Fmt ReadSpan(SpanInline span, Fmt fmt)
+            => ApplyAttrs(span.Attrs, fmt, new ObjectForm { Start = span.OpenAt, End = span.Attrs.End - 1 }, Ctx.Span);
 
         /// <summary>Reads a link or picture; returns the formatting of the text inside it, or null when there is none to read.</summary>
         Fmt? ReadLink(LinkInline link, Fmt fmt)
@@ -204,8 +224,8 @@ namespace SIL.TextEditing.Markdown.Reader
             }
             if (link.IsImage)
             {
-                var form = new ObjectForm { IsPicture = true, Url = link.Url, Start = link.Span.Start, End = attrs == null ? link.Span.End : attrs.End - 1 };
-                var picture = attrs == null ? Finish(fmt.Clone(), form, null) : ApplyAttrs(attrs, fmt, form);
+                var form = new ObjectForm { IsPicture = true, Dest = link.Url ?? string.Empty, Caption = PlainText(link), Start = link.Span.Start, End = attrs == null ? link.Span.End : attrs.End - 1 };
+                var picture = attrs == null ? Finish(fmt.Clone(), form) : ApplyAttrs(attrs, fmt, form, Ctx.Image);
                 Add(Run.ObjectReplacement.ToString(), picture);
                 return null;
             }
@@ -214,61 +234,105 @@ namespace SIL.TextEditing.Markdown.Reader
                 Unsupported(link.Span.Start, link.Span.End, "A reference link is not supported. Escape the [ as \\[.");
                 return fmt;
             }
-            var linkForm = new ObjectForm { Url = link.Url ?? string.Empty, Start = link.Span.Start, End = attrs == null ? link.Span.End : attrs.End - 1 };
-            return attrs == null ? Finish(fmt.Clone(), linkForm, null) : ApplyAttrs(attrs, fmt, linkForm);
+            var linkForm = new ObjectForm { Dest = link.Url ?? string.Empty, Start = link.Span.Start, End = attrs == null ? link.Span.End : attrs.End - 1 };
+            return attrs == null ? Finish(fmt.Clone(), linkForm) : ApplyAttrs(attrs, fmt, linkForm, Ctx.Link);
         }
+
+        static string PlainText(ContainerInline container)
+        {
+            var sb = new StringBuilder();
+            for (Inline? child = container.FirstChild; child != null; child = child.NextSibling)
+            {
+                if (child is LiteralInline literal) sb.Append(literal.Content.ToString());
+                else if (child is HtmlEntityInline entity) sb.Append(entity.Transcoded.ToString());
+                else if (child is ContainerInline inner) sb.Append(PlainText(inner));
+            }
+            return sb.ToString();
+        }
+
+        enum Ctx { Span, Link, Image }
 
         /// <summary>What the syntax around an attribute block says about the object the run carries.</summary>
         sealed class ObjectForm
         {
             public bool IsPicture;
-            public bool IsInternal;
-            public string? Kind;
-            public string? Name;
-            public string? Url;
+            public string? Dest;
+            public string? Caption;
             public Guid? Guid;
             public string? Tool;
-            public bool Broken;
+            public string? Url;
+            public bool UrlGiven;
+            public bool Name, Example, Broken;
             public string? S6;
-            public bool HasObject => IsPicture || IsInternal || Url != null || S6 != null;
+            public bool HasObject => IsPicture || Dest != null || S6 != null;
             public int Start, End;
         }
 
-        Fmt ApplyAttrs(Notation.AttrBlock attrs, Fmt parent, ObjectForm form)
+        static readonly string[] PairKeys = { "ws", "custom-style", "guid", "tool", "url", "x" };
+
+        Fmt ApplyAttrs(AttrBlock attrs, Fmt parent, ObjectForm form, Ctx ctx)
         {
             var fmt = parent.Clone();
             var rest = new List<AttrItem>();
-            AttrItem? wsItem = null, vItem = null, csItem = null, linkItem = null, urlItem = null, s6Item = null, s133Item = null;
+            AttrItem? wsItem = null, vItem = null, csItem = null, urlItem = null, s6Item = null, s133Item = null, nameItem = null, exampleItem = null, brokenItem = null, noStyleItem = null;
             foreach (var item in attrs.Items)
             {
                 bool handled = true;
-                switch (item.Key)
+                if (item.IsClass)
                 {
-                    case "v" when item.IsFlag: if (vItem != null) Duplicate(item); vItem = vItem ?? item; break;
-                    case "broken" when item.IsFlag: form.Broken = true; form.IsInternal = true; break;
-                    case "ws" when !item.IsFlag: if (wsItem != null) Duplicate(item); wsItem = wsItem ?? item; break;
-                    case "cs" when !item.IsFlag: if (csItem != null) Duplicate(item); csItem = csItem ?? item; break;
-                    case "link" when !item.IsFlag: if (linkItem != null) Duplicate(item); linkItem = linkItem ?? item; break;
-                    case "url" when !item.IsFlag: if (urlItem != null) Duplicate(item); urlItem = urlItem ?? item; break;
-                    case "guid" when !item.IsFlag:
-                        if (form.Guid != null) Duplicate(item);
-                        else if (System.Guid.TryParse(item.Value, out var g)) { form.Guid = g; form.IsInternal = true; }
-                        else Malformed(item, "guid takes a GUID");
-                        break;
-                    case "tool" when !item.IsFlag: form.Tool = item.Value; form.IsInternal = true; break;
-                    case "s6" when !item.IsFlag: if (s6Item != null) Duplicate(item); s6Item = s6Item ?? item; break;
-                    case "s133" when !item.IsFlag: s133Item = item; handled = false; break;
-                    case "ws" or "cs" or "link" or "guid" or "tool" or "url" or "s6":
-                        _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'" + item.Key + "' is not a flag; it takes a value: " + item.Key + "=...", Abs(item.Start), Abs(item.End));
-                        break;
-                    case "v" or "broken":
-                        _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'" + item.Key + "' is a flag and takes no value: write " + item.Key + " alone.", Abs(item.Start), Abs(item.End));
-                        break;
-                    default: handled = false; break;
+                    switch (item.Key)
+                    {
+                        case "v": if (vItem != null) Duplicate(item); vItem = vItem ?? item; break;
+                        case "name": case "example": case "broken": case "nostyle":
+                            if (ctx == Ctx.Span)
+                            {
+                                _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'." + item.Key + "' belongs to a link: [text](/path){." + item.Key + " guid=...}.", Abs(item.Start), Abs(item.End));
+                                break;
+                            }
+                            if (item.Key == "nostyle" && ctx == Ctx.Image) { handled = false; break; }
+                            if (item.Key == "name") { if (nameItem != null) Duplicate(item); nameItem = nameItem ?? item; }
+                            else if (item.Key == "example") { if (exampleItem != null) Duplicate(item); exampleItem = exampleItem ?? item; }
+                            else if (item.Key == "broken") { if (brokenItem != null) Duplicate(item); brokenItem = brokenItem ?? item; }
+                            else { if (noStyleItem != null) Duplicate(item); noStyleItem = noStyleItem ?? item; }
+                            break;
+                        case "empty":
+                            _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, "[]{.empty} stands alone as a paragraph; it is not part of a paragraph with text.", Abs(item.Start), Abs(item.End));
+                            break;
+                        case "nul": case "surrogate":
+                            Malformed(item, "[]{." + item.Key + "} stands alone: it has no text and no other attribute");
+                            break;
+                        default: handled = false; break;
+                    }
+                }
+                else
+                {
+                    switch (item.Key)
+                    {
+                        case "ws" when !item.IsFlag: if (wsItem != null) Duplicate(item); wsItem = wsItem ?? item; break;
+                        case "custom-style" when !item.IsFlag: if (csItem != null) Duplicate(item); csItem = csItem ?? item; break;
+                        case "guid" when !item.IsFlag:
+                            if (form.Guid != null) Duplicate(item);
+                            else if (System.Guid.TryParse(item.Value, out var g)) form.Guid = g;
+                            else Malformed(item, "guid takes a GUID");
+                            break;
+                        case "tool" when !item.IsFlag: form.Tool = item.Value; break;
+                        case "url" when !item.IsFlag: if (urlItem != null) Duplicate(item); urlItem = urlItem ?? item; break;
+                        case "s6" when !item.IsFlag: if (s6Item != null) Duplicate(item); s6Item = s6Item ?? item; break;
+                        case "s6x" when !item.IsFlag:
+                            if (s6Item != null) Duplicate(item);
+                            else if (!AttributeText.TryUnhex(item.Value!, out var unhexed)) Malformed(item, "s6x takes four hex digits for each UTF-16 code unit");
+                            else { s6Item = item; form.S6 = unhexed; }
+                            break;
+                        case "s133" when !item.IsFlag: s133Item = item; handled = false; break;
+                        case "ws" or "custom-style" or "guid" or "tool" or "url" or "s6" or "x":
+                            _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'" + item.Key + "' takes a value: " + item.Key + "=...", Abs(item.Start), Abs(item.End));
+                            break;
+                        default: handled = false; break;
+                    }
                 }
                 if (!handled) rest.Add(item);
             }
-            if (wsItem != null && vItem != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "v and ws both name the writing system. Keep one.", Abs(vItem.Start), Abs(vItem.End));
+            if (wsItem != null && vItem != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, ".v and ws both name the writing system. Keep one.", Abs(vItem.Start), Abs(vItem.End));
             if (wsItem != null)
             {
                 fmt.Ws = wsItem.Value!;
@@ -279,91 +343,53 @@ namespace SIL.TextEditing.Markdown.Reader
             if (csItem != null)
             {
                 if (s133Item != null) Duplicate(s133Item);
-                if (csItem.Value == "none") { fmt.Cs = CsState.None; fmt.CsName = null; }
-                else
-                {
-                    fmt.Cs = CsState.Explicit;
-                    fmt.CsName = csItem.Value;
-                    var catalog = _options.Styles;
-                    if (catalog != null) _context.CheckStyle(csItem.Value!, false, Abs(csItem.Start), Abs(csItem.End));
-                }
+                fmt.Cs = CsState.Explicit;
+                fmt.CsName = csItem.Value;
+                if (_options.Styles != null) _context.CheckStyle(csItem.Value!, false, Abs(csItem.Start), Abs(csItem.End));
                 fmt.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
             }
-            if (linkItem != null)
-            {
-                string v = linkItem.Value!;
-                int colon = v.IndexOf(':');
-                if (colon <= 0) Malformed(linkItem, "link takes kind:Name");
-                else { form.Kind = v.Substring(0, colon); form.Name = v.Substring(colon + 1); form.IsInternal = true; }
-            }
-            if (urlItem != null)
-            {
-                if (form.Url != null && !form.IsInternal) Duplicate(urlItem);
-                form.Url = urlItem.Value;
-            }
-            if (s6Item != null) form.S6 = s6Item.Value;
+            else if (noStyleItem != null) { fmt.Cs = CsState.None; fmt.CsName = null; fmt.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle); }
+            if (urlItem != null) { form.Url = urlItem.Value; form.UrlGiven = true; }
+            form.Name = nameItem != null;
+            form.Example = exampleItem != null;
+            form.Broken = brokenItem != null;
             PropertyKeys.Apply(rest, fmt.Props, _context, item => ReportUnknownItem(item));
             if (s133Item != null && csItem == null && fmt.Props.StrProps.TryGetValue(TextPropertyNumbers.NamedStyle, out var styleName)) { fmt.Cs = CsState.Explicit; fmt.CsName = styleName; }
-            return Finish(fmt, form, attrs);
+            return Finish(fmt, form);
         }
 
         void ReportUnknownItem(AttrItem item)
         {
-            if (item.Key == "style") { _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'style' is for paragraphs. A run's character style is cs.", Abs(item.Start), Abs(item.End)); return; }
+            if (item.Key == "style" && !item.IsClass) { _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'style' is not part of the notation. A run's character style is custom-style.", Abs(item.Start), Abs(item.End)); return; }
             _context.ReportUnknown(item, RunKeys());
         }
 
         static IEnumerable<string> RunKeys()
         {
-            foreach (var k in new[] { "v", "ws", "cs", "link", "guid", "tool", "url", "broken" }) yield return k;
+            foreach (var k in new[] { ".v", ".name", ".example", ".broken", ".nostyle", "ws", "custom-style", "guid", "tool", "url" }) yield return k;
             foreach (var k in PropertyKeys.AllKeys()) yield return k;
         }
 
-        void Duplicate(AttrItem item) => _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "'" + item.Key + "' appears twice. Keep one.", Abs(item.Start), Abs(item.End));
+        void Duplicate(AttrItem item) => _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "'" + item.Spelling + "' appears twice. Keep one.", Abs(item.Start), Abs(item.End));
         void Malformed(AttrItem item, string message) => _context.Report(MarkdownDiagnosticIds.MalformedAttribute, MarkdownSeverity.Error, message, Abs(item.Start), Abs(item.End));
 
         /// <summary>Gives the formatting its object data once the whole attribute block has been read.</summary>
-        Fmt Finish(Fmt fmt, ObjectForm form, AttrBlock? attrs)
+        Fmt Finish(Fmt fmt, ObjectForm form)
         {
             if (!form.HasObject) return fmt;
             int start = Abs(form.Start), end = Abs(form.End) + 1;
             if (form.S6 != null)
             {
-                if (form.IsInternal || form.IsPicture || form.Url != null)
+                if (form.IsPicture || form.Dest != null)
                     _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "s6 is the object data; it cannot be combined with a link or picture.", start, end);
                 fmt.ObjData = form.S6;
                 fmt.Scope = ++_scopes;
                 return fmt;
             }
-            var target = new MarkdownObject();
-            if (form.IsPicture)
-            {
-                target.Kind = MarkdownObjectKind.Picture;
-                const string prefix = "fw:picture/";
-                string url = form.Url ?? string.Empty;
-                if (url.StartsWith(prefix, StringComparison.Ordinal) && Guid.TryParse(url.Substring(prefix.Length), out var pictureGuid)) target.Guid = pictureGuid;
-                else
-                {
-                    _context.Report(MarkdownDiagnosticIds.PictureUnknown, MarkdownSeverity.Error, "A picture is written ![caption](fw:picture/<guid>).", start, end);
-                    return fmt;
-                }
-            }
-            else if (form.IsInternal)
-            {
-                target.Kind = MarkdownObjectKind.InternalLink;
-                target.LinkKind = form.Kind ?? "obj";
-                target.Name = form.Name;
-                target.Guid = form.Guid;
-                target.Tool = form.Tool;
-                target.Url = form.Url;
-                target.Broken = form.Broken;
-            }
-            else
-            {
-                target.Kind = MarkdownObjectKind.ExternalLink;
-                target.Url = form.Url;
-            }
-            target.Source = _context.RangeOf(start, end);
+            var objects = new ObjectBuilder(_context, form.Start, form.End);
+            var target = form.IsPicture ? objects.BuildPicture(form.Dest!, form.Guid, form.Caption, form.Url, form.UrlGiven, form.Tool)
+                : objects.BuildLink(form.Dest!, form.Guid, form.Url, form.UrlGiven, form.Tool, form.Name, form.Example, form.Broken);
+            if (target == null) return fmt;
             _context.AddObject(target);
             bool resolved;
             string objData;

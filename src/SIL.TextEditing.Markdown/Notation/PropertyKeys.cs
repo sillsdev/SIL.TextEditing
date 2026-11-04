@@ -162,30 +162,34 @@ namespace SIL.TextEditing.Markdown.Notation
         }
 
         /// <summary>The items for a bag, in the canonical order of spec 3.3: named keys alphabetically, then <c>pN</c> ascending, then
-        /// <c>sN</c> ascending. <paramref name="skipStrings"/> lists string numbers the caller spells itself (style, object data).</summary>
+        /// <c>sN</c> and <c>sNx</c> ascending by N. A string that holds a control character or a lone surrogate is written as <c>sNx</c>, whatever
+        /// its name. <paramref name="skipStrings"/> lists string numbers the caller spells itself (style, object data).</summary>
         public static List<Item> ToItems(PropertyBag bag, params int[] skipStrings)
         {
             var named = new List<Item>();
-            var ints = new List<Item>();
-            var strs = new List<Item>();
+            var ints = new List<KeyValuePair<int, Item>>();
+            var strs = new List<KeyValuePair<int, Item>>();
             foreach (var kv in bag.IntProps)
             {
                 if (IntByNumber.TryGetValue(kv.Key, out var def) && TryNamed(def, kv.Value, named)) continue;
-                ints.Add(new Item("p" + Int(kv.Key), Int(kv.Value.Value) + ":" + VariationName(kv.Value.Variation)));
+                ints.Add(new KeyValuePair<int, Item>(kv.Key, new Item("p" + Int(kv.Key), Int(kv.Value.Value) + ":" + VariationName(kv.Value.Variation))));
             }
             foreach (var kv in bag.StrProps)
             {
                 if (Array.IndexOf(skipStrings, kv.Key) >= 0) continue;
-                if (StrByNumber.TryGetValue(kv.Key, out var def)) named.Add(new Item(def.Key, kv.Value));
-                else strs.Add(new Item("s" + Int(kv.Key), kv.Value));
+                if (AttributeText.NeedsHex(kv.Value)) strs.Add(new KeyValuePair<int, Item>(kv.Key, new Item("s" + Int(kv.Key) + "x", AttributeText.Hex(kv.Value))));
+                else if (StrByNumber.TryGetValue(kv.Key, out var def)) named.Add(new Item(def.Key, kv.Value));
+                else strs.Add(new KeyValuePair<int, Item>(kv.Key, new Item("s" + Int(kv.Key), kv.Value)));
             }
             named.Sort((a, b) =>
             {
                 int c = string.Compare(a.Key, b.Key, StringComparison.OrdinalIgnoreCase);
                 return c != 0 ? c : string.CompareOrdinal(a.Key, b.Key);
             });
-            named.AddRange(ints);
-            named.AddRange(strs);
+            ints.Sort((a, b) => a.Key.CompareTo(b.Key));
+            strs.Sort((a, b) => a.Key.CompareTo(b.Key));
+            foreach (var kv in ints) named.Add(kv.Value);
+            foreach (var kv in strs) named.Add(kv.Value);
             return named;
         }
 
@@ -231,7 +235,7 @@ namespace SIL.TextEditing.Markdown.Notation
         static string ColorHex(int colorRef)
         {
             int r = colorRef & 0xFF, g = (colorRef >> 8) & 0xFF, b = (colorRef >> 16) & 0xFF;
-            return r.ToString("x2", CultureInfo.InvariantCulture) + g.ToString("x2", CultureInfo.InvariantCulture) + b.ToString("x2", CultureInfo.InvariantCulture);
+            return "#" + r.ToString("x2", CultureInfo.InvariantCulture) + g.ToString("x2", CultureInfo.InvariantCulture) + b.ToString("x2", CultureInfo.InvariantCulture);
         }
 
         // ---------------------------------------------------------------- reading
@@ -252,6 +256,7 @@ namespace SIL.TextEditing.Markdown.Notation
             var assignedStrs = new HashSet<int>();
             foreach (var item in items)
             {
+                if (item.IsClass) continue;
                 if (seen.TryGetValue(item.Key, out _))
                 {
                     issues.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "'" + item.Key + "' appears twice. Keep one.", item);
@@ -262,7 +267,7 @@ namespace SIL.TextEditing.Markdown.Notation
             }
             foreach (var item in items)
             {
-                if (used.Contains(item)) continue;
+                if (used.Contains(item) || item.IsClass) continue;
                 if (ByKey.TryGetValue(item.Key, out var def))
                 {
                     used.Add(item);
@@ -278,20 +283,28 @@ namespace SIL.TextEditing.Markdown.Notation
                     ApplyNumberedInt(number, item, bag, issues, assignedInts);
                     continue;
                 }
-                if (TryNumbered(item.Key, 's', out number))
+                bool hexKey = item.Key.Length > 2 && item.Key[item.Key.Length - 1] == 'x' && TryNumbered(item.Key.Substring(0, item.Key.Length - 1), 's', out number);
+                if (hexKey || TryNumbered(item.Key, 's', out number))
                 {
                     used.Add(item);
                     if (item.IsFlag) { NeedsValue(issues, item); continue; }
+                    string stringValue = item.Value!;
+                    if (hexKey && !AttributeText.TryUnhex(stringValue, out stringValue))
+                    {
+                        Malformed(issues, item, item.Key + " takes four hex digits for each UTF-16 code unit");
+                        continue;
+                    }
                     if (!assignedStrs.Add(number)) { Duplicate(issues, item); continue; }
                     if (!KnownStrings.Contains(number))
                         issues.Report(MarkdownDiagnosticIds.PropUnknownNumber, MarkdownSeverity.Warning, "s" + Int(number) + " is not a known string property; it is kept as written.", item);
-                    bag.StrProps[number] = item.Value!;
+                    bag.StrProps[number] = stringValue;
                     continue;
                 }
             }
             foreach (var item in items)
             {
                 if (used.Contains(item)) continue;
+                if (item.IsClass) { unknown(item); continue; }
                 // A unit or type key whose base key was used is consumed by that key.
                 if (IsCompanionOfUsed(item.Key, seen, used)) continue;
                 if (Companions.TryGetValue(item.Key, out var companionOf))

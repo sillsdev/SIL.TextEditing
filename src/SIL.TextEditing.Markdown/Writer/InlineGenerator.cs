@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using SIL.TextEditing.Markdown.Notation;
+using SIL.TextEditing.Markdown.Reader;
 
 namespace SIL.TextEditing.Markdown.Writer
 {
@@ -17,11 +18,15 @@ namespace SIL.TextEditing.Markdown.Writer
         /// the empty paragraph marker are one line.</summary>
         public bool AllowsContinuation;
         public bool InTable;
+        /// <summary>A heading line: a closing run of <c>#</c> and a trailing <c>{...}</c> are markup there.</summary>
+        public bool IsHeading;
+        /// <summary>Whether a line of the text can start a block (a heading, a list, a quote): true for everything but a heading and a table row.</summary>
+        public bool BlockStart = true;
         /// <summary>Wraps the inline text into the whole block text the parser reads back, for the check.</summary>
         public Func<string, string> Wrap = text => text;
 
         public static BlockContext Plain() => new BlockContext { AllowsContinuation = true };
-        public static BlockContext Heading(int level) => new BlockContext { FirstPrefix = new string('#', level) + " " };
+        public static BlockContext Heading(int level) => new BlockContext { FirstPrefix = new string('#', level) + " ", IsHeading = true, BlockStart = false };
         public static BlockContext Bullet() => new BlockContext { FirstPrefix = "- ", ContinuationPrefix = "  ", AllowsContinuation = true };
         public static BlockContext Number(int number)
         {
@@ -29,150 +34,148 @@ namespace SIL.TextEditing.Markdown.Writer
             return new BlockContext { FirstPrefix = marker, ContinuationPrefix = new string(' ', marker.Length), AllowsContinuation = true };
         }
         public static BlockContext Quote() => new BlockContext { FirstPrefix = "> ", ContinuationPrefix = "> ", AllowsContinuation = true };
-        public static BlockContext Fence(string header) => new BlockContext
+        public static BlockContext Div(string header) => new BlockContext
         {
             AllowsContinuation = true,
-            // A line follows the paragraph: a fence line that ends in a backslash continues into the next line, so the check needs one.
-            Wrap = text => "::: " + header + "\n" + text + "\nx\n:::",
+            // A paragraph follows: a line that ends in a backslash would continue into the next line, so the check needs one.
+            Wrap = text => "::: " + header + "\n" + text + "\n\nx\n:::",
         };
+        public static BlockContext TableRow() => new BlockContext { InTable = true, BlockStart = false };
     }
 
     internal struct GenMode
     {
-        /// <summary>Bold and italic that CommonMark's flanking rules accept are written <c>**x**</c> and <c>*x*</c>; otherwise as attributes.</summary>
-        public bool StarMarks;
-        /// <summary>An external link whose URL is plain is written <c>[text](url)</c>; otherwise <c>[text]{url="..."}</c>.</summary>
-        public bool ParenLinks;
+        /// <summary>The safe spelling: no stars, and every punctuation character that could mean anything escaped. Used only when the canonical spelling
+        /// does not read back, which the rules are meant to prevent.</summary>
+        public bool Safe;
         /// <summary>Every character of text is a numeric reference: the form that always reads back.</summary>
         public bool Numeric;
     }
 
-    /// <summary>Writes the inline text of one paragraph (or of the cells of one table row) from its runs (spec 3.2 to 3.4). Optional
-    /// backslash escapes are numbered; a mask says which ones are written, so the writer can search for the fewest that read back.</summary>
+    /// <summary>Writes the inline text of one paragraph (or of the cells of one table row) from its runs (spec 3.2 to 3.4), by the rules of the spec and not by
+    /// asking a parser: the text becomes a list of units, literal characters and pieces of syntax, and each literal character is escaped by the escape table
+    /// of spec 3.4 from what is next to it.</summary>
     internal sealed class InlineGenerator
     {
-        const string Candidates = "\\!#&()*+-.:=>[]_{}~|";
         readonly MarkdownOptions _options;
         readonly BlockContext _context;
-        StringBuilder _out = new StringBuilder();
-        bool[]? _mask;
-        int _candidate;
-        bool _lineStart;
+        readonly string _analysis, _vernacular;
         GenMode _mode;
-        string _cellText = string.Empty;
-        int _cellOffset;
 
-        public bool UsedStar { get; private set; }
-        public bool UsedParenLink { get; private set; }
+        struct Unit
+        {
+            public string Text;        // syntax text; for a literal the character(s) as written when unescaped
+            public bool Lit;           // a literal character the escape rules decide about
+            public char Ch;            // for a literal: its first UTF-16 code unit
+            public int Cp;             // for a literal: its code point
+            public int Scope;          // the bracket scope of a literal
+            public int EdgeScope;      // for syntax: the scope whose bracket this opens or closes; -1 for a cell or line boundary
+            public bool Break;         // a hard line break (backslash, line end and the next line's prefix)
+            public bool IsSpace;       // a literal that is a plain space
+        }
+
+        readonly List<Unit> _units = new List<Unit>();
+        int _scopes;
+        int _scope;
 
         public InlineGenerator(MarkdownOptions options, BlockContext context)
         {
             _options = options;
             _context = context;
+            _analysis = options.WritingSystems.DefaultAnalysis;
+            _vernacular = options.WritingSystems.DefaultVernacular;
         }
 
         MarkdownStyleNames Names => _options.StyleNames;
 
-        /// <summary>Writes the cells (one, outside a table). With a mask, candidate <c>i</c> is escaped when <c>mask[i]</c>; without one none is.</summary>
-        public string Generate(IReadOnlyList<List<Run>> cells, GenMode mode, bool[]? mask, out int candidates)
+        /// <summary>The writing systems a run or empty paragraph names, in the order the text uses them, for the front matter.</summary>
+        public static void CollectWritingSystems(IEnumerable<Run> runs, ICollection<string> into)
+        {
+            foreach (var run in runs) if (!into.Contains(run.Ws)) into.Add(run.Ws);
+        }
+
+        /// <summary>Writes the cells (one, outside a table).</summary>
+        public string Generate(IReadOnlyList<List<Run>> cells, GenMode mode)
         {
             _mode = mode;
-            _mask = mask;
-            _candidate = 0;
-            _out = new StringBuilder();
-            UsedStar = false;
-            UsedParenLink = false;
+            _units.Clear();
+            _scopes = 0;
+            _scope = 0;
             bool table = _context.InTable;
-            if (table) _out.Append('|');
+            var all = new List<Run>();
+            foreach (var cell in cells) all.AddRange(cell);
+            var stars = mode.Safe || mode.Numeric ? null : ChooseStars(cells);
+            int runIndex = 0;
+            if (table) Syn("|");
             for (int c = 0; c < cells.Count; c++)
             {
-                if (table) _out.Append(' ');
-                WriteCell(cells[c]);
-                if (table) _out.Append(" |");
+                if (table) { Syn(" ", -1); }
+                else if (c == 0) Syn(string.Empty, -1);
+                var runs = cells[c];
+                for (int i = 0; i < runs.Count; i++) WriteRun(runs[i], i == runs.Count - 1, stars == null ? 0 : stars[runIndex++]);
+                if (table) Syn(" |", -1);
+                else if (c == cells.Count - 1) Syn(string.Empty, -1);
             }
-            candidates = _candidate;
-            return _out.ToString();
+            return Render(all);
         }
 
-        void WriteCell(List<Run> runs)
+        // ---------------------------------------------------------------- units
+
+        void Syn(string text, int edge = 0)
         {
-            _lineStart = true;
-            var text = new StringBuilder();
-            foreach (var run in runs) text.Append(run.Text);
-            _cellText = text.ToString();
-            _cellOffset = 0;
-            for (int i = 0; i < runs.Count; i++)
-            {
-                WriteRun(runs[i], i == runs.Count - 1);
-                _cellOffset += runs[i].Text.Length;
-            }
+            _units.Add(new Unit { Text = text, EdgeScope = edge });
         }
 
-        // ---------------------------------------------------------------- runs
-
-        void WriteRun(Run run, bool lastInCell)
+        void Lit(int cp, string text)
         {
-            if (run.ObjData == null) { WriteTextRun(run, lastInCell); return; }
-            var described = _options.Objects.Describe(run.ObjData);
-            if (described == null) { WriteGeneric(run); return; }
-            switch (described.Kind)
-            {
-                case MarkdownObjectKind.Picture when run.Text == Chars.ObjectReplacement.ToString() && described.Guid != null:
-                    WritePicture(run, described);
-                    return;
-                case MarkdownObjectKind.InternalLink:
-                    WriteInternalLink(run, described);
-                    return;
-                case MarkdownObjectKind.ExternalLink when described.Url != null:
-                    WriteExternalLink(run, described);
-                    return;
-                default:
-                    WriteGeneric(run);
-                    return;
-            }
+            _units.Add(new Unit { Text = text, Lit = true, Ch = text[0], Cp = cp, Scope = _scope });
         }
 
-        void WriteTextRun(Run run, bool lastInCell)
+        // ---------------------------------------------------------------- stars
+
+        /// <summary>0 for no star, 1 italic, 2 bold, 3 both, for every run of every cell. A run is written with stars only when the star rule of spec 3.2 holds:
+        /// it has no other attribute, its first and last characters are letters or numbers, the run after it does not start with a combining mark, and no other
+        /// star-written run touches it; if two would touch, every bold and italic run of the paragraph takes the attribute form.</summary>
+        int[] ChooseStars(IReadOnlyList<List<Run>> cells)
         {
-            bool star = _mode.StarMarks && !_mode.Numeric && StarEligible(run.Text) && (IsOn(run, TextPropertyNumbers.Bold) || IsOn(run, TextPropertyNumbers.Italic));
-            bool strong = star && IsOn(run, TextPropertyNumbers.Bold);
-            bool emphasis = star && IsOn(run, TextPropertyNumbers.Italic);
-            var items = RunItems(run, strong, emphasis, null, generic: false);
-            if (star && items.Count > 0)
+            var flat = new List<Run>();
+            var cellOf = new List<int>();
+            for (int c = 0; c < cells.Count; c++) foreach (var run in cells[c]) { flat.Add(run); cellOf.Add(c); }
+            var result = new int[flat.Count];
+            var candidate = new int[flat.Count];
+            bool any = false;
+            for (int i = 0; i < flat.Count; i++)
             {
-                // The run has other attributes, so it is bracketed anyway, and bold or italic is one more attribute inside the braces
-                // ([x]{v bold=on}). Stars inside the brackets would be a spelling the spec does not show, and stars around the brackets
-                // need the neighbours to be spaces or punctuation (a**[x]{v}**b does not read as bold).
-                star = strong = emphasis = false;
-                items = RunItems(run, false, false, null, generic: false);
+                var run = flat[i];
+                if (run.ObjData != null) continue;
+                bool bold = IsOn(run, TextPropertyNumbers.Bold), italic = IsOn(run, TextPropertyNumbers.Italic);
+                if (!bold && !italic) continue;
+                any = true;
+                if (!StarEligible(run.Text)) continue;
+                if (i + 1 < flat.Count && cellOf[i + 1] == cellOf[i] && StartsWithCombiningMark(flat[i + 1].Text)) continue;
+                var items = RunItems(run, true, true, null, false);
+                if (items.Count > 0) continue;
+                candidate[i] = (bold ? 2 : 0) | (italic ? 1 : 0);
             }
-            bool bracket = items.Count > 0;
-            if (star) UsedStar = true;
-            if (bracket) Raw("[");
-            string marks = strong && emphasis ? "***" : strong ? "**" : emphasis ? "*" : string.Empty;
-            if (marks.Length > 0) Raw(marks);
-            Text(run.Text, allowBreak: !bracket && marks.Length == 0, endsLine: lastInCell && !bracket && marks.Length == 0);
-            if (marks.Length > 0) Raw(marks);
-            if (bracket) Raw("]" + Block(items));
+            if (!any) return result;
+            for (int i = 0; i + 1 < flat.Count; i++)
+                if (candidate[i] != 0 && candidate[i + 1] != 0 && cellOf[i] == cellOf[i + 1]) return result; // two would touch: attribute form for all
+            return candidate;
         }
 
         static bool IsOn(Run run, int number)
             => run.Props.IntProps.TryGetValue(number, out var v) && v.Variation == PropertyKeys.VarEnum && v.Value == TextPropertyNumbers.ToggleOn;
 
-        /// <summary>CommonMark accepts a <c>*</c> run only when its first and last characters are neither white space nor punctuation
-        /// (spec 3.2); a line separator or any control character keeps the attribute form too.</summary>
         static bool StarEligible(string text)
         {
             if (text.Length == 0) return false;
-            if (text.IndexOf(Chars.LineSeparator) >= 0) return false;
-            return Plain(text, 0) && Plain(text, text.Length - 1);
+            return LetterOrNumber(text, 0) && LetterOrNumber(text, text.Length - 1);
         }
 
-        static bool Plain(string text, int index)
+        static bool LetterOrNumber(string text, int index)
         {
             if (index > 0 && char.IsLowSurrogate(text[index]) && char.IsHighSurrogate(text[index - 1])) index--;
-            var category = CharUnicodeInfo.GetUnicodeCategory(text, index);
-            switch (category)
+            switch (CharUnicodeInfo.GetUnicodeCategory(text, index))
             {
                 case UnicodeCategory.UppercaseLetter:
                 case UnicodeCategory.LowercaseLetter:
@@ -188,120 +191,228 @@ namespace SIL.TextEditing.Markdown.Writer
             }
         }
 
-        /// <summary>Object data the host does not describe: <c>[text]{s6="..."}</c>.</summary>
+        static bool StartsWithCombiningMark(string text)
+        {
+            if (text.Length == 0) return false;
+            var category = CharUnicodeInfo.GetUnicodeCategory(text, 0);
+            return category == UnicodeCategory.NonSpacingMark || category == UnicodeCategory.SpacingCombiningMark || category == UnicodeCategory.EnclosingMark;
+        }
+
+        // ---------------------------------------------------------------- runs
+
+        void WriteRun(Run run, bool lastInCell, int stars)
+        {
+            if (run.ObjData == null) { WriteTextRun(run, stars); return; }
+            var described = _options.Objects.Describe(run.ObjData);
+            if (described == null) { WriteGeneric(run); return; }
+            switch (described.Kind)
+            {
+                case MarkdownObjectKind.Picture when run.Text == Chars.ObjectReplacement.ToString() && described.Guid != null:
+                    WritePicture(run, described);
+                    return;
+                case MarkdownObjectKind.InternalLink when described.Guid != null:
+                    WriteInternalLink(run, described);
+                    return;
+                case MarkdownObjectKind.ExternalLink when described.Url != null:
+                    WriteExternalLink(run, described);
+                    return;
+                default:
+                    WriteGeneric(run);
+                    return;
+            }
+        }
+
+        void WriteTextRun(Run run, int stars)
+        {
+            var items = RunItems(run, stars != 0 && (stars & 2) != 0, stars != 0 && (stars & 1) != 0, null, generic: false);
+            if (stars != 0)
+            {
+                string marks = stars == 3 ? "***" : stars == 2 ? "**" : "*";
+                Syn(marks);
+                Text(run.Text);
+                Syn(marks);
+                return;
+            }
+            if (items.Count == 0) { Text(run.Text); return; }
+            OpenScope();
+            Text(run.Text);
+            CloseScope("]" + Block(items));
+        }
+
+        int _openScope;
+
+        void OpenScope()
+        {
+            _scopes++;
+            _scope = _scopes;
+            _openScope = _scope;
+            Syn("[", _scope);
+        }
+
+        void CloseScope(string closing)
+        {
+            Syn(closing, _scope);
+            _scope = 0;
+        }
+
+        /// <summary>Object data the host does not describe: <c>[&amp;#xFFFC;]{s6x="..."}</c>. Every string with a control character takes the hex form, and
+        /// object data starts with one.</summary>
         void WriteGeneric(Run run)
         {
             var items = RunItems(run, false, false, null, generic: true);
-            Raw("[");
-            Text(run.Text, allowBreak: false, endsLine: false);
-            Raw("]" + Block(items));
+            OpenScope();
+            Text(run.Text);
+            CloseScope("]" + Block(items));
         }
 
         void WritePicture(Run run, MarkdownObject picture)
         {
             var items = RunItems(run, false, false, null, generic: false);
-            Raw("![");
-            Text(picture.Caption ?? string.Empty, allowBreak: false, endsLine: false);
-            Raw("](fw:picture/" + picture.Guid!.Value.ToString("D") + ")");
-            if (items.Count > 0) Raw(Block(items));
+            Guid guid = picture.Guid!.Value;
+            string dest = picture.Path ?? ProjectPath.ForObject(guid).ToString();
+            bool alias = picture.Path == null;
+            if (!alias) items.Insert(InsertionPoint(items), new PropertyKeys.Item("guid", guid.ToString("D")));
+            Syn("![", 0);
+            _scopes++;
+            _scope = _scopes;
+            Syn(string.Empty, _scope);
+            Text(picture.Caption ?? string.Empty);
+            Syn("](" + LinkSyntax.Wrap(dest, _context.InTable) + ")" + (items.Count > 0 ? Block(items) : string.Empty), _scope);
+            _scope = 0;
+        }
+
+        /// <summary>Where <c>guid=</c> goes among the items: after the classes, <c>ws=</c> and <c>custom-style=</c>, before everything else.</summary>
+        static int InsertionPoint(List<PropertyKeys.Item> items)
+        {
+            int i = 0;
+            while (i < items.Count && (items[i].Key[0] == '.' || items[i].Key == "ws" || items[i].Key == "custom-style")) i++;
+            return i;
         }
 
         void WriteInternalLink(Run run, MarkdownObject link)
         {
-            string kind = link.LinkKind ?? "obj";
-            var linkItems = new List<PropertyKeys.Item>();
-            bool nameForm = link.Name != null && run.Text == link.Name && _options.Objects.IsKnownLinkKind(kind);
-            if (!nameForm) linkItems.Add(new PropertyKeys.Item("link", kind + ":" + (link.Name ?? string.Empty)));
-            if (link.Guid != null) linkItems.Add(new PropertyKeys.Item("guid", link.Guid.Value.ToString("D")));
-            if (link.Tool != null) linkItems.Add(new PropertyKeys.Item("tool", link.Tool));
-            if (link.Url != null) linkItems.Add(new PropertyKeys.Item("url", link.Url));
-            if (link.Broken) linkItems.Add(new PropertyKeys.Item("broken", null));
-            var items = RunItems(run, false, false, linkItems, generic: false, isLink: true);
-            if (nameForm)
+            Guid guid = link.Guid!.Value;
+            var paths = _options.Paths;
+            ProjectPath? path = null;
+            if (link.Path != null) path = ProjectPath.Parse(link.Path);
+            if (path == null && paths != null) path = paths.PathOf(guid);
+            string? derivedTool = paths?.ToolOf(guid) ?? (path != null ? PathTools.ToolOf(path) : null);
+            var form = _options.LinkForm;
+            if (link.Project != null) form = MarkdownLinkForm.RootPath == form || form == MarkdownLinkForm.FileRelative || form == MarkdownLinkForm.ObjectAlias ? MarkdownLinkForm.SilfwUrl : form;
+            if ((form == MarkdownLinkForm.RootPath || form == MarkdownLinkForm.FileRelative || form == MarkdownLinkForm.MotifUrl) && path == null) form = MarkdownLinkForm.ObjectAlias;
+            if (form == MarkdownLinkForm.FileRelative && _options.LinkBase == null) form = MarkdownLinkForm.RootPath;
+            if (form == MarkdownLinkForm.MotifUrl && _options.ProjectName == null) form = MarkdownLinkForm.RootPath;
+            if (path != null && (link.Field != null) && path.Field == null) path = new ProjectPath(path.Segments, link.Field, link.FieldWritingSystem);
+
+            string dest;
+            bool guidAttr = true, urlAttr = link.Url != null;
+            switch (form)
             {
-                Raw("[[" + kind + ":");
-                Text(link.Name!, allowBreak: false, endsLine: false, bare: true);
-                Raw("]]");
-                if (items.Count > 0) Raw(Block(items));
+                case MarkdownLinkForm.SilfwUrl:
+                    string tag = link.Field == null ? string.Empty : link.FieldWritingSystem == null ? link.Field : link.Field + "." + link.FieldWritingSystem;
+                    dest = link.Url ?? SilfwUrl.Build(guid, link.Tool ?? derivedTool, tag, link.Project ?? _options.SilfwDatabase);
+                    guidAttr = false;
+                    urlAttr = false;
+                    break;
+                case MarkdownLinkForm.MotifUrl:
+                    dest = "motif://projects/" + EncodeProject(link.Project ?? _options.ProjectName!) + path!.ToString() + "?guid=" + guid.ToString("D");
+                    guidAttr = false;
+                    break;
+                case MarkdownLinkForm.FileRelative:
+                    dest = LinkSyntax.RelativeTo(_options.LinkBase!, path!);
+                    break;
+                case MarkdownLinkForm.ObjectAlias:
+                    dest = ProjectPath.ForObject(guid).ToString() + (link.Field == null ? string.Empty : "#" + link.Field + (link.FieldWritingSystem == null ? string.Empty : "." + link.FieldWritingSystem));
+                    guidAttr = false;
+                    break;
+                default:
+                    dest = path!.ToString();
+                    break;
             }
-            else
+            var extra = new List<PropertyKeys.Item>();
+            if (guidAttr) extra.Add(new PropertyKeys.Item("guid", guid.ToString("D")));
+            if (!urlAttr && link.Tool != null && link.Tool != derivedTool && form != MarkdownLinkForm.SilfwUrl) extra.Add(new PropertyKeys.Item("tool", link.Tool));
+            if (urlAttr) extra.Add(new PropertyKeys.Item("url", link.Url));
+            var flags = new List<PropertyKeys.Item>();
+            if (link.Name != null && run.Text == link.Name) flags.Add(new PropertyKeys.Item(".name", null));
+            if (link.Example) flags.Add(new PropertyKeys.Item(".example", null));
+            if (link.Broken) flags.Add(new PropertyKeys.Item(".broken", null));
+            var items = RunItems(run, false, false, extra, generic: false, isLink: true, linkFlags: flags);
+            OpenScope();
+            Text(run.Text);
+            CloseScope("](" + LinkSyntax.Wrap(dest, _context.InTable) + ")" + (items.Count > 0 ? Block(items) : string.Empty));
+        }
+
+        static string EncodeProject(string name)
+        {
+            var sb = new StringBuilder();
+            foreach (byte b in Encoding.UTF8.GetBytes(name))
             {
-                Raw("[");
-                Text(run.Text, allowBreak: false, endsLine: false);
-                Raw("]" + Block(items));
+                char c = (char)b;
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~' || b >= 0x80 && false) sb.Append(c);
+                else sb.Append('%').Append(((int)b).ToString("X2", CultureInfo.InvariantCulture));
             }
+            return sb.ToString();
         }
 
         void WriteExternalLink(Run run, MarkdownObject link)
         {
             string url = link.Url!;
-            bool paren = _mode.ParenLinks && UrlIsPlain(url, _context.InTable);
-            var leading = new List<PropertyKeys.Item>();
-            if (!paren) leading.Add(new PropertyKeys.Item("url", url));
-            var items = RunItems(run, false, false, leading, generic: false, isLink: true);
-            Raw("[");
-            Text(run.Text, allowBreak: false, endsLine: false);
-            if (paren)
-            {
-                UsedParenLink = true;
-                Raw("](" + url + ")");
-                if (items.Count > 0) Raw(Block(items));
-            }
-            else Raw("]" + Block(items));
+            bool plain = DestinationCarries(url);
+            var extra = new List<PropertyKeys.Item>();
+            if (!plain) extra.Add(new PropertyKeys.Item("url", url));
+            var items = RunItems(run, false, false, extra, generic: false, isLink: true);
+            OpenScope();
+            Text(run.Text);
+            CloseScope("](" + (plain ? LinkSyntax.Wrap(url, _context.InTable) : "<>") + ")" + (items.Count > 0 ? Block(items) : string.Empty));
         }
 
-        /// <summary>A destination Markdown reads back as written: visible ASCII with no bracket, parenthesis, angle bracket, backslash,
-        /// backtick or entity-looking ampersand.</summary>
-        static bool UrlIsPlain(string url, bool inTable)
+        /// <summary>True when a URL can stand as a link destination and be read back as it is: no control character, angle bracket, backslash or lone
+        /// surrogate, parentheses balanced, no ampersand that reads as a character reference, and not empty.</summary>
+        static bool DestinationCarries(string url)
         {
             if (url.Length == 0) return false;
+            int depth = 0;
             for (int i = 0; i < url.Length; i++)
             {
                 char c = url[i];
-                if (c <= ' ' || c > '~') return false;
-                if ("()<>[]\\`".IndexOf(c) >= 0) return false;
-                if (c == '|' && inTable) return false;
-                if (c == '&')
-                {
-                    int j = i + 1;
-                    while (j < url.Length && (char.IsLetterOrDigit(url[j]) || url[j] == '#')) j++;
-                    if (j > i + 1 && j < url.Length && url[j] == ';') return false;
-                }
+                if (c < ' ' || (c >= '\x7F' && c <= '\x9F') || c == '<' || c == '>' || c == '\\') return false;
+                if (c == '\n' || c == '\r') return false;
+                if (c == '(') depth++;
+                else if (c == ')') { depth--; if (depth < 0) return false; }
+                else if (c == '&' && AttributeText.ReadsAsReference(url, i)) return false;
+                else if (char.IsHighSurrogate(c) && i + 1 < url.Length && char.IsLowSurrogate(url[i + 1])) i++;
+                else if (char.IsSurrogate(c)) return false;
+                else if (c == Chars.LineSeparator || c == Chars.ParagraphSeparator || c == Chars.ByteOrderMark) return false;
             }
-            return true;
+            return depth == 0;
         }
 
         // ---------------------------------------------------------------- attributes
 
-        /// <summary>The attribute items of a run in canonical order (spec 3.3): writing system, <c>cs</c>, the link items, then the
-        /// properties. <paramref name="strong"/> and <paramref name="emphasis"/> are the toggles written as marks instead.</summary>
-        List<PropertyKeys.Item> RunItems(Run run, bool strong, bool emphasis, List<PropertyKeys.Item>? linkItems, bool generic, bool isLink = false)
+        /// <summary>The attribute items of a run in canonical order (spec 3.3): classes, <c>ws=</c>, <c>custom-style=</c>, the link's own items (<c>guid</c>, <c>tool</c>,
+        /// <c>url</c>), then the properties. <paramref name="strong"/> and <paramref name="emphasis"/> are the toggles written as stars instead.</summary>
+        List<PropertyKeys.Item> RunItems(Run run, bool strong, bool emphasis, List<PropertyKeys.Item>? linkItems, bool generic, bool isLink = false, List<PropertyKeys.Item>? linkFlags = null)
         {
             var items = new List<PropertyKeys.Item>();
-            var ws = _options.WritingSystems;
-            if (run.Ws != ws.DefaultAnalysis)
-                items.Add(run.Ws == ws.DefaultVernacular ? new PropertyKeys.Item("v", null) : new PropertyKeys.Item("ws", run.Ws));
+            bool vernacular = run.Ws != _analysis && run.Ws == _vernacular;
             var bag = run.Props.Clone();
             bool hasStyle = bag.StrProps.TryGetValue(TextPropertyNumbers.NamedStyle, out string? style);
-            bool styleAsCs = false;
-            if (isLink)
-            {
-                if (!hasStyle) { items.Add(new PropertyKeys.Item("cs", "none")); }
-                else if (style == "none") { /* spelled s133="none" below, in the numbered group */ }
-                else if (style != Names.Hyperlink) { items.Add(new PropertyKeys.Item("cs", style)); styleAsCs = true; }
-                else styleAsCs = true;
-            }
-            else if (hasStyle && style != "none")
-            {
-                items.Add(new PropertyKeys.Item("cs", style));
-                styleAsCs = true;
-            }
+            // Classes, in the order .v .name .example .broken .nul .surrogate .nostyle.
+            if (vernacular) items.Add(new PropertyKeys.Item(".v", null));
+            if (linkFlags != null) items.AddRange(linkFlags);
+            bool noStyle = isLink && !hasStyle;
+            if (noStyle) items.Add(new PropertyKeys.Item(".nostyle", null));
+            if (run.Ws != _analysis && !vernacular) items.Add(new PropertyKeys.Item("ws", run.Ws));
+            bool styleWritten = false;
+            if (hasStyle && !(isLink && style == Names.Hyperlink)) { items.Add(new PropertyKeys.Item("custom-style", style)); styleWritten = true; }
             if (linkItems != null) items.AddRange(linkItems);
             if (strong) bag.IntProps.Remove(TextPropertyNumbers.Bold);
             if (emphasis) bag.IntProps.Remove(TextPropertyNumbers.Italic);
+            bag.StrProps.Remove(TextPropertyNumbers.NamedStyle);
             if (generic) bag.StrProps[6] = run.ObjData!;
-            if (styleAsCs) bag.StrProps.Remove(TextPropertyNumbers.NamedStyle);
             items.AddRange(PropertyKeys.ToItems(bag));
+            _ = styleWritten;
             return items;
         }
 
@@ -319,71 +430,348 @@ namespace SIL.TextEditing.Markdown.Writer
 
         // ---------------------------------------------------------------- text
 
-        void Raw(string text)
-        {
-            if (text.Length == 0) return;
-            _out.Append(text);
-            _lineStart = false;
-        }
-
         static string Ref(int codePoint) => "&#x" + codePoint.ToString("X", CultureInfo.InvariantCulture) + ";";
 
-        /// <summary>Writes text with the escapes of spec 3.4. <paramref name="bare"/> is text inside <c>[[kind:...]]</c>, where only
-        /// backslash and numeric references mean anything.</summary>
-        void Text(string text, bool allowBreak, bool endsLine, bool bare = false)
+        /// <summary>Turns the text of a run into units: literal characters, and syntax for what a literal cannot carry (spec 3.4).</summary>
+        void Text(string text)
         {
             int n = text.Length;
-            // Where the spaces that end the line start: found once, so a long run of spaces is not asked about space by space.
-            int trailingFrom = n;
-            if (endsLine) while (trailingFrom > 0 && text[trailingFrom - 1] == ' ') trailingFrom--;
             for (int k = 0; k < n; k++)
             {
                 char c = text[k];
                 if (_mode.Numeric)
                 {
-                    if (char.IsHighSurrogate(c) && k + 1 < n && char.IsLowSurrogate(text[k + 1])) { Raw(Ref(char.ConvertToUtf32(c, text[k + 1]))); k++; }
-                    else Raw(Ref(c));
+                    if (char.IsHighSurrogate(c) && k + 1 < n && char.IsLowSurrogate(text[k + 1])) { Syn(Ref(char.ConvertToUtf32(c, text[k + 1]))); k++; }
+                    else if (c == 0) Syn("[]{.nul}");
+                    else if (char.IsSurrogate(c)) Syn("[]{.surrogate x=" + ((int)c).ToString("X4", CultureInfo.InvariantCulture) + "}");
+                    else Syn(Ref(c));
                     continue;
                 }
+                if (c == 0) { Syn("[]{.nul}"); continue; }
                 if (c == Chars.LineSeparator)
                 {
-                    int at = _cellOffset + k;
-                    bool backslash = allowBreak && _context.AllowsContinuation && at > 0 && at < _cellText.Length - 1
-                        && _cellText[at - 1] != Chars.LineSeparator && _cellText[at + 1] != Chars.LineSeparator;
-                    if (backslash) { _out.Append("\\\n").Append(_context.ContinuationPrefix); _lineStart = true; }
-                    else Raw(Ref(c));
+                    bool backslash = _context.AllowsContinuation && !_context.InTable;
+                    if (backslash) _units.Add(new Unit { Text = "\\\n" + _context.ContinuationPrefix, Break = true, EdgeScope = -1 });
+                    else Syn(Ref(c));
                     continue;
                 }
-                if (c == ' ')
+                if (c == ' ') { _units.Add(new Unit { Text = " ", Lit = true, Ch = ' ', Cp = ' ', IsSpace = true, Scope = _scope }); continue; }
+                if (char.IsHighSurrogate(c) && k + 1 < n && char.IsLowSurrogate(text[k + 1])) { Lit(char.ConvertToUtf32(c, text[k + 1]), text.Substring(k, 2)); k++; continue; }
+                if (char.IsSurrogate(c)) { Syn("[]{.surrogate x=" + ((int)c).ToString("X4", CultureInfo.InvariantCulture) + "}"); continue; }
+                if (c < ' ' || (c >= '\x7F' && c <= '\x9F') || char.IsWhiteSpace(c) || c == Chars.ObjectReplacement || c == Chars.ByteOrderMark)
                 {
-                    bool run = (k > 0 && text[k - 1] == ' ') || (k + 1 < n && text[k + 1] == ' ');
-                    bool trailing = k >= trailingFrom;
-                    if (_lineStart || run || trailing) Raw(Ref(' ')); else Raw(" ");
+                    Syn(Ref(c));
                     continue;
                 }
-                if (char.IsHighSurrogate(c) && k + 1 < n && char.IsLowSurrogate(text[k + 1])) { _out.Append(c).Append(text[k + 1]); _lineStart = false; k++; continue; }
-                if (c < ' ' || (c >= '\x7F' && c <= '\x9F') || char.IsWhiteSpace(c) || char.IsSurrogate(c) || c == Chars.ObjectReplacement || c == Chars.ByteOrderMark)
-                {
-                    Raw(Ref(c));
-                    continue;
-                }
-                if (c == '<' || c == '`' || (c == '|' && _context.InTable)) { Raw("\\" + c); continue; }
-                if (c == '\\' && (k == n - 1 || text[k + 1] == Chars.LineSeparator) && !bare) { Raw("\\\\"); continue; } // a literal trailing backslash is \\, so it never reads as a line end (spec 3.4)
-                if (Candidates.IndexOf(c) >= 0 && !bare)
-                {
-                    int index = _candidate++;
-                    if (_mask != null && _mask[index]) Raw("\\" + c); else Raw(c.ToString());
-                    continue;
-                }
-                if (bare && (c == '\\' || c == ']' || c == '&'))
-                {
-                    int index = _candidate++;
-                    if ((_mask != null && _mask[index]) || c == '\\') Raw("\\" + c); else Raw(c.ToString());
-                    continue;
-                }
-                Raw(c.ToString());
+                Lit(c, c.ToString());
             }
         }
 
+        // ---------------------------------------------------------------- escaping
+
+        enum CharClass { Space, Punct, Other }
+
+        static CharClass Classify(int cp)
+        {
+            if (cp == ' ' || cp == '\t' || cp == '\n' || cp == '\r' || cp == '\f') return CharClass.Space;
+            if (cp < 0x80)
+            {
+                if ((cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) return CharClass.Other;
+                return cp > ' ' && cp != 0x7F ? CharClass.Punct : CharClass.Space;
+            }
+            string s = char.ConvertFromUtf32(cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF) ? 0xFFFD : cp);
+            switch (CharUnicodeInfo.GetUnicodeCategory(s, 0))
+            {
+                case UnicodeCategory.SpaceSeparator: return CharClass.Space;
+                case UnicodeCategory.ConnectorPunctuation: case UnicodeCategory.DashPunctuation: case UnicodeCategory.OpenPunctuation: case UnicodeCategory.ClosePunctuation:
+                case UnicodeCategory.InitialQuotePunctuation: case UnicodeCategory.FinalQuotePunctuation: case UnicodeCategory.OtherPunctuation:
+                case UnicodeCategory.MathSymbol: case UnicodeCategory.CurrencySymbol: case UnicodeCategory.ModifierSymbol: case UnicodeCategory.OtherSymbol:
+                    return CharClass.Punct;
+                default: return CharClass.Other;
+            }
+        }
+
+        /// <summary>The class of the character before unit i as the parser sees it (the end of the previous unit's text); whitespace at the start of a line.</summary>
+        CharClass Before(int i)
+        {
+            if (i == 0) return CharClass.Space;
+            var u = _units[i - 1];
+            if (u.Break || u.EdgeScope == -1 && u.Text.Length == 0) return CharClass.Space;
+            if (u.Lit) return Classify(u.Cp);
+            if (u.Text.Length == 0) return i - 1 == 0 ? CharClass.Space : Before(i - 1);
+            return ClassifyLast(u.Text);
+        }
+
+        CharClass After(int i)
+        {
+            if (i + 1 >= _units.Count) return CharClass.Space;
+            for (int j = i + 1; j < _units.Count; j++)
+            {
+                var u = _units[j];
+                if (u.Break) return CharClass.Punct; // a backslash
+                if (u.Lit) return Classify(u.Cp);
+                if (u.Text.Length == 0) { if (u.EdgeScope == -1) return CharClass.Space; continue; }
+                return Classify(char.IsHighSurrogate(u.Text[0]) && u.Text.Length > 1 ? char.ConvertToUtf32(u.Text[0], u.Text[1]) : u.Text[0]);
+            }
+            return CharClass.Space;
+        }
+
+        static CharClass ClassifyLast(string text)
+        {
+            char c = text[text.Length - 1];
+            if (char.IsLowSurrogate(c) && text.Length > 1 && char.IsHighSurrogate(text[text.Length - 2])) return Classify(char.ConvertToUtf32(text[text.Length - 2], c));
+            return Classify(c);
+        }
+
+        /// <summary>The next code point after unit i that the parser would see, or -1 at the end of the line.</summary>
+        int NextChar(int i)
+        {
+            for (int j = i + 1; j < _units.Count; j++)
+            {
+                var u = _units[j];
+                if (u.Break) return '\\';
+                if (u.Lit) return u.Cp;
+                if (u.Text.Length == 0) { if (u.EdgeScope == -1) return -1; continue; }
+                return u.Text[0] == ' ' && u.EdgeScope == -1 ? -1 : u.Text[0];
+            }
+            return -1;
+        }
+
+        int PrevChar(int i)
+        {
+            for (int j = i - 1; j >= 0; j--)
+            {
+                var u = _units[j];
+                if (u.Break) return -1;
+                if (u.Lit) return u.Cp;
+                if (u.Text.Length == 0) { if (u.EdgeScope == -1) return -1; continue; }
+                char last = u.Text[u.Text.Length - 1];
+                if (u.EdgeScope == -1 && last == ' ') return -1;
+                return last;
+            }
+            return -1;
+        }
+
+        string Render(List<Run> all)
+        {
+            int n = _units.Count;
+            var escape = new bool[n];
+            var hexSpace = new bool[n];
+            ResolveSpaces(hexSpace);
+            ResolveEscapes(escape);
+            var sb = new StringBuilder();
+            var offsets = new int[n + 1];
+            for (int i = 0; i < n; i++)
+            {
+                offsets[i] = sb.Length;
+                var u = _units[i];
+                if (!u.Lit) { sb.Append(u.Text); continue; }
+                if (u.IsSpace) { sb.Append(hexSpace[i] ? "&#x20;" : " "); continue; }
+                if (escape[i]) { if (u.Ch == '&' && !_mode.Safe) { sb.Append("\\&"); continue; } sb.Append('\\'); }
+                sb.Append(u.Text);
+            }
+            offsets[n] = sb.Length;
+            string line = sb.ToString();
+            if (_context.BlockStart) line = EscapeLineStarts(line, offsets);
+            return line;
+        }
+
+        /// <summary>A space is written as itself only between two characters that are not spaces and not the edge of its own bracket or of a line or cell: leading and
+        /// trailing spaces and runs of spaces are <c>&amp;#x20;</c> (spec 3.4), since Pandoc and CommonMark would trim or collapse them.</summary>
+        void ResolveSpaces(bool[] hex)
+        {
+            int n = _units.Count;
+            for (int i = 0; i < n; i++)
+            {
+                var u = _units[i];
+                if (!u.IsSpace) continue;
+                bool boundary = false;
+                // The previous unit that is not an empty piece of syntax.
+                int p = i - 1;
+                while (p >= 0 && !_units[p].Lit && _units[p].Text.Length == 0 && _units[p].EdgeScope != -1) p--;
+                if (p < 0) boundary = true;
+                else
+                {
+                    var q = _units[p];
+                    if (q.IsSpace || q.Break || (!q.Lit && q.EdgeScope == -1) || (!q.Lit && q.EdgeScope == u.Scope && u.Scope != 0)) boundary = true;
+                    else if (!q.Lit && q.Text.Length > 0 && q.Text[q.Text.Length - 1] == ';' && q.Text.StartsWith("&#x", StringComparison.Ordinal) && (q.Text == "&#x20;")) boundary = true;
+                }
+                if (!boundary)
+                {
+                    int s = i + 1;
+                    while (s < n && !_units[s].Lit && _units[s].Text.Length == 0 && _units[s].EdgeScope != -1) s++;
+                    if (s >= n) boundary = true;
+                    else
+                    {
+                        var q = _units[s];
+                        if (q.IsSpace || q.Break || (!q.Lit && q.EdgeScope == -1) || (!q.Lit && q.EdgeScope == u.Scope && u.Scope != 0)) boundary = true;
+                        else if (!q.Lit && q.Text == "&#x20;") boundary = true;
+                    }
+                }
+                hex[i] = boundary;
+            }
+        }
+
+        const string SafeSet = "\\!#&()*+-.:=>[]_{}~|^$@<`";
+
+        void ResolveEscapes(bool[] escape)
+        {
+            int n = _units.Count;
+            // Counts for the characters that pair up across a paragraph.
+            int dollars = 0, carets = 0, tildes = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (!_units[i].Lit) continue;
+                switch (_units[i].Ch) { case '$': dollars++; break; case '^': carets++; break; case '~': tildes++; break; }
+            }
+            // Brackets: a literal pair that is balanced inside its scope stays bare unless a (, [ or { follows its ]; every other bracket is escaped.
+            var stacks = new Dictionary<int, Stack<int>>();
+            var pairedWith = new Dictionary<int, int>();
+            for (int i = 0; i < n; i++)
+            {
+                var u = _units[i];
+                if (!u.Lit) continue;
+                if (u.Ch == '[')
+                {
+                    if (!stacks.TryGetValue(u.Scope, out var st)) { st = new Stack<int>(); stacks[u.Scope] = st; }
+                    st.Push(i);
+                }
+                else if (u.Ch == ']')
+                {
+                    if (stacks.TryGetValue(u.Scope, out var st) && st.Count > 0) { int open = st.Pop(); pairedWith[open] = i; pairedWith[i] = open; }
+                }
+            }
+            for (int i = 0; i < n; i++)
+            {
+                var u = _units[i];
+                if (!u.Lit || u.IsSpace) continue;
+                char c = u.Ch;
+                if (u.Cp > 0xFFFF) continue;
+                if (_mode.Safe)
+                {
+                    if (SafeSet.IndexOf(c) >= 0 && !(c == '|' && !_context.InTable)) escape[i] = true;
+                    else if (c == '|' && _context.InTable) escape[i] = true;
+                    continue;
+                }
+                switch (c)
+                {
+                    case '\\': case '`': case '*':
+                        escape[i] = true;
+                        break;
+                    case '|':
+                        escape[i] = _context.InTable;
+                        break;
+                    case '_':
+                    {
+                        // A run of underscores is one delimiter run: it is judged once, by what is around it.
+                        int first = i;
+                        int last = i;
+                        while (last + 1 < n && _units[last + 1].Lit && _units[last + 1].Ch == '_') last++;
+                        var before = Before(first);
+                        var after = After(last);
+                        bool left = after != CharClass.Space && (after != CharClass.Punct || before == CharClass.Space || before == CharClass.Punct);
+                        bool right = before != CharClass.Space && (before != CharClass.Punct || after == CharClass.Space || after == CharClass.Punct);
+                        bool canOpen = left && (!right || before == CharClass.Punct);
+                        bool canClose = right && (!left || after == CharClass.Punct);
+                        if (canOpen || canClose) for (int k = first; k <= last; k++) escape[k] = true;
+                        i = last;
+                        break;
+                    }
+                    case '<':
+                    {
+                        int next = NextChar(i);
+                        escape[i] = next >= 0 && (next == '/' || next == '!' || next == '?' || (next < 0x80 && char.IsLetter((char)next)));
+                        break;
+                    }
+                    case '&':
+                    {
+                        var sb = new StringBuilder();
+                        for (int j = i + 1; j < n && _units[j].Lit && !_units[j].IsSpace; j++) sb.Append(_units[j].Text);
+                        string after = sb.ToString();
+                        escape[i] = after.Length > 0 && (after[0] == '#' || AttributeText.ReadsAsReference("&" + after, 0));
+                        break;
+                    }
+                    case '$': escape[i] = dollars >= 2; break;
+                    case '^': escape[i] = carets >= 2 || NextChar(i) == '['; break;
+                    case '~': escape[i] = tildes >= 2; break;
+                    case '@':
+                    {
+                        int prev = PrevChar(i);
+                        escape[i] = !(prev >= 0 && (prev < 0x80 ? char.IsLetterOrDigit((char)prev) : IsLetterOrNumber(prev)));
+                        break;
+                    }
+                    case '[':
+                    case ']':
+                    {
+                        if (!pairedWith.TryGetValue(i, out int mate)) { escape[i] = true; break; }
+                        int close = c == '[' ? mate : i;
+                        int next = NextChar(close);
+                        escape[i] = next == '(' || next == '[' || next == '{';
+                        break;
+                    }
+                    case '!':
+                        escape[i] = NextChar(i) == '[';
+                        break;
+                    case '{':
+                    {
+                        // The closing parenthesis of a link or picture (syntax, not a literal) right before: its attribute block would take this brace.
+                        int p = i - 1;
+                        while (p >= 0 && !_units[p].Lit && _units[p].Text.Length == 0 && _units[p].EdgeScope != -1) p--;
+                        bool afterLink = p >= 0 && !_units[p].Lit && _units[p].Text.EndsWith(")", StringComparison.Ordinal);
+                        bool headingAttr = false;
+                        if (_context.IsHeading)
+                        {
+                            var raw = new StringBuilder();
+                            for (int j = i; j < n; j++) raw.Append(_units[j].Lit ? _units[j].Text : _units[j].Text);
+                            headingAttr = raw.Length > 0 && raw[raw.Length - 1] == '}';
+                        }
+                        escape[i] = afterLink || headingAttr;
+                        break;
+                    }
+                    case '#':
+                        if (_context.IsHeading)
+                        {
+                            // A closing sequence of # ends the heading: the trailing ones are text, so they are escaped.
+                            int j = i;
+                            while (j < n && _units[j].Lit && _units[j].Ch == '#') j++;
+                            escape[i] = j == n || (!_units[j].Lit && _units[j].Text.Length == 0);
+                        }
+                        break;
+                }
+            }
+        }
+
+        static bool IsLetterOrNumber(int cp)
+        {
+            string s = char.ConvertFromUtf32(cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF) ? 0xFFFD : cp);
+            return LetterOrNumber(s, 0);
+        }
+
+        /// <summary>A line that starts with a literal character Markdown or Pandoc would read as block markup gets a backslash before it (spec 3.4).</summary>
+        string EscapeLineStarts(string text, int[] offsets)
+        {
+            // Line starts: the first unit, and the unit after each hard break.
+            var starts = new List<int>();
+            starts.Add(0);
+            for (int i = 0; i < _units.Count; i++) if (_units[i].Break) starts.Add(i + 1);
+            for (int s = starts.Count - 1; s >= 0; s--)
+            {
+                int unit = starts[s];
+                // Skip empty syntax at the line start (a cell or line boundary).
+                while (unit < _units.Count && !_units[unit].Lit && _units[unit].Text.Length == 0) unit++;
+                if (unit >= _units.Count) continue;
+                int from = offsets[unit];
+                int to = text.Length;
+                for (int j = unit; j < _units.Count; j++) if (_units[j].Break) { to = offsets[j]; break; }
+                int at = LineStart.EscapeAt(text.Substring(from, to - from));
+                if (at < 0) continue;
+                // Only literal characters can be escaped; find the unit at the insertion point.
+                int target = unit;
+                while (target < _units.Count && offsets[target] - from < at) target++;
+                if (target >= _units.Count || !_units[target].Lit || offsets[target] - from != at) continue;
+                text = text.Substring(0, from + at) + "\\" + text.Substring(from + at);
+            }
+            return text;
+        }
     }
 }

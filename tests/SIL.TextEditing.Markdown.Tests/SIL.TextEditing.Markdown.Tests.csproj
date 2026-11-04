@@ -13,5 +13,8 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <ProjectReference Include="..\..\src\SIL.TextEditing.Markdown\SIL.TextEditing.Markdown.csproj" />
+    <Compile Remove="Legacy\**" />
+    <!-- The conformance fixtures: JSON the library and any other implementation of the format must pass (tests/conformance/README.md). -->
+    <None Include="..\conformance\*.json" Link="conformance\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

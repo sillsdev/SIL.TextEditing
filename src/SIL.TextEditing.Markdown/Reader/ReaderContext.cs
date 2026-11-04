@@ -18,9 +18,20 @@ namespace SIL.TextEditing.Markdown.Reader
         {
             Options = options;
             Source = source;
+            DefaultAnalysis = options.WritingSystems.DefaultAnalysis;
+            DefaultVernacular = options.WritingSystems.DefaultVernacular;
         }
 
         public MarkdownOptions Options { get; }
+
+        /// <summary>The writing system of unmarked text: the front matter's <c>analysis</c>, or else the host's default.</summary>
+        public string DefaultAnalysis { get; set; }
+
+        /// <summary>The writing system <c>.v</c> stands for: the front matter's <c>vernacular</c>, or else the host's default.</summary>
+        public string DefaultVernacular { get; set; }
+
+        /// <summary>The front matter the text started with, or null.</summary>
+        public MarkdownFrontMatter? FrontMatter { get; set; }
         public string Source { get; }
         public IReadOnlyList<MarkdownDiagnostic> Diagnostics
         {
@@ -141,7 +152,7 @@ namespace SIL.TextEditing.Markdown.Reader
         public void ReportUnknown(AttrItem item, IEnumerable<string> knownKeys)
         {
             string? nearest = Nearest(item.Key, knownKeys);
-            string message = "'" + item.Key + "' is not a known " + (item.IsFlag ? "flag" : "attribute") + "." + (nearest == null ? string.Empty : " Did you mean " + nearest + "?");
+            string message = "'" + item.Spelling + "' is not a known " + (item.IsClass ? "class" : item.IsFlag ? "word" : "attribute") + "." + (nearest == null ? string.Empty : " Did you mean " + nearest + "?");
             var choices = nearest == null ? null : new[] { nearest };
             Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, message, Base + item.Start, Base + item.End, null, choices);
         }

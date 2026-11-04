@@ -8,9 +8,9 @@ using SIL.TextEditing.Markdown.Reader;
 
 namespace SIL.TextEditing.Markdown.Writer
 {
-    /// <summary>Writes paragraphs as canonical GDR Markdown (spec 5). Every paragraph is written, read back by the parser and
-    /// compared with the model; when the first spelling does not read back, the writer moves down a ladder of safer spellings
-    /// (attribute marks, attribute links, numeric references), so what it writes always reads back to the same paragraph.</summary>
+    /// <summary>Writes paragraphs as canonical FieldWorks Markdown (spec 3, 6.1). The spelling comes from the rules of the spec; every paragraph is then
+    /// read back by the parser and compared with the model, and when the canonical spelling does not read back (which the rules are meant to make
+    /// impossible) the writer falls back to the safe spelling, and last to numeric references, so what it writes always reads back to the same paragraph.</summary>
     internal sealed class MarkdownWriter
     {
         readonly MarkdownOptions _options;
@@ -30,7 +30,8 @@ namespace SIL.TextEditing.Markdown.Writer
         public static string Write(IEnumerable<Paragraph> paragraphs, MarkdownOptions options)
             => new MarkdownWriter(options).WriteAll(paragraphs);
 
-        /// <summary>Writes the runs of one inline-only text (the abstract, spec 3.5).</summary>
+        /// <summary>Writes the runs of one inline-only text (a multi-string field such as the abstract, spec 5.1). There is no front matter: the field's
+        /// writing system is its host's.</summary>
         public static string WriteInline(IEnumerable<Run> runs, MarkdownOptions options)
         {
             var writer = new MarkdownWriter(options);
@@ -57,18 +58,18 @@ namespace SIL.TextEditing.Markdown.Writer
             while (i < entries.Count)
             {
                 var entry = entries[i];
-                if (entry.IsEmpty) { blocks.Add(EmptyLine(entry)); i++; continue; }
-                if (entry.Paragraph.Style == Names.TableHeader && entry.Props.Count == 0)
+                if (entry.Paragraph.Style == Names.TableHeader && entry.Props.Count == 0 && !entry.IsEmpty)
                 {
                     string? table = TryTable(entries, i, out int used);
                     if (table != null) { blocks.Add(table); i += used; continue; }
                 }
                 var kind = KindOf(entry);
+                if (kind == Kind.Empty) { blocks.Add(EmptyLine(entry)); i++; continue; }
                 if (kind == Kind.Bullet || kind == Kind.Number)
                 {
                     var lines = new List<string>();
                     int j = i;
-                    while (j < entries.Count && !entries[j].IsEmpty && KindOf(entries[j]) == kind)
+                    while (j < entries.Count && KindOf(entries[j]) == kind)
                     {
                         var context = kind == Kind.Bullet ? BlockContext.Bullet() : BlockContext.Number(j - i + 1);
                         lines.Add(context.FirstPrefix + PlainInline(entries[j], context));
@@ -86,11 +87,28 @@ namespace SIL.TextEditing.Markdown.Writer
                     continue;
                 }
                 int end = i + 1;
-                while (end < entries.Count && SameFence(entry, entries[end])) end++;
-                blocks.Add(Fence(entries, i, end));
+                while (end < entries.Count && SameDiv(entry, entries[end])) end++;
+                blocks.Add(Div(entries, i, end));
                 i = end;
             }
-            return blocks.Count == 0 ? string.Empty : string.Join("\n\n", blocks) + "\n";
+            string body = blocks.Count == 0 ? string.Empty : string.Join("\n\n", blocks) + "\n";
+            if (!_options.WriteFrontMatter) return body;
+            string front = FrontMatter(entries);
+            return body.Length == 0 ? front : front + "\n" + body;
+        }
+
+        /// <summary>The front matter of spec 2.1: the version, the two defaults, and every writing system the text uses (the defaults first, then in the order of first use).</summary>
+        string FrontMatter(List<Entry> entries)
+        {
+            var used = new List<string>();
+            foreach (var entry in entries)
+            {
+                if (entry.IsEmpty) { if (entry.Paragraph.DefaultWs != null && !used.Contains(entry.Paragraph.DefaultWs)) used.Add(entry.Paragraph.DefaultWs); }
+                else InlineGenerator.CollectWritingSystems(entry.Paragraph.Runs, used);
+            }
+            var mapper = _options.WritingSystems;
+            var details = mapper as IWritingSystemDetails;
+            return FrontMatterFormat.Write(mapper.DefaultAnalysis, mapper.DefaultVernacular, used, id => details?.DescribeWritingSystem(id) ?? WritingSystemInfo.Default(id));
         }
 
         Entry Prepare(Paragraph paragraph)
@@ -109,7 +127,7 @@ namespace SIL.TextEditing.Markdown.Writer
 
         // ---------------------------------------------------------------- what a paragraph is written as
 
-        enum Kind { None, Plain, Heading, Bullet, Number, Quote }
+        enum Kind { None, Plain, Empty, Heading, Bullet, Number, Quote }
 
         int HeadingLevel(Entry e) => e.Paragraph.Style == Names.Heading1 ? 1 : e.Paragraph.Style == Names.Heading2 ? 2 : 3;
 
@@ -117,6 +135,7 @@ namespace SIL.TextEditing.Markdown.Writer
         {
             if (e.Props.Count > 0) return Kind.None;
             string style = e.Paragraph.Style;
+            if (e.IsEmpty) return style == Names.Normal ? Kind.Empty : Kind.None;
             if (style == Names.Normal) return Kind.Plain;
             if (style == Names.Heading1 || style == Names.Heading2 || style == Names.Heading3) return e.HasLineSeparator ? Kind.None : Kind.Heading;
             if (style == Names.BulletedList) return Kind.Bullet;
@@ -125,9 +144,10 @@ namespace SIL.TextEditing.Markdown.Writer
             return Kind.None;
         }
 
-        bool SameFence(Entry first, Entry other)
-            => !other.IsEmpty && other.Paragraph.Style == first.Paragraph.Style && other.Props.ContentEquals(first.Props) && KindOf(other) == Kind.None
-               && !(other.Paragraph.Style == Names.TableHeader && other.Props.Count == 0);
+        /// <summary>One div holds a maximal run of adjacent paragraphs with the same style and properties, empty ones included (spec 3.1).</summary>
+        bool SameDiv(Entry first, Entry other)
+            => other.Paragraph.Style == first.Paragraph.Style && other.Props.ContentEquals(first.Props) && KindOf(other) == Kind.None
+               && !(other.Paragraph.Style == Names.TableHeader && other.Props.Count == 0 && !other.IsEmpty);
 
         static List<List<Run>> OneCell(Entry e) => new List<List<Run>> { e.Paragraph.Runs.ToList() };
 
@@ -148,76 +168,37 @@ namespace SIL.TextEditing.Markdown.Writer
 
         // ---------------------------------------------------------------- the ladder
 
-        /// <summary>How many characters the search may have the parser read for one paragraph: it spends them in whole reads, so a longer
-        /// paragraph gets fewer. Only a paragraph that needs thousands of escapes can come near it (the search takes about two reads per
-        /// escape it keeps, times the log of the candidates it spares); what is left unsearched stays escaped, which still reads back.</summary>
-        const long ReadBudgetChars = 5_000_000;
-
-        const int MinReads = 64;
-
-        /// <summary>Finds the first spelling of the inline text that <paramref name="accepts"/>. Within a spelling it tries no optional
-        /// escape, then every one, then takes escapes away from the end back to the start, keeping each that is still needed. It takes them
-        /// away in blocks: a block whose removal reads back goes in one read, one that does not is split in halves, the upper half first.
-        /// Where a removal that fails is not rescued by another, which is the usual case, that is the same result as taking them one at a
-        /// time, in about two reads per escape that stays, not one per candidate.</summary>
-        string? Search(InlineGenerator generator, IReadOnlyList<List<Run>> cells, Func<string, bool> accepts, bool keepEscapes = false)
+        /// <summary>Finds the first spelling of the inline text that <paramref name="accepts"/>: the canonical one, then the safe one (no stars, every
+        /// punctuation character escaped), then numeric references, which always read back.</summary>
+        string? Search(InlineGenerator generator, IReadOnlyList<List<Run>> cells, Func<string, bool> accepts)
         {
-            bool anyStar = false, anyParen = false;
-            for (int step = 0; step < 4; step++)
-            {
-                GenMode mode = step == 0 ? new GenMode { StarMarks = true, ParenLinks = true }
-                    : step == 1 ? new GenMode { ParenLinks = true }
-                    : step == 2 ? new GenMode()
-                    : new GenMode { Numeric = true };
-                if (step == 1 && !anyStar) continue;
-                if (step == 2 && !anyParen) continue;
-                string bare = generator.Generate(cells, mode, null, out int count);
-                if (step == 0) { anyStar = generator.UsedStar; anyParen = generator.UsedParenLink; }
-                bool bareReads = accepts(bare);
-                if (bareReads && (!keepEscapes || count == 0)) return bare;
-                if (count == 0) continue;
-                var mask = new bool[count];
-                for (int k = 0; k < count; k++) mask[k] = true;
-                string all = generator.Generate(cells, mode, mask, out _);
-                if (!accepts(all)) { if (bareReads) return bare; continue; }
-                if (keepEscapes) return all; // the caller wants every escape that is allowed, not the fewest
-                // The state of the mask always reads back: it starts as "every escape" and only a removal that was just read is kept.
-                long reads = Math.Max(MinReads, ReadBudgetChars / Math.Max(1, all.Length));
-                int mid = count / 2;
-                RemoveEscapes(generator, cells, mode, mask, mid, count, accepts, ref reads);
-                RemoveEscapes(generator, cells, mode, mask, 0, mid, accepts, ref reads);
-                return generator.Generate(cells, mode, mask, out _);
-            }
-            return null;
+            string canonical = generator.Generate(cells, new GenMode());
+            if (accepts(canonical)) return canonical;
+            string safe = generator.Generate(cells, new GenMode { Safe = true });
+            if (safe != canonical && accepts(safe)) return safe;
+            string numeric = generator.Generate(cells, new GenMode { Numeric = true });
+            return accepts(numeric) ? numeric : null;
         }
 
-        /// <summary>Takes the escapes in [low, high) away when the text still reads back without them; otherwise splits the block and
-        /// tries the upper half, then the lower half.</summary>
-        static void RemoveEscapes(InlineGenerator generator, IReadOnlyList<List<Run>> cells, GenMode mode, bool[] mask, int low, int high,
-            Func<string, bool> accepts, ref long reads)
-        {
-            if (low >= high || reads <= 0) return;
-            reads--;
-            for (int k = low; k < high; k++) mask[k] = false;
-            if (accepts(generator.Generate(cells, mode, mask, out _))) return;
-            for (int k = low; k < high; k++) mask[k] = true;
-            if (high - low == 1) return;
-            int mid = low + (high - low) / 2;
-            RemoveEscapes(generator, cells, mode, mask, mid, high, accepts, ref reads);
-            RemoveEscapes(generator, cells, mode, mask, low, mid, accepts, ref reads);
-        }
+        // ---------------------------------------------------------------- empty paragraphs and divs
 
-        // ---------------------------------------------------------------- empty paragraphs and fences
+        /// <summary>The marker of an empty paragraph: <c>[]{.empty}</c>, with its writing system when it is not the analysis default: <c>[]{.v .empty}</c> or
+        /// <c>[]{.empty ws=ceb-x-old}</c> (an empty paragraph has no run to carry one).</summary>
+        string EmptyMarker(Entry e)
+        {
+            var items = new List<PropertyKeys.Item>();
+            var ws = _options.WritingSystems;
+            string? paragraphWs = e.Paragraph.DefaultWs;
+            bool vernacular = paragraphWs != null && paragraphWs != ws.DefaultAnalysis && paragraphWs == ws.DefaultVernacular;
+            if (vernacular) items.Add(new PropertyKeys.Item(".v", null));
+            items.Add(new PropertyKeys.Item(".empty", null));
+            if (paragraphWs != null && paragraphWs != ws.DefaultAnalysis && !vernacular) items.Add(new PropertyKeys.Item("ws", paragraphWs));
+            return "[]" + Braces(items);
+        }
 
         string EmptyLine(Entry e)
         {
-            var items = new List<PropertyKeys.Item> { new PropertyKeys.Item("empty", null) };
-            if (e.Paragraph.Style != Names.Normal) items.Add(new PropertyKeys.Item("style", e.Paragraph.Style));
-            var ws = _options.WritingSystems;
-            if (e.Paragraph.DefaultWs != ws.DefaultAnalysis)
-                items.Add(e.Paragraph.DefaultWs == ws.DefaultVernacular ? new PropertyKeys.Item("v", null) : new PropertyKeys.Item("ws", e.Paragraph.DefaultWs));
-            items.AddRange(PropertyKeys.ToItems(e.Props));
-            string line = Braces(items);
+            string line = EmptyMarker(e);
             if (!ReadsBack(line, e.Paragraph)) throw new MarkdownWriteException("An empty paragraph cannot be written so that it reads back unchanged: " + Describe(e));
             return line;
         }
@@ -234,34 +215,45 @@ namespace SIL.TextEditing.Markdown.Writer
             return sb.Append('}').ToString();
         }
 
-        string Fence(List<Entry> entries, int start, int end)
+        string Div(List<Entry> entries, int start, int end)
         {
             var first = entries[start];
             var items = new List<PropertyKeys.Item>();
-            if (first.Paragraph.Style != Names.Normal || first.Props.Count == 0) items.Add(new PropertyKeys.Item("style", first.Paragraph.Style));
+            if (first.Paragraph.Style != Names.Normal || first.Props.Count == 0) items.Add(new PropertyKeys.Item("custom-style", first.Paragraph.Style));
             items.AddRange(PropertyKeys.ToItems(first.Props));
             string header = Braces(items);
-            var context = BlockContext.Fence(header);
+            var context = BlockContext.Div(header);
             var sb = new StringBuilder("::: ").Append(header);
             for (int i = start; i < end; i++)
             {
                 var entry = entries[i];
-                var generator = new InlineGenerator(_options, context);
-                string? text = Search(generator, OneCell(entry), candidate => ReadsBack(context.Wrap(candidate), entry.Paragraph, 2));
-                if (text == null) throw new MarkdownWriteException("A paragraph in a fenced block cannot be written so that it reads back unchanged: " + Describe(entry));
-                sb.Append('\n').Append(text);
+                string text;
+                if (entry.IsEmpty)
+                {
+                    text = EmptyMarker(entry);
+                    if (!ReadsBack(context.Wrap(text), entry.Paragraph, 2)) throw new MarkdownWriteException("An empty paragraph in a styled block cannot be written so that it reads back unchanged: " + Describe(entry));
+                }
+                else
+                {
+                    var generator = new InlineGenerator(_options, context);
+                    string? found = Search(generator, OneCell(entry), candidate => ReadsBack(context.Wrap(candidate), entry.Paragraph, 2));
+                    if (found == null) throw new MarkdownWriteException("A paragraph in a styled block cannot be written so that it reads back unchanged: " + Describe(entry));
+                    text = found;
+                }
+                sb.Append("\n\n").Append(text);
             }
+            // The first paragraph follows the opening line directly (spec 3.1: paragraphs are separated by blank lines, the fences are not paragraphs).
+            sb.Remove(("::: " + header).Length, 1);
             return sb.Append("\n:::").ToString();
         }
 
         // ---------------------------------------------------------------- tables
 
-        static string Delimiter(int width) => "|" + string.Concat(Enumerable.Repeat(" --- |", width));
-
+        static string Delimiter(int width) => "|" + string.Concat(Enumerable.Repeat("---|", width));
 
         static string PlaceholderHeader(int width) => "|" + string.Concat(Enumerable.Repeat(" x |", width));
 
-        static string SyntheticRow(int width) => "|" + string.Concat(Enumerable.Repeat(" [x]{v} |", width));
+        static string SyntheticRow(int width) => "|" + string.Concat(Enumerable.Repeat(" [x]{.v} |", width));
 
         static bool CellEligible(Entry e)
         {
@@ -286,11 +278,9 @@ namespace SIL.TextEditing.Markdown.Writer
             return cells;
         }
 
-        /// <summary>Writes a header and the rows after it that fit. A bracket one cell leaves open can pair with a closing bracket in
-        /// another row, which no single row shows, so every row is checked with a row of closing brackets after it: a bracket left open
-        /// is caught in its own row. The whole table is read once more at the end. If rows still disturb one another there (a bracket
-        /// opened in the header and closed in a row), every cell is written with all its optional escapes, which cannot pair with
-        /// anything, and the table is read again; only when that does not read back either is the table left to the fences.</summary>
+        /// <summary>Writes a header and the rows after it that fit. A bracket one cell leaves open can pair with a closing bracket in another row, which no single row
+        /// shows, so every row is checked with a row of closing brackets after it. The whole table is read once more at the end; if rows still disturb one another
+        /// there, every cell is written in the safe spelling, and only when that does not read back either is the table left to the divs.</summary>
         string? TryTable(List<Entry> entries, int start, out int used)
         {
             used = 0;
@@ -298,7 +288,6 @@ namespace SIL.TextEditing.Markdown.Writer
             if (!CellEligible(header)) return null;
             var headerCells = SplitCells(header.Paragraph);
             int width = headerCells.Count;
-            var context = new BlockContext { InTable = true };
             var expected = new List<Paragraph> { header.Paragraph };
             var cellsOf = new List<List<List<Run>>> { headerCells };
             var acceptsOf = new List<Func<string, bool>>();
@@ -309,7 +298,7 @@ namespace SIL.TextEditing.Markdown.Writer
                 var read = MarkdownReader.ReadParagraphs(candidate + "\n" + Delimiter(width) + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
                 return clean && read.Count == 2 && Equivalence.Equal(header.Paragraph, read[0]);
             };
-            string? headerLine = Search(new InlineGenerator(_options, context), headerCells, headerAccepts);
+            string? headerLine = Search(new InlineGenerator(_options, BlockContext.TableRow()), headerCells, headerAccepts);
             if (headerLine == null) return null;
             acceptsOf.Add(headerAccepts);
             lines.Add(headerLine);
@@ -326,7 +315,7 @@ namespace SIL.TextEditing.Markdown.Writer
                     var read = MarkdownReader.ReadParagraphs(PlaceholderHeader(width) + "\n" + Delimiter(width) + "\n" + candidate + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
                     return clean && read.Count == 3 && Equivalence.Equal(row.Paragraph, read[1]);
                 };
-                string? line = Search(new InlineGenerator(_options, context), cells, rowAccepts);
+                string? line = Search(new InlineGenerator(_options, BlockContext.TableRow()), cells, rowAccepts);
                 if (line == null) break;
                 expected.Add(row.Paragraph);
                 cellsOf.Add(cells);
@@ -337,11 +326,7 @@ namespace SIL.TextEditing.Markdown.Writer
             if (!TableReadsBack(lines, width, expected))
             {
                 for (int i = 0; i < lines.Count; i++)
-                {
-                    string? safe = Search(new InlineGenerator(_options, context), cellsOf[i], acceptsOf[i], keepEscapes: true);
-                    if (safe == null) return null;
-                    lines[i] = safe;
-                }
+                    lines[i] = new InlineGenerator(_options, BlockContext.TableRow()).Generate(cellsOf[i], new GenMode { Safe = true });
                 if (!TableReadsBack(lines, width, expected)) return null;
             }
             used = j - start;

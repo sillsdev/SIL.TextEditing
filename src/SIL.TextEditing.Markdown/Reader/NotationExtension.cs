@@ -20,42 +20,33 @@ namespace SIL.TextEditing.Markdown.Reader
         public int OpenAt;
     }
 
-    /// <summary>A <c>[[kind:Name]]</c> link with its optional attribute block.</summary>
-    internal sealed class NameLinkInline : LeafInline
-    {
-        public string Kind = string.Empty;
-        public string Name = string.Empty;
-        public AttrBlock? Attrs;
-    }
-
     /// <summary>The attribute block that follows a <c>[text](url)</c> or <c>![caption](url)</c>; it is the link's next sibling.</summary>
     internal sealed class AttrsInline : LeafInline
     {
         public AttrBlock Attrs = null!;
     }
 
-    /// <summary>A numeric character reference, decoded exactly: NUL, lone surrogates, CR and LF come back as written.</summary>
-    internal sealed class CharRefInline : LeafInline
+    /// <summary>Pandoc's <c>^x^</c> (superscript) or <c>~x~</c> (subscript): only the reader takes them; the writer uses the attribute form.</summary>
+    internal sealed class SupSubInline : LeafInline
     {
         public string Text = string.Empty;
+        public bool IsSuper;
     }
 
-    /// <summary>The Markdown extension of the notation (spec 3.2 to 3.4): numeric references, <c>[[kind:Name]]</c>, <c>[text]{...}</c> and
-    /// <c>{...}</c> after a link.</summary>
+    /// <summary>The Markdown extension of the notation (spec 3.2 to 3.4): <c>[text]{...}</c>, <c>{...}</c> after a link, and Pandoc's <c>^x^</c> and <c>~x~</c>.
+    /// Numeric and named character references are Markdig's own (NUL and a lone surrogate become U+FFFD, as in CommonMark and Pandoc).</summary>
     internal sealed class NotationExtension : IMarkdownExtension
     {
         public void Setup(MarkdownPipelineBuilder pipeline)
         {
-            pipeline.InlineParsers.Insert(0, new CharRefParser());
-            pipeline.InlineParsers.InsertBefore<LinkInlineParser>(new NameLinkParser());
             pipeline.InlineParsers.InsertBefore<LinkInlineParser>(new SpanParser());
+            pipeline.InlineParsers.Insert(0, new SupSubParser());
             pipeline.InlineParsers.Insert(0, new AfterLinkAttrsParser());
         }
 
         public void Setup(MarkdownPipeline pipeline, Markdig.Renderers.IMarkdownRenderer renderer) { }
 
-        /// <summary>The two pipelines: the document (blocks and pipe tables) and the inline-only one used for fence lines, where no
-        /// block marker means anything.</summary>
+        /// <summary>The two pipelines: the document (blocks and pipe tables) and the inline-only one used for the text of a block known to be a paragraph.</summary>
         public static readonly MarkdownPipeline Document = new MarkdownPipelineBuilder()
             .UsePreciseSourceLocation()
             .UsePipeTables(new PipeTableOptions { RequireHeaderSeparator = true })
@@ -73,101 +64,43 @@ namespace SIL.TextEditing.Markdown.Reader
         }
     }
 
-    internal static class CharRef
+    /// <summary><c>^x^</c> and <c>~x~</c>, as Pandoc reads them: no space inside (unless escaped), something inside, and the same mark closes it. A doubled
+    /// <c>~~</c> is Pandoc's strikeout, which the notation does not have, so it stays text.</summary>
+    sealed class SupSubParser : InlineParser
     {
-        /// <summary>Reads <c>&amp;#x...;</c> or <c>&amp;#...;</c> at <paramref name="at"/>. A scalar value gives its UTF-16 text, a surrogate
-        /// gives the lone code unit, so the text is exactly what was written.</summary>
-        public static bool TryRead(string text, int at, int limit, out string value, out int length)
-        {
-            value = string.Empty;
-            length = 0;
-            if (at + 3 >= limit || text[at] != '&' || text[at + 1] != '#') return false;
-            int i = at + 2;
-            bool hex = text[i] == 'x' || text[i] == 'X';
-            if (hex) i++;
-            int digitsStart = i;
-            long cp = 0;
-            while (i < limit && i - digitsStart <= 8)
-            {
-                int d = hex ? AttributeScanner.HexValue(text[i]) : (text[i] >= '0' && text[i] <= '9' ? text[i] - '0' : -1);
-                if (d < 0) break;
-                cp = cp * (hex ? 16 : 10) + d;
-                i++;
-            }
-            if (i == digitsStart || i >= limit || text[i] != ';' || i - digitsStart > 8 || cp > 0x10FFFF) return false;
-            value = cp >= 0x10000 ? char.ConvertFromUtf32((int)cp) : ((char)cp).ToString();
-            length = i + 1 - at;
-            return true;
-        }
-    }
-
-    sealed class CharRefParser : InlineParser
-    {
-        public CharRefParser() { OpeningCharacters = new[] { '&' }; }
+        public SupSubParser() { OpeningCharacters = new[] { '^', '~' }; }
 
         public override bool Match(InlineProcessor processor, ref StringSlice slice)
         {
-            if (slice.PeekChar() != '#') return false;
-            if (!CharRef.TryRead(slice.Text, slice.Start, slice.End + 1, out var value, out int length)) return false;
-            int start = slice.Start;
-            processor.Inline = new CharRefInline
-            {
-                Text = value,
-                Span = new SourceSpan(processor.GetSourcePosition(start, out int line, out int column), processor.GetSourcePosition(start + length - 1)),
-                Line = line,
-                Column = column,
-            };
-            slice.Start = start + length;
-            return true;
-        }
-    }
-
-    /// <summary><c>[[kind:Name]]</c>, only for kinds the host resolves; the name is the run text, with <c>\X</c> and numeric references decoded.</summary>
-    sealed class NameLinkParser : InlineParser
-    {
-        public NameLinkParser() { OpeningCharacters = new[] { '[' }; }
-
-        public override bool Match(InlineProcessor processor, ref StringSlice slice)
-        {
-            if (slice.PeekChar() != '[') return false;
-            var context = ReaderContext.From(processor.Context);
-            if (context == null) return false;
+            char mark = slice.CurrentChar;
             string text = slice.Text;
-            int limit = slice.End + 1;
             int start = slice.Start;
-            int i = start + 2;
-            int kindStart = i;
-            if (i >= limit || !IsAlpha(text[i])) return false;
-            while (i < limit && (IsAlpha(text[i]) || (text[i] >= '0' && text[i] <= '9') || text[i] == '-')) i++;
-            if (i >= limit || text[i] != ':') return false;
-            string kind = text.Substring(kindStart, i - kindStart);
-            if (!context.Options.Objects.IsKnownLinkKind(kind)) return false;
-            i++;
-            var name = new StringBuilder();
-            while (true)
+            int limit = slice.End + 1;
+            if (start + 1 >= limit || text[start + 1] == mark || (mark == '~' && text[start + 1] == '~')) return false;
+            if (start > 0 && text[start - 1] == '\\') return false;
+            var content = new StringBuilder();
+            int i = start + 1;
+            while (i < limit)
             {
-                if (i >= limit || text[i] == '\n' || text[i] == '\r') return false;
                 char c = text[i];
-                if (c == ']' && i + 1 < limit && text[i + 1] == ']') break;
-                if (c == '\\' && i + 1 < limit && IsAsciiPunctuation(text[i + 1])) { name.Append(text[i + 1]); i += 2; continue; }
-                if (c == '&' && CharRef.TryRead(text, i, limit, out var value, out int length)) { name.Append(value); i += length; continue; }
-                name.Append(c);
+                if (c == mark) break;
+                if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return false;
+                if (c == '\\' && i + 1 < limit)
+                {
+                    char n = text[i + 1];
+                    if (n == ' ') { content.Append(' '); i += 2; continue; }
+                    if (SpanParser.IsAsciiPunctuation(n)) { content.Append(n); i += 2; continue; }
+                }
+                if (c == '[' || c == ']' || c == '*' || c == '`' || c == '<' || c == '&' || c == '{' || c == '!') return false;
+                content.Append(c);
                 i++;
             }
-            int end = i + 2; // after "]]"
-            AttrBlock? attrs = null;
-            if (end < limit && text[end] == '{')
+            if (i >= limit || content.Length == 0) return false;
+            int end = i + 1;
+            processor.Inline = new SupSubInline
             {
-                var status = AttributeScanner.TryScan(text, end, limit, out var block, out int errorPos, out string error);
-                int delta = processor.GetSourcePosition(start) - start;
-                if (status == ScanStatus.Ok) { end = block!.End; attrs = block.Shifted(delta); }
-                else SpanParser.ReportBadBlock(context, status, end, errorPos, error, delta);
-            }
-            processor.Inline = new NameLinkInline
-            {
-                Kind = kind,
-                Name = name.ToString(),
-                Attrs = attrs,
+                Text = content.ToString(),
+                IsSuper = mark == '^',
                 Span = new SourceSpan(processor.GetSourcePosition(start, out int line, out int column), processor.GetSourcePosition(end - 1)),
                 Line = line,
                 Column = column,
@@ -175,15 +108,13 @@ namespace SIL.TextEditing.Markdown.Reader
             slice.Start = end;
             return true;
         }
-
-        static bool IsAlpha(char c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-
-        internal static bool IsAsciiPunctuation(char c) => (c >= '!' && c <= '/') || (c >= ':' && c <= '@') || (c >= '[' && c <= '`') || (c >= '{' && c <= '~');
     }
 
     /// <summary><c>]{...}</c> closes the nearest open <c>[</c> as a span with attributes. Everything else about <c>]</c> is Markdig's.</summary>
     sealed class SpanParser : InlineParser
     {
+        internal static bool IsAsciiPunctuation(char c) => (c >= '!' && c <= '/') || (c >= ':' && c <= '@') || (c >= '[' && c <= '`') || (c >= '{' && c <= '~');
+
         public SpanParser() { OpeningCharacters = new[] { ']' }; }
 
         public override bool Match(InlineProcessor processor, ref StringSlice slice)
@@ -222,7 +153,7 @@ namespace SIL.TextEditing.Markdown.Reader
             string fixedBlock = observed + "}";
             if (AttributeScanner.TryScan(fixedBlock, 0, fixedBlock.Length, out var block, out _, out _) != ScanStatus.Ok) return null;
             foreach (var item in block!.Items)
-                if (item.IsFlag && item.Key != "v" && item.Key != "broken" && item.Key != "empty") return null;
+                if (item.IsFlag) return null;
             return fixedBlock;
         }
 

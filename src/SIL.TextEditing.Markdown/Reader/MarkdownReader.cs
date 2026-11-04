@@ -22,8 +22,39 @@ namespace SIL.TextEditing.Markdown.Reader
         MarkdownReader(MarkdownOptions options, string source)
         {
             _options = options;
-            _source = source;
             _context = new ReaderContext(options, source);
+            _source = ReadFrontMatter(source);
+        }
+
+        bool _unsupportedVersion;
+
+        /// <summary>Finds the front matter (spec 2.1), takes the defaults and the version from it, and returns the text with it blanked (same length, so every
+        /// offset is the source's). Front matter with no <c>fwmd</c> key is some other YAML block and only blanked.</summary>
+        string ReadFrontMatter(string source)
+        {
+            if (!FrontMatterFormat.TryFind(source, out int end, out bool closed) || !closed) return source;
+            var block = source.Substring(0, end);
+            var fm = FrontMatterFormat.Parse(block, (a, b, message) => { if (block.IndexOf("fwmd", StringComparison.Ordinal) >= 0) _context.Report(MarkdownDiagnosticIds.MalformedAttribute, MarkdownSeverity.Error, message, a, b); });
+            fm.Range = new[] { 0, end };
+            var blanked = new StringBuilder(source);
+            Blank(blanked, 0, end);
+            if (fm.Version == null)
+            {
+                return blanked.ToString();
+            }
+            _context.FrontMatter = fm;
+            if (fm.Version.Value > MarkdownFrontMatter.CurrentVersion || fm.Version.Value < 1)
+            {
+                int at = source.IndexOf("fwmd", StringComparison.Ordinal);
+                int lineEnd = at;
+                while (lineEnd < end && source[lineEnd] != '\n' && source[lineEnd] != '\r') lineEnd++;
+                _context.Report(MarkdownDiagnosticIds.VersionUnsupported, MarkdownSeverity.Error,
+                    "fwmd: " + fm.Version.Value + " is not a version this reader knows (it reads version " + MarkdownFrontMatter.CurrentVersion + "). Update the tool.", at, lineEnd);
+                _unsupportedVersion = true;
+            }
+            if (fm.Analysis != null) _context.DefaultAnalysis = fm.Analysis;
+            if (fm.Vernacular != null) _context.DefaultVernacular = fm.Vernacular;
+            return blanked.ToString();
         }
 
         MarkdownStyleNames Names => _options.StyleNames;
@@ -84,6 +115,7 @@ namespace SIL.TextEditing.Markdown.Reader
 
         void ReadAll()
         {
+            if (_unsupportedVersion) return;
             var fences = new List<Fence>();
             string blanked = ScanFences(fences);
             var fenceStarts = new HashSet<int>();
@@ -156,7 +188,7 @@ namespace SIL.TextEditing.Markdown.Reader
             return i;
         }
 
-        Run LiteralRun(string text) => new Run { Text = text, Ws = _options.WritingSystems.DefaultAnalysis };
+        Run LiteralRun(string text) => new Run { Text = text, Ws = _context.DefaultAnalysis };
 
         /// <summary>The lines of [start, end) as paragraphs of plain text, the way a block that cannot be read is kept.</summary>
         void ReadLiteralLines(int start, int end)
@@ -231,7 +263,7 @@ namespace SIL.TextEditing.Markdown.Reader
             {
                 if (block is ParagraphBlock paragraph)
                 {
-                    if (!first) runs.Add(new Run { Text = Chars.LineSeparatorText, Ws = _options.WritingSystems.DefaultAnalysis });
+                    if (!first) runs.Add(new Run { Text = Chars.LineSeparatorText, Ws = _context.DefaultAnalysis });
                     first = false;
                     runs.AddRange(InlineReader.Read(paragraph.Inline, _context));
                     continue;
@@ -366,18 +398,14 @@ namespace SIL.TextEditing.Markdown.Reader
         {
             var (style, props) = fence.Attrs == null ? (Names.Normal, new PropertyBag()) : ReadParagraphAttributes(fence.Attrs, false, out _);
             var lines = fence.Lines;
+            // Paragraphs in a div are separated by blank lines, as everywhere else (spec 3.1).
             int i = 0;
             while (i < lines.Count)
             {
-                int start = lines[i][0], end = lines[i][1];
-                if (IsBlank(start, end)) { i++; continue; }
-                while (EndsWithOddBackslashes(start, end) && i + 1 < lines.Count && !IsBlank(lines[i + 1][0], lines[i + 1][1]))
-                {
-                    i++;
-                    end = lines[i][1];
-                }
-                i++;
-                ReadFenceParagraph(start, end, style, props);
+                if (IsBlank(lines[i][0], lines[i][1])) { i++; continue; }
+                int first = i;
+                while (i < lines.Count && !IsBlank(lines[i][0], lines[i][1])) i++;
+                ReadDivParagraph(lines[first][0], lines[i - 1][1], style, props);
             }
         }
 
@@ -387,24 +415,16 @@ namespace SIL.TextEditing.Markdown.Reader
             return true;
         }
 
-        bool EndsWithOddBackslashes(int start, int end)
-        {
-            int n = 0;
-            for (int i = end - 1; i >= start && _source[i] == '\\'; i--) n++;
-            return n % 2 == 1;
-        }
-
-        void ReadFenceParagraph(int start, int end, string style, PropertyBag props)
+        /// <summary>One paragraph of a div. The text is read with the block parser, so a block marker the author forgot to escape (a heading, a list, a quote, a
+        /// table) is found here as it would be by Pandoc: it is an error and the escape is the fix (spec 3.1); the text is then read as a paragraph.</summary>
+        void ReadDivParagraph(int start, int end, string style, PropertyBag props)
         {
             string text = _source.Substring(start, end - start);
+            _context.Base = 0;
+            if (TryEmptyMarker(text, start, style, props)) return;
             _context.Base = start;
-            if (text.Trim() == "{empty}")
-            {
-                _context.Base = 0;
-                _paragraphs.Add(MakeParagraph(style, props, new List<Run>(), null));
-                return;
-            }
-            var document = TryParse(text, NotationExtension.InlineOnly, _context);
+            int mark = _context.Count;
+            var document = TryParse(text, NotationExtension.Document, _context);
             if (document == null)
             {
                 ReportTooDeep(start, end);
@@ -412,14 +432,38 @@ namespace SIL.TextEditing.Markdown.Reader
                 _paragraphs.Add(MakeParagraph(style, props, new List<Run> { LiteralRun(text) }, null));
                 return;
             }
-            var runs = new List<Run>();
-            foreach (var block in document)
+            bool single = document.Count == 1 && document[0] is ParagraphBlock;
+            if (!single)
             {
-                if (block is ParagraphBlock paragraph) runs.AddRange(InlineReader.Read(paragraph.Inline, _context));
-                else _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, "A reference definition is not supported. Escape the [ as \\[.", start, end);
+                _context.Truncate(mark);
+                _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error,
+                    "A paragraph in a styled block cannot start with block markup: this reads as " + DescribeBlock(document) + ". Escape the first marker, as in \\# or 1\\. .",
+                    start, end, LineStart.Escaped(text));
+                document = TryParse(text, NotationExtension.InlineOnly, _context);
             }
+            var runs = new List<Run>();
+            if (document != null)
+                foreach (var block in document)
+                    if (block is ParagraphBlock paragraph) runs.AddRange(InlineReader.Read(paragraph.Inline, _context));
             _context.Base = 0;
             _paragraphs.Add(MakeParagraph(style, props, runs, null));
+        }
+
+        static string DescribeBlock(Markdig.Syntax.MarkdownDocument document)
+        {
+            if (document.Count == 0) return "no paragraph";
+            switch (document[0])
+            {
+                case HeadingBlock _: return "a heading";
+                case ListBlock _: return "a list";
+                case QuoteBlock _: return "a block quote";
+                case Table _: return "a table";
+                case ThematicBreakBlock _: return "a thematic break";
+                case LinkReferenceDefinitionGroup _: return "a link reference definition";
+                case CodeBlock _: return "a code block";
+                case HtmlBlock _: return "raw HTML";
+                default: return "block syntax";
+            }
         }
 
         // ---------------------------------------------------------------- blocks
@@ -483,24 +527,36 @@ namespace SIL.TextEditing.Markdown.Reader
             _paragraphs.Add(MakeParagraph(Names.Normal, new PropertyBag(), InlineReader.Read(block.Inline, _context), null));
         }
 
-        /// <summary>A line that is exactly <c>{empty ...}</c> is an empty paragraph (spec 3.1).</summary>
-        bool TryEmptyMarker(string raw, int rawStart)
+        /// <summary>A paragraph that is exactly <c>[]{.empty ...}</c> is an empty paragraph (spec 3.1). The attributes may name its writing system
+        /// (<c>.v</c> or <c>ws=</c>) because an empty paragraph has no run to carry one; the reader also takes paragraph attributes here (the writer puts a styled
+        /// empty paragraph in a div). Inside a div the paragraph takes the div's style and properties unless the marker gives its own.</summary>
+        bool TryEmptyMarker(string raw, int rawStart, string? divStyle = null, PropertyBag? divProps = null)
         {
             int first = 0;
-            while (first < raw.Length && raw[first] == ' ') first++;
+            while (first < raw.Length && (raw[first] == ' ' || raw[first] == '\t')) first++;
             int last = raw.Length;
             while (last > first && (raw[last - 1] == ' ' || raw[last - 1] == '\t')) last--;
             string line = raw.Substring(first, last - first);
-            if (!line.StartsWith("{empty", StringComparison.Ordinal) || line.IndexOf('\n') >= 0 || line.IndexOf('\r') >= 0) return false;
-            if (line.Length == 6 || (line[6] != ' ' && line[6] != '}')) return false;
-            int at = rawStart + first;
+            if (!line.StartsWith("[]{", StringComparison.Ordinal) || line.IndexOf('\n') >= 0 || line.IndexOf('\r') >= 0 || line[line.Length - 1] != '}') return false;
+            int at = rawStart + first + 2;
             var status = AttributeScanner.TryScan(_source, at, rawStart + last, out var block, out int errorPos, out string error);
             if (status != ScanStatus.Ok || block!.End != rawStart + last)
             {
-                if (status != ScanStatus.Ok) SpanParser.ReportBadBlock(_context, status, at, errorPos, error);
+                // Not a marker unless it says .empty somewhere: a bad block is reported by the inline reader as for any other span.
                 return false;
             }
-            var (style, props) = ReadParagraphAttributes(block, true, out string? defaultWs);
+            bool isEmpty = false;
+            foreach (var item in block.Items) if (item.IsClass && item.Key == "empty") isEmpty = true;
+            if (!isEmpty) return false;
+            var (style, props) = ReadParagraphAttributes(block, true, out string? defaultWs, out bool styleGiven);
+            if (divProps != null)
+            {
+                var merged = divProps.Clone();
+                foreach (var kv in props.IntProps) merged.IntProps[kv.Key] = kv.Value;
+                foreach (var kv in props.StrProps) merged.StrProps[kv.Key] = kv.Value;
+                props = merged;
+                if (!styleGiven && divStyle != null) style = divStyle;
+            }
             _paragraphs.Add(MakeParagraph(style, props, new List<Run>(), defaultWs));
             return true;
         }
@@ -584,7 +640,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 var joined = new List<Run>();
                 for (int c = 0; c < cellRuns.Count; c++)
                 {
-                    if (c > 0) joined.Add(new Run { Text = "\t", Ws = _options.WritingSystems.DefaultAnalysis });
+                    if (c > 0) joined.Add(new Run { Text = "\t", Ws = _context.DefaultAnalysis });
                     joined.AddRange(cellRuns[c]);
                 }
                 _paragraphs.Add(MakeParagraph(isHeader ? Names.TableHeader : Names.TableRow, new PropertyBag(), joined, null));
@@ -656,9 +712,9 @@ namespace SIL.TextEditing.Markdown.Reader
 
         // ---------------------------------------------------------------- paragraph attributes
 
-        /// <summary>The attributes of a fence or of <c>{empty ...}</c>: style, paragraph properties and, for an empty paragraph, the
-        /// writing system typing starts in.</summary>
-        (string style, PropertyBag props) ReadParagraphAttributes(AttrBlock attrs, bool isEmpty, out string? defaultWs)
+        /// <summary>The attributes of a div or of <c>[]{.empty ...}</c>: the style (<c>custom-style</c>), paragraph properties and, for an empty paragraph, the
+        /// writing system typing starts in (<c>.v</c> or <c>ws=</c>).</summary>
+        (string style, PropertyBag props) ReadParagraphAttributes(AttrBlock attrs, bool isEmpty, out string? defaultWs, out bool styleGiven)
         {
             defaultWs = null;
             string? style = null;
@@ -666,15 +722,15 @@ namespace SIL.TextEditing.Markdown.Reader
             var rest = new List<AttrItem>();
             foreach (var item in attrs.Items)
             {
-                if (item.Key == "empty" && item.IsFlag && isEmpty) continue;
-                if (item.Key == "style" && !item.IsFlag)
+                if (item.IsClass && item.Key == "empty" && isEmpty) continue;
+                if (!item.IsClass && item.Key == "custom-style" && !item.IsFlag)
                 {
-                    if (styleItem != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "'style' appears twice. Keep one.", item.Start, item.End);
+                    if (styleItem != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "'custom-style' appears twice. Keep one.", item.Start, item.End);
                     styleItem = styleItem ?? item;
                     continue;
                 }
-                if (isEmpty && item.Key == "v" && item.IsFlag) { vItem = item; continue; }
-                if (isEmpty && item.Key == "ws" && !item.IsFlag) { wsItem = item; continue; }
+                if (isEmpty && item.IsClass && item.Key == "v") { vItem = item; continue; }
+                if (isEmpty && !item.IsClass && item.Key == "ws" && !item.IsFlag) { wsItem = item; continue; }
                 rest.Add(item);
             }
             var props = new PropertyBag();
@@ -687,32 +743,36 @@ namespace SIL.TextEditing.Markdown.Reader
             }
             if (props.StrProps.TryGetValue(TextPropertyNumbers.NamedStyle, out var s133))
             {
-                if (style != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "s133 is the style; it cannot be combined with style.", attrs.Start, attrs.End);
+                if (style != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "s133 is the style; it cannot be combined with custom-style.", attrs.Start, attrs.End);
                 style = s133;
             }
             props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
             if (isEmpty)
             {
-                if (wsItem != null && vItem != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "v and ws both name the writing system. Keep one.", vItem.Start, vItem.End);
+                if (wsItem != null && vItem != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, ".v and ws both name the writing system. Keep one.", vItem.Start, vItem.End);
                 if (wsItem != null)
                 {
                     defaultWs = wsItem.Value;
                     _context.CheckWritingSystem(defaultWs!, wsItem.Start, wsItem.End);
                 }
-                else if (vItem != null) defaultWs = _options.WritingSystems.DefaultVernacular;
+                else if (vItem != null) defaultWs = _context.DefaultVernacular;
             }
+            styleGiven = style != null;
             return (style ?? Names.Normal, props);
         }
 
+        (string style, PropertyBag props) ReadParagraphAttributes(AttrBlock attrs, bool isEmpty, out string? defaultWs)
+            => ReadParagraphAttributes(attrs, isEmpty, out defaultWs, out _);
+
         void ReportUnknownParagraphItem(AttrItem item, bool isEmpty)
         {
-            if (item.Key == "cs" || item.Key == "link" || item.Key == "guid" || item.Key == "url" || item.Key == "tool" || item.Key == "broken" || item.Key == "v" || item.Key == "ws")
+            if (!item.IsClass && (item.Key == "guid" || item.Key == "url" || item.Key == "tool" || item.Key == "ws" || item.Key == "x") || (item.IsClass && (item.Key == "name" || item.Key == "example" || item.Key == "broken" || item.Key == "nostyle" || item.Key == "v" || item.Key == "nul" || item.Key == "surrogate")))
             {
-                _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'" + item.Key + "' is for runs, not paragraphs.", item.Start, item.End);
+                _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'" + item.Spelling + "' is for runs, not for a block of paragraphs.", item.Start, item.End);
                 return;
             }
-            var known = new List<string> { "style" };
-            if (isEmpty) { known.Add("v"); known.Add("ws"); }
+            var known = new List<string> { "custom-style" };
+            if (isEmpty) { known.Add(".v"); known.Add("ws"); known.Add(".empty"); }
             known.AddRange(PropertyKeys.AllKeys());
             _context.ReportUnknown(item, known);
         }
@@ -731,7 +791,7 @@ namespace SIL.TextEditing.Markdown.Reader
             paragraph.Rtl = paragraph.Props.TryGetInt(128, out int rtl) && rtl != 0;
             paragraph.Normalize();
             if (_options.NormalizeText) ToNfd(paragraph.Runs);
-            paragraph.DefaultWs = paragraph.Runs.Count > 0 ? paragraph.Runs[0].Ws : defaultWs ?? _options.WritingSystems.DefaultAnalysis;
+            paragraph.DefaultWs = paragraph.Runs.Count > 0 ? paragraph.Runs[0].Ws : defaultWs ?? _context.DefaultAnalysis;
             return paragraph;
         }
     }
