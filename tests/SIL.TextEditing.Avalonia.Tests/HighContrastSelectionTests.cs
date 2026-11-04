@@ -86,7 +86,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
-        public void A_paragraph_the_host_changed_in_place_is_not_drawn_again_from_its_new_properties_over_the_old_layout_s_selection(bool changeInPlace) => Headless.Run(() => InHighContrast(() =>
+        public void A_layout_of_a_paragraph_the_host_changed_in_place_gives_no_selected_text_layout_and_the_field_lays_it_out_again(bool changeInPlace) => Headless.Run(() => InHighContrast(() =>
         {
             var field = Make("HHHHHHHH iiiiiiii");
             field.Editor.SetCaret(new TextPosition(0, 0));
@@ -102,16 +102,14 @@ namespace SIL.TextEditing.Avalonia.Tests
                 run.Props.SetInt(TextPropertyNumbers.FontSize, 30000, TextPropertyNumbers.VariationMilliPoint);
                 Assert.Null(pl.InColour(HighlightText));
             }
+            // The field sees the change at the next draw (the paragraph's change stamp moved) and lays the paragraph out again, so what is drawn is the new
+            // layout's own selection and its selected text, from the same paragraph: never the new text over the old layout's boxes.
             var shot = Fixtures.Render(field);
             int selectedText = Count(shot, HighlightText, 0, 390);
-            if (changeInPlace) Assert.Equal(0, selectedText);   // no text of the new paragraph in the highlight text colour over the old layout's boxes
-            else Assert.True(selectedText > 40, "selected text pixels: " + selectedText);
-            if (changeInPlace)
-            {
-                field.RefreshFromDocument();
-                pl = field.ParagraphLayoutFor(0);
-                Assert.NotNull(pl.InColour(HighlightText));   // laid out again from the changed paragraph, it is drawn in the selected colour again
-            }
+            Assert.True(selectedText > 40, "selected text pixels: " + selectedText);
+            var now = field.ParagraphLayoutFor(0);
+            if (changeInPlace) Assert.NotSame(pl, now);
+            Assert.NotNull(now.InColour(HighlightText));
         }));
 
         [Fact]

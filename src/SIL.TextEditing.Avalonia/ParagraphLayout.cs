@@ -1129,7 +1129,7 @@ namespace SIL.TextEditing.Avalonia
             if (forceText == null)
             {
                 layout._recolour = brush => Build(paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, brush);
-                layout._builtFrom = Fingerprint(paragraph);
+                layout._builtFrom = paragraph.ChangeStamp;
             }
             var pf = ResolveFormat(paragraph, writingSystems, styles);
             var formats = layout._formats = new FormatCache(paragraph, writingSystems, foreground, styles, forceText);
@@ -2252,29 +2252,9 @@ namespace SIL.TextEditing.Avalonia
         Func<IBrush, ParagraphLayout>? _recolour;
         ParagraphLayout? _recoloured;
         Color _recolouredTo;
+        /// <summary>The paragraph's change stamp when this layout was made: it moves for a change of its runs, their text, writing systems and object data, a property
+        /// bag changed in place, its direction and its style (issue 101), so it is all it takes to know the paragraph is not what this layout was made from.</summary>
         long _builtFrom;
-
-        /// <summary>What this layout was made from, in a number: the paragraph's change stamp (its runs, their text, writing systems and object data, a
-        /// replaced property bag, its style) and the contents of every property bag. A host that edits a bag in place and does not call
-        /// <c>RefreshFromDocument()</c> changes the second, which the stamp does not see.</summary>
-        static long Fingerprint(Paragraph paragraph)
-        {
-            unchecked
-            {
-                long h = paragraph.ChangeStamp * 31 + (paragraph.Rtl ? 1 : 0);
-                h = h * 31 + Bag(paragraph.Props);
-                foreach (var run in paragraph.Runs) h = h * 31 + Bag(run.Props);
-                return h;
-            }
-
-            long Bag(PropertyBag bag)
-            {
-                long b = bag.Count;
-                foreach (var p in bag.IntProps) b = b * 31 + p.Key * 7 + p.Value.GetHashCode();
-                foreach (var p in bag.StrProps) b = b * 31 + p.Key * 7 + (p.Value?.GetHashCode() ?? 0);
-                return b;
-            }
-        }
 
         /// <summary>This paragraph laid out the same way (the same lines, so the same places) with all its text and its underlines in <paramref name="colour"/>,
         /// whatever colours the runs have: what the selected text is drawn in where the system gives it a colour of its own. Built once and kept with this
@@ -2282,7 +2262,7 @@ namespace SIL.TextEditing.Avalonia
         /// changed it in place and has not called <c>RefreshFromDocument()</c>): a second layout of the new text would be drawn over this one's selection boxes.</summary>
         internal ParagraphLayout? InColour(Color colour)
         {
-            if (_recolour == null || Fingerprint(Paragraph) != _builtFrom) return null;
+            if (_recolour == null || Paragraph.ChangeStamp != _builtFrom) return null;
             if (_recoloured == null || _recolouredTo != colour)
             {
                 _recoloured?.Dispose();
