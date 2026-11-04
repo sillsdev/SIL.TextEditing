@@ -32,14 +32,14 @@ define the format: a reader or writer in any language conforms when it passes ev
 |---|---|
 | `name` | What the case shows, as a sentence. A case named `ok: <finding id> ...` is a negative case for that id: the construct is fine and the id must not appear. |
 | `markdown` | The input text. Absent for a **write case** (the model alone). |
-| `frontMatter` | Omitted: the runner puts the standard front matter (`fwmd: 1`, analysis `en`, vernacular `ceb`) before `markdown` and `canonical`, and compares the body only; finding lines are counted from the body. `"explicit"`: `markdown` and `canonical` are whole files and the writer writes its front matter. |
+| `frontMatter` | A `markdown` (or, for a write case, a `canonical`) that starts with `---` is a whole file, as spec 6.3 shows it: the runner adds nothing and the writer writes its front matter. Otherwise the runner puts the standard front matter (`fwmd: 1`, analysis `en`, vernacular `ceb`) before `markdown` and `canonical`, and compares the body only; finding lines are counted from the body. `"explicit"`: `markdown` and `canonical` are whole files and the writer writes its front matter. |
 | `mode` | `"inline"` for the grammar of a multi-string field (spec 5.1): one paragraph of inline text, no front matter, and block syntax is `fwmd.field.block-syntax`. |
 | `paragraphs` | The expected paragraphs of a read case, or the model of a write case. |
 | `findings` | The expected findings, in source order. Absent means none. |
 | `canonical` | Absent: not checked. `null`: `markdown` is already canonical, so writing what was read gives it back. A string: the canonical text. A write case needs a string. |
 | `project` | A project the host knows: a name from `projects.json`, or the object itself. |
 | `options` | `linkForm` (`"A"` to `"E"`), `linkBase`, `projectName`, `normalize` (false: keep the text as written), `unknownGuids` (`"rebind"`). |
-| `pandoc` | Absent or `true`: Pandoc must read the case (the Markdown, and the canonical text) as the paragraphs say. `false`, or a string giving the reason: it need not, for example because the case is an error or uses a spelling only this reader takes. A case with an error finding is never read by Pandoc. |
+| `pandoc` | Absent or `true`: Pandoc must read the case (the Markdown, and the canonical text) as the paragraphs say. A string: it need not, and the string says why (a test fails for a case without an error that switches Pandoc off with no reason). A case with an error finding is never read by Pandoc. |
 
 For every read case the runner also checks that writing the paragraphs gives `canonical` (when given), that the result reads back to the same paragraphs, and that
 writing that result again changes nothing.
@@ -64,6 +64,7 @@ exclusive), and optionally `fix` (the one exact replacement of the observed text
 ```json
 { "analysis": "en", "vernacular": "ceb",
   "writingSystems": { "ceb-x-old": { "lang": "ceb", "dir": "ltr", "font": "Doulos SIL" } },
+  "tableStyles": { "header": "GDR Table Header", "row": "GDR Table Row" },
   "styles": { "paragraph": ["Example"], "character": ["Hyperlink"] },
   "objects": [
     { "guid": "...", "path": "/lexicon/palit(2)", "tool": "lexiconEdit", "name": "palit", "example": false, "deleted": false },
@@ -73,6 +74,8 @@ exclusive), and optionally `fix` (the one exact replacement of the observed text
 The host a case runs against knows exactly this: which writing systems and styles exist, each object's GUID, path, FLEx tool and current name, and which pictures
 there are. A path resolves to its object, and a path with no homograph number matches every homograph of it (an ambiguity with a choice for each). A deleted
 object has no path. The object data of a link is the `silfw://` URL as FieldWorks writes it (whole query URL-encoded, `database=this$` first, `tag=` always).
+
+The project names the two table styles (`tableStyles`); the format only says that a pipe table's header row and body rows take the host's table styles, and Motif's are the GDR template's. A project that gives none gets the library's defaults.
 
 ## What the cases cover
 
