@@ -120,9 +120,12 @@ short English and French word list.
   preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with
   an apostrophe between letters inside the word; no dictionary, so Thai and Chinese are not split, and it is not UAX #29
   word breaking. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
-- **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2);
-  an inline object in right-to-left text is mis-ordered on both. `RichTextField.ObjectAsGlyph` is the workaround for the
-  second.
+- **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2), and on
+  both 11.3.17 and 12.1.2 the caret, hit testing and selection of a left-to-right run are wrong on a right-to-left paragraph's line
+  of two or more runs, and likewise on a left-to-right paragraph's line of two or more runs with a right-to-left run in it (on 12 some of its ranges throw); an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by
+  reading such a line from its runs as they are drawn (`LineInfo.UsesRuns`: caret x, hit testing, visual stops and selection boxes
+  from each run's glyphs). It is not behind `#if`, because 12 has the second fault too (ADR 0015 expected a layer for 11.3 only).
+  `RichTextField.ObjectAsGlyph` is the workaround for the third.
 - **Paragraph and character properties**: drawn, with the host's `IStyleResolver` supplying named styles (ADR 0004): weight (any 100 to
   900, invert), italic, foreground and background colour, underline type and colour (dotted, dashed, single, double,
   strikethrough, and the squiggle, which the layout draws itself as a zigzag below the baseline), superscript and subscript, font size (absolute, relative, named), font
@@ -131,7 +134,7 @@ short English and French word list.
   ourselves, shifted: the line's slot makes room for it and the caret, selection and squiggle follow it. A justified paragraph is stretched by
   the field itself (Avalonia's justifier is internal): each line but the last shares its slack equally among its interior
   spaces, so it reaches both edges of the text area; the last line stays at the leading edge, as in FieldWorks. The caret, selection,
-  mouse and run backgrounds follow the stretched text, and each stretched line is drawn piece by piece. Pagination properties and the rest are carried untouched.
+  mouse and run backgrounds follow the stretched text, and each stretched line is drawn piece by piece, with its underlines and strikethrough drawn by the field as lines across the whole stretched run (so a dotted or dashed pattern is not restarted or scaled). Pagination properties and the rest are carried untouched.
   Lengths in points are drawn as device-independent pixels, as font sizes are.
   Text a line limit hides stays in the model but cannot be reached: the caret, Right, End, Up/Down and mouse stop at the end of
   the last line shown, as FieldWorks puts an insertion point in truncated text at the last visible position. Typing, Delete, Enter, paste
@@ -142,7 +145,9 @@ short English and French word list.
   caret and hit testing stay on the text, and a hard line break that ends the paragraph is not cut-off text.
 - **Graphemes**: `GraphemeClusters` is `StringInfo` plus Indic conjuncts (GB9c, six scripts; .NET 10 lacks it). The
   netstandard2.0 build also fuses Extend, SpacingMark, emoji ZWJ sequences and flags per UAX #29, with approximated
-  property tables; caret stops in the field come from the shaper, not from this class.
+  property tables; caret stops in the field come from the shaper, except on a right-to-left paragraph's line of several runs
+  (`LineInfo.UsesRuns`), where the layout steps by this class's grapheme boundaries and measures each on the run's glyphs (with the
+  approximated tables on netstandard2.0).
 - **Undo** is a host stand-in (`SimpleUndoStack`); no LCModel glue exists.
 
 ## Licence

@@ -74,7 +74,12 @@ namespace SIL.TextEditing.Avalonia
             GotFocus += (o, e) => { InvalidateVisual(); ActiveWsChanged?.Invoke(Editor.ActiveWs, Editor.ActiveWs); };
             LostFocus += (o, e) => { Editor.CloseUndoGroup(); InvalidateVisual(); };
             Editor.Committed += d => RestartPauseTimer();
-            ActualThemeVariantChanged += (o, e) => InvalidateVisual();
+            ActualThemeVariantChanged += (o, e) =>
+            {
+                // Text, border and (unset) page colours are resolved when a paragraph is laid out, so an unset foreground needs the layouts again.
+                if (_foreground == null) InvalidateAllLayouts();
+                else InvalidateVisual();
+            };
         }
 
         /// <summary>The dispatcher the field belongs to. Avalonia 12 lets a control live on a dispatcher other than the main UI
@@ -120,8 +125,31 @@ namespace SIL.TextEditing.Avalonia
                 InvalidateAllLayouts();
             }
         }
-        public IBrush Foreground { get; set; } = Brushes.Black;
-        public IBrush Background { get; set; } = Brushes.White;
+        IBrush? _foreground, _background;
+
+        /// <summary>The colour of text and of a border with no colour of its own. Until the host sets one it is the theme's text colour (the
+        /// same resource as the caret), so a theme change redraws the text; a colour the host sets is kept as it is.</summary>
+        public IBrush Foreground
+        {
+            get => _foreground ?? ResolveCaretBrush();
+            set
+            {
+                _foreground = value;
+                InvalidateAllLayouts();
+            }
+        }
+
+        /// <summary>The page colour. Until the host sets one it is the theme's window colour (white when there is no theme), so light text
+        /// taken from a dark theme is not drawn on white.</summary>
+        public IBrush Background
+        {
+            get => _background ?? ResolveBackgroundBrush();
+            set
+            {
+                _background = value;
+                InvalidateVisual();
+            }
+        }
         public bool ShowCaretAlways { get; set; }
         /// <summary>A field-level read-only flag (forwards to <see cref="DocumentEditor.IsReadOnly"/>): selection and copy
         /// work, nothing changes the text. Runs can also be read-only one by one (ADR 0019).</summary>
@@ -255,7 +283,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 preeditAt = Editor.Caret.Offset;
                 preedit = _preedit;
-                template = new Run { Ws = Editor.ActiveWs };
+                template = Editor.TypingRun();
             }
             var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
             _layouts[index] = layout;
@@ -327,7 +355,7 @@ namespace SIL.TextEditing.Avalonia
             var pl = ParagraphLayoutFor(c.Paragraph);
             var r = pl.CaretRect(c.Offset, false, CurrentHit());
             if (_preedit != null && pl.PreeditAt >= 0) r = pl.CaretRect(pl.PreeditAt + _preeditCursor, true);   // inside the preedit, in effective offsets
-            return new Rect(r.X, r.Y + ParagraphTop(c.Paragraph), 1.5, r.Height);
+            return new Rect(r.X, r.Y + ParagraphTop(c.Paragraph), ParagraphLayout.CaretWidth, r.Height);
         }
 
         // ------------------------------------------------ rendering
@@ -355,6 +383,7 @@ namespace SIL.TextEditing.Avalonia
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
                     foreach (var li in pl.Lines) if (!li.IsEmpty) li.Draw(context, y);
+                    pl.DrawDecorations(context, y);
                     pl.DrawSquiggles(context, y);
                     pl.DrawLabel(context, y);
                     pl.DrawEllipsis(context, y);
@@ -1005,6 +1034,10 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The caret fill: the theme or system text-colour resource, else black.</summary>
         public IBrush ResolveCaretBrush() =>
             ThemeBrush(Brushes.Black, "TextControlForeground", "SystemControlForegroundBaseHighBrush", "SystemColorWindowTextColor");
+
+        /// <summary>The page fill: the theme or system window-colour resource, else white.</summary>
+        public IBrush ResolveBackgroundBrush() =>
+            ThemeBrush(Brushes.White, "SystemControlBackgroundAltHighBrush", "SystemAltHighColor", "SystemColorWindowColor");
 
         /// <summary>The first of the named theme or system resources that is a colour or brush; else the fallback look.</summary>
         IBrush ThemeBrush(IBrush fallback, params string[] keys)

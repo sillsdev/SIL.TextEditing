@@ -76,6 +76,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 foreach (var stop in pl.VisualStops(li))
                 {
                     int model = pl.ToModel(stop.Offset);
+                    if (stop.X > pl.LayoutWidth - ParagraphLayout.CaretWidth - 0.01) continue;   // held inside the control, so not where the character edge is
                     // Clicking on a stop puts the caret where the stop is (at a boundary between directions two places share an offset).
                     var hit = pl.HitTestDetailed(new Point(stop.X, li.Y + 2));
                     Assert.True(System.Math.Abs(pl.CaretRect(hit.Offset, false, hit.CaretHit).X - stop.X) < 1, "a click at " + stop.X + " gave offset " + hit.Offset + " for the stop at offset " + stop.Offset);

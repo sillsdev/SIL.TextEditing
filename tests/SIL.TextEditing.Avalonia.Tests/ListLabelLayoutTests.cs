@@ -47,5 +47,25 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(pl.LabelRect.Width > pl.ContentWidth, "the label " + pl.LabelRect.Width + " is wider than the line " + pl.ContentWidth);
             Assert.True(pl.LabelRect.Bottom <= pl.Lines[0].TextY + 0.01, "the label is above the first line of text");
         });
-    }
+
+        [Theory]
+        [InlineData(-40000)]   // exact, taller than the label
+        [InlineData(-8000)]    // exact, shorter than the label
+        [InlineData(40000)]    // at least, taller than the label
+        [InlineData(0)]        // no rule
+        public void A_label_on_a_line_of_its_own_is_as_tall_as_the_label_whatever_the_line_height_rule(int lineHeight) => Headless.Run(() =>
+        {
+            var p = Para("en", "en", English);
+            p.Props.SetInt(TextPropertyNumbers.LeadingIndent, 36000, TextPropertyNumbers.VariationMilliPoint);
+            p.Props.SetInt(TextPropertyNumbers.FirstIndent, -24000, TextPropertyNumbers.VariationMilliPoint);
+            p.Props.SetInt(TextPropertyNumbers.BulNumScheme, 10);
+            p.Props.SetStr(TextPropertyNumbers.BulNumTxtBefore, "Chapter number ");
+            p.Props.SetStr(TextPropertyNumbers.BulNumTxtAfter, ".");
+            if (lineHeight != 0) p.Props.SetInt(TextPropertyNumbers.LineHeight, lineHeight, TextPropertyNumbers.VariationMilliPoint);
+            var pl = Fixtures.Field(Doc(p), 130).ParagraphLayoutFor(0);
+            var label = pl.LabelRect;
+            Assert.True(label.Width > pl.ContentWidth, "the label takes a line of its own");
+            Assert.Equal(pl.TopInset, label.Y, 2);
+            Assert.Equal(label.Height, pl.Lines[0].Y - pl.TopInset, 2);
+        });    }
 }
