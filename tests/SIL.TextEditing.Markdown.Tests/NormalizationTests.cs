@@ -16,7 +16,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("# caf\u00E9", "Heading 1| en\"cafe\u0301\"")]
         [InlineData("- caf\u00E9", "Bulleted List| en\"cafe\u0301\"")]
         [InlineData("> caf\u00E9", "Block Quote| en\"cafe\u0301\"")]
-        [InlineData("::: {style=Example}\ncaf\u00E9\n:::", "Example| en\"cafe\u0301\"")]
+        [InlineData("::: {custom-style=Example}\ncaf\u00E9\n:::", "Example| en\"cafe\u0301\"")]
         [InlineData("a **caf\u00E9** b", "Normal| en\"a \" en\"cafe\u0301\"{p3=1:3} en\" b\"")]
         [InlineData("[caf\u00E9]{ws=ceb}", "Normal| ceb\"cafe\u0301\"")]
         [InlineData("| caf\u00E9 | \u00F1 |\n| --- | --- |\n| \u00E9 | x |", "GDR Table Header| en\"cafe\u0301\\x0009n\u0303\"\nGDR Table Row| en\"e\u0301\\x0009x\"")]
@@ -97,7 +97,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ToMarkdownWritesTheTextAsStoredAndTheCopyReadsBackEquivalent()
         {
             var nfc = B.Plain("caf\u00E9");
-            string markdown = MarkdownConverter.ToMarkdown(B.Doc(nfc));
+            string markdown = MarkdownConverter.ToMarkdown(B.Doc(nfc), Hosts.Project());
             Assert.Equal("caf\u00E9\n", markdown); // nothing is normalised on the way out
             var back = MarkdownConverter.Parse(markdown).Document.Paragraphs[0];
             Assert.Equal("cafe" + Acute, back.Runs[0].Text);
@@ -108,7 +108,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AttributeValuesAreNeverNormalised()
         {
             const string nfc = "caf\u00E9";
-            var result = MarkdownConverter.Parse("[caf\u00E9]{s6=\"" + nfc + "\" s2=\"" + nfc + "\" cs=\"" + nfc + "\"} [x](https://e.org/" + nfc + ")");
+            var result = MarkdownConverter.Parse("[caf\u00E9]{s6=\"" + nfc + "\" s2=\"" + nfc + "\" custom-style=\"" + nfc + "\"} [x](https://e.org/" + nfc + ")");
             var runs = result.Document.Paragraphs[0].Runs;
             Assert.Equal("cafe" + Acute, runs[0].Text);
             Assert.Equal(nfc, runs[0].ObjData);
@@ -120,7 +120,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [Fact]
         public void NormalisationCanBeSwitchedOff()
         {
-            var options = new MarkdownOptions { NormalizeText = false };
+            var options = new MarkdownOptions { NormalizeText = false, WriteFrontMatter = false };
             Assert.Equal("caf\u00E9", MarkdownConverter.Parse("caf\u00E9", options).Document.Paragraphs[0].Runs[0].Text);
             Assert.Equal("caf\u00E9", MarkdownConverter.ParseInline("caf\u00E9", options).Runs[0].Text);
             Assert.True(new MarkdownOptions().NormalizeText);

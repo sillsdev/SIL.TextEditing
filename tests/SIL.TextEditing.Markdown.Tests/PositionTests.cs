@@ -23,15 +23,15 @@ namespace SIL.TextEditing.Markdown.Tests
             }
         }
 
-        const string Marks = "`x` <b> <http://x.y> [[w:nope]] ![c](fw:picture/00000000-0000-0000-0000-000000000000) [y]{ws=zzz-unknown} [z]{wss=1}";
+        const string Marks = "`x` <b> <http://x.y> [n](/lexicon/nope) ![c](/objects/00000000-0000-0000-0000-000000000000) [y]{ws=zzz-unknown} [z]{wss=1}";
 
         static readonly (string, string)[] MarkFindings =
         {
             ("fwmd.syntax.unsupported-markup", "`x`"),
             ("fwmd.syntax.unsupported-markup", "<b>"),
             ("fwmd.syntax.unsupported-markup", "<http://x.y>"),
-            ("fwmd.link.not-found", "[[w:nope]]"),
-            ("fwmd.picture.unknown", "![c](fw:picture/00000000-0000-0000-0000-000000000000)"),
+            ("fwmd.link.not-found", "[n](/lexicon/nope)"),
+            ("fwmd.picture.unknown", "![c](/objects/00000000-0000-0000-0000-000000000000)"),
             ("fwmd.ws.unknown", "ws=zzz-unknown"),
             ("fwmd.syntax.unknown-attribute", "wss=1"),
         };
@@ -49,24 +49,24 @@ namespace SIL.TextEditing.Markdown.Tests
         public void InAHeading() => AssertFindings("a\n\n# " + Marks, 3, MarkFindings);
 
         [Fact]
-        public void InAFenceLine() => AssertFindings("a\n\n::: {style=S}\n" + Marks + "\n:::", 4, MarkFindings);
+        public void InAFenceLine() => AssertFindings("a\n\n::: {custom-style=S}\n" + Marks + "\n:::", 4, MarkFindings);
 
         [Fact]
         public void InATableCellAfterAParagraph() => AssertFindings("a\n\n| " + Marks.Replace("|", "x") + " |\n| --- |", 3, MarkFindings);
 
         [Fact]
         public void InTheCellsOfASecondTable()
-            => AssertFindings("| h |\n| --- |\n\nb\n\n| x | `x` | [[w:nope]] | [y]{ws=zzz-unknown} |\n| --- | --- | --- | --- |", 6,
-                ("fwmd.syntax.unsupported-markup", "`x`"), ("fwmd.link.not-found", "[[w:nope]]"), ("fwmd.ws.unknown", "ws=zzz-unknown"));
+            => AssertFindings("| h |\n| --- |\n\nb\n\n| x | `x` | [n](/lexicon/nope) | [y]{ws=zzz-unknown} |\n| --- | --- | --- | --- |", 6,
+                ("fwmd.syntax.unsupported-markup", "`x`"), ("fwmd.link.not-found", "[n](/lexicon/nope)"), ("fwmd.ws.unknown", "ws=zzz-unknown"));
 
         [Fact]
         public void InABodyRowOfATable()
-            => AssertFindings("a\n\n| h | h |\n| --- | --- |\n| `x` | [[w:nope]] |", 5,
-                ("fwmd.syntax.unsupported-markup", "`x`"), ("fwmd.link.not-found", "[[w:nope]]"));
+            => AssertFindings("a\n\n| h | h |\n| --- | --- |\n| `x` | [n](/lexicon/nope) |", 5,
+                ("fwmd.syntax.unsupported-markup", "`x`"), ("fwmd.link.not-found", "[n](/lexicon/nope)"));
 
-        // The text form [text]{link=...} is the common way to write a link; its finding sits on the whole [text]{...} span.
-        const string TextLink = "[see]{link=w:zzz}";
-        const string TextLinkWithUrl = "[see this]{url=\"x\" link=w:zzz}";
+        // A link that cannot be resolved is a finding on the whole link, attributes included.
+        const string TextLink = "[see](/lexicon/zzz)";
+        const string TextLinkWithUrl = "[see this](/lexicon/zzz){url=\"x\"}";
 
         [Fact]
         public void ATextFormLinkInAParagraph() => AssertFindings("a\n\nb " + TextLink + " c", 3, ("fwmd.link.not-found", TextLink));
@@ -87,7 +87,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ATextFormLinkInAHeading() => AssertFindings("a\n\n# b " + TextLink, 3, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkInAFenceLine() => AssertFindings("a\n\n::: {style=S}\nb " + TextLink + " c\n:::", 4, ("fwmd.link.not-found", TextLink));
+        public void ATextFormLinkInAFenceLine() => AssertFindings("a\n\n::: {custom-style=S}\nb " + TextLink + " c\n:::", 4, ("fwmd.link.not-found", TextLink));
 
         [Fact]
         public void ATextFormLinkInATableCell() => AssertFindings("a\n\n| h | h |\n| --- | --- |\n| x | b " + TextLink + " c |", 5, ("fwmd.link.not-found", TextLink));
@@ -96,11 +96,11 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ATextFormLinkInTheHeaderOfASecondTable() => AssertFindings("| h |\n| --- |\n\nb\n\n| x " + TextLink + " | y |\n| --- | --- |", 6, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkInACellNextToAnotherSpan() => AssertFindings("a\n\n| [p]{v} | " + TextLink + " |\n| --- | --- |", 3, ("fwmd.link.not-found", TextLink));
+        public void ATextFormLinkInACellNextToAnotherSpan() => AssertFindings("a\n\n| [p]{.v} | " + TextLink + " |\n| --- | --- |", 3, ("fwmd.link.not-found", TextLink));
 
         [Fact]
         public void ATextFormLinkInALaterRowOfATableAfterAFence()
-            => AssertFindings("::: {style=S}\nq\n:::\n\n| h | h |\n| --- | --- |\n| a | b |\n| c | d " + TextLink + " |", 8, ("fwmd.link.not-found", TextLink));
+            => AssertFindings("::: {custom-style=S}\nq\n:::\n\n| h | h |\n| --- | --- |\n| a | b |\n| c | d " + TextLink + " |", 8, ("fwmd.link.not-found", TextLink));
 
         [Fact]
         public void ATextFormLinkWithCrlfLineEnds()
@@ -111,7 +111,7 @@ namespace SIL.TextEditing.Markdown.Tests
         }
 
         [Fact]
-        public void ANestedSpanInsideATextFormLinkDoesNotMoveIt() => AssertFindings("a\n\nb [see [c]{v} d]{link=w:zzz} e", 3, ("fwmd.link.not-found", "[see [c]{v} d]{link=w:zzz}"));
+        public void ANestedSpanInsideATextFormLinkDoesNotMoveIt() => AssertFindings("a\n\nb [see [c]{.v} d](/lexicon/zzz) e", 3, ("fwmd.link.not-found", "[see [c]{.v} d](/lexicon/zzz)"));
 
         [Fact]
         public void ATextFormLinkTheHostResolvesRaisesNothing()
@@ -119,7 +119,7 @@ namespace SIL.TextEditing.Markdown.Tests
             var host = new TestObjects();
             var guid = new System.Guid("11111111-2222-3333-4444-555555555555");
             host.Names[guid] = "palit";
-            Assert.Empty(MarkdownConverter.Parse("a\n\n[see]{link=w:palit guid=" + guid + "}", Hosts.Project(host)).Diagnostics);
+            Assert.Empty(MarkdownConverter.Parse("a\n\n[see](/lexicon/palit){guid=" + guid + "}", Hosts.Project(host)).Diagnostics);
         }
 
         [Theory]
@@ -161,8 +161,8 @@ namespace SIL.TextEditing.Markdown.Tests
         }
 
         [Theory]
-        [InlineData("::: {style=S}\n[kaon]{ws=ceb-x-old\n:::\n", 2)]
-        [InlineData("::: {style=S}\r\n[kaon]{ws=ceb-x-old\r\n:::\r\n", 2)]
+        [InlineData("::: {custom-style=S}\n[kaon]{ws=ceb-x-old\n:::\n", 2)]
+        [InlineData("::: {custom-style=S}\r\n[kaon]{ws=ceb-x-old\r\n:::\r\n", 2)]
         [InlineData("a\n\n- x\n  [kaon]{ws=ceb-x-old\n", 4)]
         [InlineData("a\n\n> [kaon]{ws=ceb-x-old\n", 3)]
         [InlineData("a\n\n| h |\n| --- |\n| [kaon]{ws=ceb-x-old\n", 5)]
@@ -176,10 +176,10 @@ namespace SIL.TextEditing.Markdown.Tests
         }
 
         [Theory]
-        [InlineData("[[w:palit]]{guid=1\nmore\n", "{guid=1", "{guid=1}")]
+        [InlineData("[palit](/lexicon/palit){guid=1\nmore\n", "{guid=1", "{guid=1}")]
         [InlineData("[t](http://x){ws=ceb\nmore\n", "{ws=ceb", "{ws=ceb}")]
-        [InlineData("::: {style=S\nx\n:::\n", "{style=S", "{style=S}")]
-        [InlineData("{empty style=S\n", "{empty style=S", "{empty style=S}")]
+        [InlineData("::: {custom-style=S\nx\n:::\n", "{custom-style=S", "{custom-style=S}")]
+        [InlineData("[]{.empty ws=ceb\n", "{.empty ws=ceb", "{.empty ws=ceb}")]
         public void AnUnclosedBlockOfEveryKindEndsBeforeItsLineEnd(string markdown, string observed, string fix)
         {
             var d = MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics.First(x => x.Id == "fwmd.syntax.unclosed-mark");
@@ -261,7 +261,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [Fact]
         public void AQuotedValueThatLooksLikeALinkInAnEmptyMarkerRaisesNothing()
         {
-            var result = MarkdownConverter.Parse("{empty style=\"Heading 1\" v s2=\"[x](y){a,b} \" s147=mang}", Hosts.Project());
+            var result = MarkdownConverter.Parse("[]{.empty custom-style=\"Heading 1\" .v s2=\"[x](y){a,b} \" s147=mang}", Hosts.Project());
             Assert.Empty(result.Diagnostics);
             Assert.Equal("[x](y){a,b} ", result.Document.Paragraphs[0].Props.StrProps[2]);
         }

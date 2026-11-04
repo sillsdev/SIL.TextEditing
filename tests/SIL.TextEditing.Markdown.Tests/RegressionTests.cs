@@ -19,7 +19,7 @@ namespace SIL.TextEditing.Markdown.Tests
 
         [Fact]
         public void ListsSeparatedByAFenceStayTwoLists()
-            => Assert.Equal("- x\n\n::: {style=Example}\nf\n:::\n\n- y\n",
+            => Assert.Equal("- x\n\n::: {custom-style=Example}\nf\n:::\n\n- y\n",
                 RoundTrip(B.P("Bulleted List", B.En("x")), B.P("Example", B.En("f")), B.P("Bulleted List", B.En("y"))));
 
         [Fact]

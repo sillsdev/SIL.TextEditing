@@ -391,6 +391,7 @@ namespace SIL.TextEditing.Markdown.Reader
             var target = form.IsPicture ? objects.BuildPicture(form.Dest!, form.Guid, form.Caption, form.Url, form.UrlGiven, form.Tool)
                 : objects.BuildLink(form.Dest!, form.Guid, form.Url, form.UrlGiven, form.Tool, form.Name, form.Example, form.Broken);
             if (target == null) return fmt;
+            target.Source = _context.RangeOf(start, end);
             _context.AddObject(target);
             bool resolved;
             string objData;

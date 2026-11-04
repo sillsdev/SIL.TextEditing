@@ -54,7 +54,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [Fact]
         public void APipeInAQuotedAttributeValueDoesNotEndTheCell()
         {
-            var result = MarkdownConverter.Parse("| a | b |\n| --- | --- |\n| [x]{cs=\"p|q\"} | y |");
+            var result = MarkdownConverter.Parse("| a | b |\n| --- | --- |\n| [x]{custom-style=\"p|q\"} | y |");
             Assert.Empty(result.Diagnostics);
             Assert.Equal("GDR Table Row", result.Document.Paragraphs[1].Style);
             Assert.Equal("x\ty", result.Document.Paragraphs[1].Text);
@@ -86,7 +86,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("note[^1]\n\n[^1]: the note")]
         [InlineData("- [x] done\n- [ ] todo")]
         [InlineData(":smile: and :+1:")]
-        [InlineData("~~struck~~ ==marked== H~2~O x^2^ ++inserted++")]
+        [InlineData("~~struck~~ ==marked== ++inserted++")]
         [InlineData("Term\n: definition")]
         [InlineData("*[HTML]: Hyper Text Markup Language\n\nHTML")]
         [InlineData("$x^2$ and $$y$$")]

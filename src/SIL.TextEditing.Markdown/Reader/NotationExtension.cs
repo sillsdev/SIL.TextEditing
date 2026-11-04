@@ -96,6 +96,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 i++;
             }
             if (i >= limit || content.Length == 0) return false;
+            if (mark == '~' && i + 1 < limit && text[i + 1] == '~') return false;
             int end = i + 1;
             processor.Inline = new SupSubInline
             {

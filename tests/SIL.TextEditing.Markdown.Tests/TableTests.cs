@@ -13,7 +13,7 @@ namespace SIL.TextEditing.Markdown.Tests
         static string WriteAndCheck(params Paragraph[] paragraphs)
         {
             var document = B.Doc(paragraphs);
-            string markdown = MarkdownConverter.ToMarkdown(document);
+            string markdown = MarkdownConverter.ToMarkdown(document, Hosts.Project());
             var back = MarkdownConverter.Parse(markdown);
             Assert.DoesNotContain(back.Diagnostics, d => d.Severity == MarkdownSeverity.Error);
             Assert.True(MarkdownConverter.AreEquivalent(document.Paragraphs, back.Document.Paragraphs), markdown);
@@ -37,8 +37,8 @@ namespace SIL.TextEditing.Markdown.Tests
         [Fact]
         public void BracketsOpenedInOneRowAndClosedInALaterOneKeepTheTableWhole()
         {
-            string markdown = WriteAndCheck(Header("a"), Row("{v}(b["), Row("x"), Row("b]{v})"));
-            Assert.StartsWith("| a |\n| --- |\n", markdown);
+            string markdown = WriteAndCheck(Header("a"), Row("{.v}(b["), Row("x"), Row("b]{.v})"));
+            Assert.StartsWith("| a |\n|---|\n", markdown);
             Assert.DoesNotContain(":::", markdown);
         }
 
@@ -47,7 +47,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var tabInObject = B.P("GDR Table Row", B.R("en", "x\ty", objData: "\u0004http://e.org"));
             string markdown = WriteAndCheck(Header("a"), Row("b"), tabInObject, Row("c"));
-            Assert.StartsWith("| a |\n| --- |\n| b |", markdown);
+            Assert.StartsWith("| a |\n|---|\n| b |", markdown);
         }
 
         [Fact]
@@ -56,7 +56,7 @@ namespace SIL.TextEditing.Markdown.Tests
             string markdown = WriteAndCheck(Header("a"), B.P("GDR Table Row"), Row("b"), B.P("GDR Table Row"));
             Assert.DoesNotContain(":::", markdown);
             Assert.DoesNotContain("{empty", markdown);
-            Assert.Equal(1, markdown.Split('\n').Count(l => l.StartsWith("| --- |")));
+            Assert.Equal(1, markdown.Split('\n').Count(l => l.StartsWith("|---|")));
         }
 
         [Theory]
@@ -73,13 +73,13 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Equal(markdown.Split('\n')[line - 1], finding.Observed);
             Assert.Contains("delimiter row has " + delimiterCells + (delimiterCells == 1 ? " cell" : " cells"), finding.Message);
             Assert.Contains("the header has " + headerCells, finding.Message);
-            Assert.Equal("|" + string.Concat(Enumerable.Repeat(" --- |", headerCells)), finding.Replacement);
+            Assert.Equal("|" + string.Concat(Enumerable.Repeat("---|", headerCells)), finding.Replacement);
         }
 
         [Theory]
         [InlineData("| a | b |\n| --- | --- |\n| 1 | 2 |")]
         [InlineData("a | b\n--- | ---\n1 | 2")]
-        [InlineData("| a |\n| --- |\n| 1 |")]
+        [InlineData("| a |\n|---|\n| 1 |")]
         public void ADelimiterRowOfTheHeadersWidthIsNoFinding(string markdown)
             => Assert.Empty(MarkdownConverter.Parse(markdown).Diagnostics);
 
@@ -93,7 +93,7 @@ namespace SIL.TextEditing.Markdown.Tests
             paragraphs[0] = Header("a");
             for (int i = 1; i < paragraphs.Length; i++) paragraphs[i] = Row("b");
             string markdown = WriteAndCheck(paragraphs);
-            Assert.StartsWith("| a |\n| --- |\n", markdown);
+            Assert.StartsWith("| a |\n|---|\n", markdown);
         }
 
         [Trait("Size", "Large")]
@@ -104,8 +104,8 @@ namespace SIL.TextEditing.Markdown.Tests
             paragraphs[0] = Header("a");
             for (int i = 1; i < paragraphs.Length; i++) paragraphs[i] = Row("b");
             string markdown = WriteAndCheck(paragraphs);
-            Assert.DoesNotContain("| --- |", markdown);
-            Assert.StartsWith("::: {style=\"GDR Table Header\"}\na\n:::", markdown);
+            Assert.DoesNotContain("|---|", markdown);
+            Assert.StartsWith("::: {custom-style=\"GDR Table Header\"}\na\n:::", markdown);
         }
     }
 }

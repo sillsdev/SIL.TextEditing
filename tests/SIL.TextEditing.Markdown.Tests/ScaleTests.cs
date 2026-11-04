@@ -15,7 +15,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ManyFindingsAndManyEmptyMarkersAreReadInOnePass()
         {
             const int count = 20_000;
-            string text = string.Concat(Enumerable.Repeat("[x]{wss=1}\n\n", count)) + string.Concat(Enumerable.Repeat("{empty}\n\n", count));
+            string text = string.Concat(Enumerable.Repeat("[x]{wss=1}\n\n", count)) + string.Concat(Enumerable.Repeat("[]{.empty}\n\n", count));
             var result = MarkdownConverter.Parse(text);
             Assert.Equal(count, result.Diagnostics.Count(d => d.Id == "fwmd.syntax.unknown-attribute"));
             Assert.Equal(count, result.Document.Paragraphs.Count(p => p.Runs.Count == 0));
@@ -27,7 +27,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             // A quoted value that looks like a span or a link draws findings while Markdig reads the line as text; the marker is read from
             // the raw line, so they go, and only the findings of the lines around it stay.
-            string text = "[a]{wss=1}\n\n{empty s2=\"[x]{wss=2} [y]{ws=\" v}\n\n[b]{wss=3}\n\n{empty s2=\"[z](q){a,b}\"}\n\n[c]{wss=4}";
+            string text = "[a]{wss=1}\n\n[]{.empty s2=\"[x]{wss=2} [y]{ws=\" .v}\n\n[b]{wss=3}\n\n[]{.empty s2=\"[z](q){a,b}\"}\n\n[c]{wss=4}";
             var result = MarkdownConverter.Parse(text);
             Assert.Equal(new[] { 1, 5, 9 }, result.Diagnostics.Select(d => d.Line).ToArray());
             Assert.Equal(5, result.Document.Paragraphs.Count);
@@ -70,7 +70,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [Fact]
         public void ThreeThousandNestedSpansAreRead()
         {
-            var result = ParseSafely(Repeat("[", 3000) + "x" + Repeat("]{v}", 3000));
+            var result = ParseSafely(Repeat("[", 3000) + "x" + Repeat("]{.v}", 3000));
             Assert.False(result.HasErrors);
             Assert.Equal("x", AllText(result));
         }
@@ -88,7 +88,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ThreeThousandUnmatchedBracketsInAFenceLineAndATableCellAreText()
         {
             string brackets = Repeat("[", 3000);
-            var fence = ParseSafely("::: {style=S}\n" + brackets + "\n:::");
+            var fence = ParseSafely("::: {custom-style=S}\n" + brackets + "\n:::");
             Assert.Equal(brackets, AllText(fence));
             var table = ParseSafely("| a |\n| --- |\n| " + brackets + " |");
             Assert.Equal("a\n" + brackets, AllText(table));
@@ -186,7 +186,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void TenThousandEmphasesInAFenceLineAndInTheAbstractAreFindingsToo()
         {
             string line = Repeat("*a* ", 10_000).TrimEnd();
-            var fence = ParseSafely("::: {style=S}\n" + line + "\n:::");
+            var fence = ParseSafely("::: {custom-style=S}\n" + line + "\n:::");
             var finding = Assert.Single(fence.Diagnostics, d => d.Id == MarkdownDiagnosticIds.TooDeep);
             Assert.Equal(2, finding.Line);
             Assert.Equal(line, AllText(fence));
@@ -199,8 +199,8 @@ namespace SIL.TextEditing.Markdown.Tests
         static void AssertWritesAndReadsBack(params Paragraph[] paragraphs)
         {
             var document = B.Doc(paragraphs);
-            string markdown = OnSmallStack(() => MarkdownConverter.ToMarkdown(document));
-            var back = OnSmallStack(() => MarkdownConverter.Parse(markdown));
+            string markdown = OnSmallStack(() => MarkdownConverter.ToMarkdown(document, Hosts.Project()));
+            var back = OnSmallStack(() => MarkdownConverter.Parse(markdown, Hosts.Project()));
             Assert.DoesNotContain(back.Diagnostics, d => d.Severity == MarkdownSeverity.Error);
             Assert.True(MarkdownConverter.AreEquivalent(document.Paragraphs, back.Document.Paragraphs));
         }
@@ -208,7 +208,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [Trait("Size", "Large")]
         [Fact]
         public void TextOfThreeThousandBracketsAroundASpanClosingIsWrittenAndReadsBack()
-            => AssertWritesAndReadsBack(B.Plain(Repeat("[", 3000) + "x" + Repeat("]{v}", 3000)));
+            => AssertWritesAndReadsBack(B.Plain(Repeat("[", 3000) + "x" + Repeat("]{.v}", 3000)));
 
         [Trait("Size", "Large")]
         [Fact]
@@ -247,7 +247,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [Fact]
         public void TwentyThousandRunsInOneParagraphWithoutMarksAreRead()
         {
-            string text = Repeat("[a]{v} b ", 10_000);
+            string text = Repeat("[a]{.v} b ", 10_000);
             var result = ParseSafely(text);
             Assert.False(result.HasErrors);
         }
