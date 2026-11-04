@@ -646,9 +646,14 @@ namespace SIL.TextEditing.Avalonia
         /// <see cref="DocumentEditor.KeptParagraph"/>) and refuses when the line limit would hide text or the new line itself.</summary>
         bool BreakWouldBeHidden()
         {
+            // The survivor's line limit decides; an unlimited paragraph can hide nothing, so skip the scratch editor and layout.
+            var a = Editor.Anchor;
+            var b = Editor.Caret;
+            if (a.Paragraph > b.Paragraph || (a.Paragraph == b.Paragraph && a.Offset > b.Offset)) (a, b) = (b, a);
+            int survivor = Editor.KeptParagraph(a, b);
+            if (ParagraphLayout.ResolveFormat(Editor.Document.Paragraphs[survivor], WritingSystems, _styles).MaxLines <= 0) return false;
             var result = Editor.PreviewLineBreak(out int kept);
             if (result == null) return false;
-            if (ParagraphLayout.ResolveFormat(result, WritingSystems, _styles).MaxLines <= 0) return false;
             double above = kept > 0 ? FormatOf(kept - 1).SpaceAfter : 0;
             using var layout = ParagraphLayout.Build(result, _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, -1, null, null, _styles, LabelOf(kept), above);
             return layout.Truncated || layout.HiddenTrailingBreak;
