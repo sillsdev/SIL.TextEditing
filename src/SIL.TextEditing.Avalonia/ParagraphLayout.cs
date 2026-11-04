@@ -1493,7 +1493,24 @@ namespace SIL.TextEditing.Avalonia
             int max = TextEnd(li);
             bool last = li == Lines[Lines.Count - 1];
             var caretHit = h;
-            if (e > max) { e = max; caretHit = new CharacterHit(e); }
+            if (e > max || (h.FirstCharacterIndex >= max && li.End > max))
+            {
+                // The click is on the break the line ends in (or past it), beyond its text. The break stands at the line's end in the paragraph's direction, so
+                // the caret goes to the visual end of the line there, which is not the logical end when the line ends in a run of the other
+                // direction ("abc" and then Arabic: the Arabic run's logical end is at its left).
+                e = max;
+                caretHit = new CharacterHit(e);
+                if (li.Length > 0)
+                {
+                    var stops = VisualStops(li);
+                    if (stops.Count > 0)
+                    {
+                        var edge = Rtl ? stops[0] : stops[stops.Count - 1];
+                        e = edge.Offset;
+                        caretHit = edge.Hit;
+                    }
+                }
+            }
             if (!last && e == max && max > li.Start) caretHit = TrailingHit(max);
             if (e <= max && PreeditAt < 0) HangingCaretAt(li, point.X, last, max, h.FirstCharacterIndex, ref e, ref caretHit);
             int ch =Math.Max(0, Math.Min(Math.Max(0, EffectiveText.Length - 1), h.FirstCharacterIndex));
