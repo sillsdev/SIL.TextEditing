@@ -22,7 +22,7 @@ namespace SIL.TextEditing.Markdown.Tests
 
         [Theory]
         [InlineData("[x]{}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{ws}", "gdr.syntax.malformed-attribute")]
+        [InlineData("[x]{ws}", "gdr.syntax.unknown-attribute")]
         [InlineData("[x]{ws=}", "gdr.syntax.malformed-attribute")]
         [InlineData("[x]{=a}", "gdr.syntax.malformed-attribute")]
         [InlineData("[x]{1a=b}", "gdr.syntax.malformed-attribute")]
@@ -36,7 +36,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("[x]{", "gdr.syntax.unclosed-mark")]
         [InlineData("[x]{Bold=on}", "gdr.syntax.unknown-attribute")]
         [InlineData("[x]{bold=on bold=off}", "gdr.syntax.duplicate-attribute")]
-        [InlineData("[x]{v ws=ceb}", "gdr.syntax.malformed-attribute")]
+        [InlineData("[x]{v ws=ceb}", "gdr.syntax.duplicate-attribute")]
         [InlineData("[x]{cs=A cs=B}", "gdr.syntax.duplicate-attribute")]
         [InlineData("[x]{style=x}", "gdr.syntax.unknown-attribute")]
         [InlineData("[x]{fontsize=big}", "gdr.syntax.malformed-attribute")]
@@ -105,6 +105,47 @@ namespace SIL.TextEditing.Markdown.Tests
                 }
             }
         }
+
+        // gdr.syntax.malformed-attribute is not in the spec's table. What the table has an id for uses it; the rest keeps the added id.
+        [Theory]
+        [InlineData("[x]{v=1}")]
+        [InlineData("[x]{broken=1}")]
+        [InlineData("[x]{ws}")]
+        [InlineData("[x]{cs}")]
+        [InlineData("[x]{link}")]
+        [InlineData("[x]{bold}")]
+        [InlineData("[x]{p3}")]
+        [InlineData("[x]{s2}")]
+        public void AKeyWrittenAsAFlagOrAFlagWrittenWithAValueIsAnUnknownAttribute(string markdown)
+        {
+            var d = Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics);
+            Assert.Equal("gdr.syntax.unknown-attribute", d.Id);
+            Assert.Equal(MarkdownSeverity.Error, d.Severity);
+        }
+
+        [Theory]
+        [InlineData("[x]{v ws=ceb}", "v")]
+        [InlineData("[x]{ws=ceb v}", "v")]
+        [InlineData("{empty v ws=ceb}", "v")]
+        public void VAndWsTogetherNameTheWritingSystemTwice(string markdown, string observed)
+        {
+            var d = Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics);
+            Assert.Equal("gdr.syntax.duplicate-attribute", d.Id);
+            Assert.Equal(observed, d.Observed);
+        }
+
+        [Theory]
+        [InlineData("[x]{}")]
+        [InlineData("[x]{ws=}")]
+        [InlineData("[x]{1a=b}")]
+        [InlineData("[x]{s2=\"a\\q\"}")]
+        [InlineData("[x]{bold=maybe}")]
+        [InlineData("[x]{fontsize=big}")]
+        [InlineData("[x]{guid=nope}")]
+        [InlineData("[x]{link=nocolon}")]
+        [InlineData("[x]{fontsizeUnit=rel}")]
+        public void AGrammarErrorOrAValueThatDoesNotFitItsKeyKeepsTheAddedId(string markdown)
+            => Assert.Contains(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics, d => d.Id == "gdr.syntax.malformed-attribute");
 
         [Fact]
         public void EveryStringPropertyRoundTripsThroughTheNotation()

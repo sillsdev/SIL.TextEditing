@@ -258,13 +258,17 @@ namespace SIL.TextEditing.Markdown.Reader
                     case "tool" when !item.IsFlag: form.Tool = item.Value; form.IsInternal = true; break;
                     case "s6" when !item.IsFlag: if (s6Item != null) Duplicate(item); s6Item = s6Item ?? item; break;
                     case "s133" when !item.IsFlag: s133Item = item; handled = false; break;
-                    case "ws" or "cs" or "link" or "guid" or "tool" or "url" or "s6": Malformed(item, "'" + item.Key + "' needs a value"); break;
-                    case "v" or "broken": Malformed(item, "'" + item.Key + "' is a flag and takes no value"); break;
+                    case "ws" or "cs" or "link" or "guid" or "tool" or "url" or "s6":
+                        _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'" + item.Key + "' is not a flag; it takes a value: " + item.Key + "=...", Abs(item.Start), Abs(item.End));
+                        break;
+                    case "v" or "broken":
+                        _context.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'" + item.Key + "' is a flag and takes no value: write " + item.Key + " alone.", Abs(item.Start), Abs(item.End));
+                        break;
                     default: handled = false; break;
                 }
                 if (!handled) rest.Add(item);
             }
-            if (wsItem != null && vItem != null) Malformed(vItem, "v and ws both name the writing system. Keep one.");
+            if (wsItem != null && vItem != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "v and ws both name the writing system. Keep one.", Abs(vItem.Start), Abs(vItem.End));
             if (wsItem != null)
             {
                 fmt.Ws = wsItem.Value!;

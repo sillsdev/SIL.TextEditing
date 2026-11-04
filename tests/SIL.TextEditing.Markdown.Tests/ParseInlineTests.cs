@@ -255,7 +255,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AFlagThatIsNotKnownIsReported() => Assert.Contains("gdr.syntax.unknown-attribute", Ids("[x]{nope}"));
 
         [Fact]
-        public void AKeyThatNeedsAValueIsMalformedAsAFlag() => Assert.Contains("gdr.syntax.malformed-attribute", Ids("[x]{bold}"));
+        public void AKeyThatNeedsAValueIsNotAKnownFlag() => Assert.Contains("gdr.syntax.unknown-attribute", Ids("[x]{bold}"));
 
         [Fact]
         public void AQuotedValueMayHoldBraceSpacePipeAndEquals()

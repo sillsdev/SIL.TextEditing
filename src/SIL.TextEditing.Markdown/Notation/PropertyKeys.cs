@@ -266,7 +266,7 @@ namespace SIL.TextEditing.Markdown.Notation
                 if (ByKey.TryGetValue(item.Key, out var def))
                 {
                     used.Add(item);
-                    if (item.IsFlag) { Malformed(issues, item, "'" + item.Key + "' needs a value"); continue; }
+                    if (item.IsFlag) { NeedsValue(issues, item); continue; }
                     ApplyNamed(def, item, seen, used, bag, issues, assignedInts, assignedStrs);
                     continue;
                 }
@@ -274,14 +274,14 @@ namespace SIL.TextEditing.Markdown.Notation
                 if (TryNumbered(item.Key, 'p', out number))
                 {
                     used.Add(item);
-                    if (item.IsFlag) { Malformed(issues, item, "'" + item.Key + "' needs a value"); continue; }
+                    if (item.IsFlag) { NeedsValue(issues, item); continue; }
                     ApplyNumberedInt(number, item, bag, issues, assignedInts);
                     continue;
                 }
                 if (TryNumbered(item.Key, 's', out number))
                 {
                     used.Add(item);
-                    if (item.IsFlag) { Malformed(issues, item, "'" + item.Key + "' needs a value"); continue; }
+                    if (item.IsFlag) { NeedsValue(issues, item); continue; }
                     if (!assignedStrs.Add(number)) { Duplicate(issues, item); continue; }
                     if (!KnownStrings.Contains(number))
                         issues.Report(MarkdownDiagnosticIds.PropUnknownNumber, MarkdownSeverity.Warning, "s" + Int(number) + " is not a known string property; it is kept as written.", item);
@@ -327,6 +327,10 @@ namespace SIL.TextEditing.Markdown.Notation
             for (int i = 1; i < key.Length; i++) if (key[i] < '0' || key[i] > '9') return false;
             return int.TryParse(key.Substring(1), NumberStyles.None, CultureInfo.InvariantCulture, out number);
         }
+
+        /// <summary>A key written as a bare word is not a flag the grammar knows (spec 3.3: the flags are v and broken).</summary>
+        static void NeedsValue(IAttrIssues issues, AttrItem item)
+            => issues.Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, "'" + item.Key + "' is not a flag; it takes a value: " + item.Key + "=...", item);
 
         static void Malformed(IAttrIssues issues, AttrItem item, string message) => issues.Report(MarkdownDiagnosticIds.MalformedAttribute, MarkdownSeverity.Error, message, item);
         static void Duplicate(IAttrIssues issues, AttrItem item) => issues.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "'" + item.Key + "' sets a property that is already set. Keep one.", item);

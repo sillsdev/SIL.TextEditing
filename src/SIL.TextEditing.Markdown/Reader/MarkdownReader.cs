@@ -666,7 +666,7 @@ namespace SIL.TextEditing.Markdown.Reader
             props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
             if (isEmpty)
             {
-                if (wsItem != null && vItem != null) _context.Report(MarkdownDiagnosticIds.MalformedAttribute, MarkdownSeverity.Error, "v and ws both name the writing system. Keep one.", vItem.Start, vItem.End);
+                if (wsItem != null && vItem != null) _context.Report(MarkdownDiagnosticIds.DuplicateAttribute, MarkdownSeverity.Error, "v and ws both name the writing system. Keep one.", vItem.Start, vItem.End);
                 if (wsItem != null)
                 {
                     defaultWs = wsItem.Value;

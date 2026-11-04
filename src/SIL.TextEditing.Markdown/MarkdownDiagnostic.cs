@@ -98,7 +98,7 @@ namespace SIL.TextEditing.Markdown
         public const string UnknownAttribute = "gdr.syntax.unknown-attribute";
         public const string DuplicateAttribute = "gdr.syntax.duplicate-attribute";
         public const string UnsupportedMarkup = "gdr.syntax.unsupported-markup";
-        /// <summary>Added: an attribute block that breaks the grammar of spec 3.3, or a value that does not fit its key.</summary>
+        /// <summary>Added: an attribute block that breaks the grammar of spec 3.3 (an empty block, a bad character or escape), a value that does not fit its key, or text after the block of a ::: line. A key written as a flag is <see cref="UnknownAttribute"/>, and v with ws is <see cref="DuplicateAttribute"/>; the spec has no id for the rest.</summary>
         public const string MalformedAttribute = "gdr.syntax.malformed-attribute";
         /// <summary>Added: a block, line or table too deeply nested or too large for the parser (Markdig's limit). Its lines are kept as plain text.</summary>
         public const string TooDeep = "gdr.syntax.too-deep";
