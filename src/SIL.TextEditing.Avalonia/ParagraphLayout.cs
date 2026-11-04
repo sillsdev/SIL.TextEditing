@@ -1101,7 +1101,7 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Sets the spelling marks drawn under the text, in model offsets: red for a misspelled or embedded word, blue for a word the
         /// dictionary cannot judge. Replaces the earlier marks; null or empty clears them. A mark that an input method's text sits inside is
-        /// not drawn.</summary>
+        /// not drawn, and no mark is drawn under the composing text.</summary>
         internal void SetSpellingMarks(IReadOnlyList<SpellingMark>? marks)
         {
             _spelling.Clear();
@@ -1109,7 +1109,9 @@ namespace SIL.TextEditing.Avalonia
             foreach (var m in marks)
             {
                 if (PreeditAt >= 0 && m.Start < PreeditAt && m.End > PreeditAt) continue;
-                _spelling.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(ToEffective(m.Start), new KeyValuePair<int, IBrush>(ToEffective(m.End), m.Problem == SpellingProblem.Mixed ? Brushes.Blue : Brushes.Red)));
+                // A mark that starts where the composing text is inserted starts after it; one that ends there ends before it.
+                int start = PreeditAt >= 0 && m.Start >= PreeditAt ? m.Start + PreeditLength : m.Start;
+                _spelling.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(start, new KeyValuePair<int, IBrush>(ToEffective(m.End), m.Problem == SpellingProblem.Mixed ? Brushes.Blue : Brushes.Red)));
             }
         }
 

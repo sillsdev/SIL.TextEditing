@@ -49,7 +49,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         public void Setting_the_host_asks_for_idle_time_once_and_the_idle_work_steps_until_everything_is_checked() => Headless.Run(() =>
         {
             var posts = new List<Action>();
-            var f = Fixtures.Field(Doc3());
+            var (window, f) = Fixtures.InWindow(Doc3());
             f.SpellIdlePost = posts.Add;
             f.SpellChecking = Host();
             Assert.Single(posts);
@@ -66,13 +66,14 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(3, runs);
             Assert.True(f.IsSpellingComplete);
             Assert.Equal(new[] { "saat" }, Words(f, 0));
+            window.Close();
         });
 
         [Fact]
         public void Without_a_host_or_with_the_host_removed_there_are_no_marks_and_no_idle_work() => Headless.Run(() =>
         {
             var posts = new List<Action>();
-            var f = Fixtures.Field(Doc3());
+            var (window, f) = Fixtures.InWindow(Doc3());
             f.SpellIdlePost = posts.Add;
             Assert.Empty(posts);
             Assert.True(f.IsSpellingComplete);
@@ -82,6 +83,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             f.SpellChecking = null;
             Assert.Empty(f.SpellingMarks(0));
             Assert.True(f.IsSpellingComplete);
+            window.Close();
         });
 
         [Fact]

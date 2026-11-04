@@ -329,6 +329,7 @@ namespace SIL.TextEditing.Avalonia
             if (Math.Abs(w - _layoutWidth) > 0.5)
             {
                 _layoutWidth = w;
+                ForgetLimitedSpelling();   // where a line limit cuts the text moves with the width
                 for (int i = 0; i < _layouts.Count; i++)
                 {
                     _layouts[i]?.Dispose();
