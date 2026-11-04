@@ -310,52 +310,22 @@ namespace SIL.TextEditing.Tests
             // Counted, not timed (the probe fires once per run looked at): a point inside one locked run among 20,000 runs finds its
             // neighbours after a few runs, and a stretch of six locked runs costs about as many runs as the way out of it.
             var one = ManyRuns(20000, 10000, 1);
-            one.NearestEditable(new TextPosition(0, 20001));   // indexes the paragraph once
             int asked = 0;
             one.EditableAtProbe = () => asked++;
             Assert.Equal(new TextPosition(0, 20000), one.NearestEditable(new TextPosition(0, 20001)));   // the middle of the locked run: back wins the tie
-            Assert.True(asked <= 30, asked + " runs looked at");
+            Assert.True(asked <= 12, asked + " runs looked at");
 
             var six = ManyRuns(20000, 10000, 6);
-            six.NearestEditable(new TextPosition(0, 20001));
             asked = 0;
             six.EditableAtProbe = () => asked++;
             var at = new TextPosition(0, 20000 + 2 * 3 + 1);                                            // the middle of the stretch
             var found = six.NearestEditable(at);
             Assert.True(found.Offset == 20000 || found.Offset == 20000 + 12, found.ToString());
-            Assert.True(asked <= 45, asked + " runs looked at");
+            Assert.True(asked <= 30, asked + " runs looked at");
 
             asked = 0;
             Assert.Equal(new TextPosition(0, 5), one.NearestEditable(new TextPosition(0, 5)));           // already editable: asked once
             Assert.True(asked <= 2);
-        }
-
-        [Fact]
-        public void NearestEditable_finds_the_run_at_the_point_without_adding_up_the_runs_before_it()
-        {
-            // The first call may index the paragraph (one look at each run, once); after that a point deep in a 20,000-run paragraph
-            // costs a binary search, a few dozen looks, however many runs come before it.
-            var e = ManyRuns(20000, 19000, 1);
-            var at = new TextPosition(0, 19000 * 2 + 1);
-            Assert.Equal(new TextPosition(0, 38000), e.NearestEditable(at));
-            int asked = 0;
-            e.EditableAtProbe = () => asked++;
-            for (int i = 0; i < 20; i++) Assert.Equal(new TextPosition(0, 38000), e.NearestEditable(at));
-            Assert.True(asked <= 20 * 40, asked + " runs looked at over 20 calls");
-        }
-
-        [Fact]
-        public void The_run_index_follows_edits_to_the_runs_made_directly_and_through_the_paragraph()
-        {
-            var e = ManyRuns(50, 20, 1);
-            var para = e.Document.Paragraphs[0];
-            Assert.Equal(new TextPosition(0, 40), e.NearestEditable(new TextPosition(0, 41)));
-            para.Runs[3].Text = "abcdefgh";                      // a host changes a run's text directly: everything after it moves by six
-            Assert.Equal(new TextPosition(0, 46), e.NearestEditable(new TextPosition(0, 47)));
-            para.Runs.RemoveAt(0);                               // and removes a run
-            Assert.Equal(new TextPosition(0, 44), e.NearestEditable(new TextPosition(0, 45)));
-            para.Insert(0, "xyz", "en", null);                   // an edit through the paragraph
-            Assert.Equal(new TextPosition(0, 47), e.NearestEditable(new TextPosition(0, 48)));
         }
         /// <summary>What NearestEditable answers, worked out the slow way: ask every insertion point up to the visible end.</summary>
         static TextPosition ByAskingEveryPoint(DocumentEditor e, TextPosition p, int direction, int visibleEnd)

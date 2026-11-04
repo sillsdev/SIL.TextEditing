@@ -19,59 +19,7 @@ namespace SIL.TextEditing
         /// <summary>The paragraph's own text properties (an ITsString paragraph's StyleRules), opaque like a run's bag: copied through
         /// every split, join and slice, never interpreted. <see cref="Style"/> and <see cref="Rtl"/> are the two the field reads.</summary>
         public PropertyBag Props { get; set; } = new PropertyBag();
-        List<Run> _runs = new List<Run>();
-        int[]? _runStarts;
-        List<Run>? _runStartsFor;
-
-        public List<Run> Runs
-        {
-            get => _runs;
-            set { _runs = value; _runStarts = null; }
-        }
-
-        /// <summary>The run that holds the character at <paramref name="offset"/> (the first run that ends after it), found by binary
-        /// search over cached run starts instead of adding up lengths from the start of the paragraph; <paramref name="index"/> is
-        /// the run count and <paramref name="start"/> the paragraph length when there is none. The cache is dropped by every
-        /// change this class makes to the runs and checked against the runs it finds, so a host that edits <see cref="Runs"/> or a
-        /// run's text directly is still answered correctly (the cache is rebuilt when it no longer fits). <paramref name="probe"/> is
-        /// called once per run the work touches, so a test can count it.</summary>
-        internal void RunIndexAt(int offset, out int index, out int start, Action? probe)
-        {
-            var runs = _runs;
-            var starts = _runStarts;
-            if (starts == null || !ReferenceEquals(_runStartsFor, runs) || starts.Length != runs.Count + 1) starts = BuildRunStarts(probe);
-            for (int attempt = 0; ; attempt++)
-            {
-                int lo = 0, hi = runs.Count;
-                while (lo < hi)
-                {
-                    probe?.Invoke();
-                    int mid = (lo + hi) >> 1;
-                    if (starts[mid + 1] > offset) hi = mid; else lo = mid + 1;
-                }
-                bool fits = lo == runs.Count
-                    ? starts[lo] == (lo == 0 ? 0 : starts[lo - 1] + runs[lo - 1].Text.Length)
-                    : starts[lo + 1] - starts[lo] == runs[lo].Text.Length && (lo == 0 ? starts[0] == 0 : starts[lo] - starts[lo - 1] == runs[lo - 1].Text.Length);
-                if (fits || attempt > 0) { index = lo; start = starts[lo]; return; }
-                starts = BuildRunStarts(probe);
-            }
-        }
-
-        int[] BuildRunStarts(Action? probe)
-        {
-            var starts = new int[_runs.Count + 1];
-            int pos = 0;
-            for (int i = 0; i < _runs.Count; i++)
-            {
-                probe?.Invoke();
-                starts[i] = pos;
-                pos += _runs[i].Text.Length;
-            }
-            starts[_runs.Count] = pos;
-            _runStarts = starts;
-            _runStartsFor = _runs;
-            return starts;
-        }
+        public List<Run> Runs { get; set; } = new List<Run>();
 
         public int Length
         {
@@ -140,7 +88,6 @@ namespace SIL.TextEditing
         /// the run that now starts there.</summary>
         public int SplitRunAt(int offset)
         {
-            _runStarts = null;
             int pos = 0;
             for (int i = 0; i < Runs.Count; i++)
             {
@@ -162,7 +109,6 @@ namespace SIL.TextEditing
         /// <summary>Drops empty runs and merges neighbours of the same format.</summary>
         public void Normalize()
         {
-            _runStarts = null;
             // One forward pass: drop empty runs and merge neighbours of the same format. A chain of merges is built in a string
             // builder, so a paragraph of thousands of runs that merge into one stays linear.
             var result = new List<Run>(Runs.Count);
