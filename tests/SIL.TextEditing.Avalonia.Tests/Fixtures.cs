@@ -49,7 +49,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         }
 
         /// <summary>The field drawn on a white page, as pixels.</summary>
-        public static Shot Render(RichTextField field) => new Shot(field);
+        public static Shot Render(RichTextField field, double scale = 1) => new Shot(field, scale);
 
         /// <summary>A rendered field, readable by pixel.</summary>
         public sealed class Shot
@@ -57,12 +57,12 @@ namespace SIL.TextEditing.Avalonia.Tests
             readonly byte[] _buffer;
             readonly int _stride;
 
-            public Shot(Control control)
+            public Shot(Control control, double scale = 1)
             {
-                var size = new PixelSize((int)Math.Ceiling(control.Bounds.Width), (int)Math.Ceiling(control.Bounds.Height));
+                var size = new PixelSize((int)Math.Ceiling(control.Bounds.Width * scale), (int)Math.Ceiling(control.Bounds.Height * scale));
                 Width = size.Width;
                 Height = size.Height;
-                using (var bitmap = new RenderTargetBitmap(size))
+                using (var bitmap = new RenderTargetBitmap(size, new Vector(96 * scale, 96 * scale)))
                 {
                     bitmap.Render(control);
                     _stride = size.Width * 4;
@@ -82,6 +82,16 @@ namespace SIL.TextEditing.Avalonia.Tests
                 if (x < 0 || y < 0 || x >= Width || y >= Height) return false;
                 int o = y * _stride + x * 4;
                 return _buffer[o + 3] > 128 && _buffer[o] < threshold && _buffer[o + 1] < threshold && _buffer[o + 2] < threshold;
+            }
+
+            /// <summary>The colour of a pixel (premultiplied alpha undone), or transparent outside the shot.</summary>
+            public Color Pixel(int x, int y)
+            {
+                if (x < 0 || y < 0 || x >= Width || y >= Height) return Colors.Transparent;
+                int o = y * _stride + x * 4;
+                byte a = _buffer[o + 3];
+                if (a == 0) return Colors.Transparent;
+                return Color.FromArgb(a, (byte)Math.Min(255, _buffer[o + 2] * 255 / a), (byte)Math.Min(255, _buffer[o + 1] * 255 / a), (byte)Math.Min(255, _buffer[o] * 255 / a));
             }
 
             /// <summary>True when the pixel was drawn on at all (it is not transparent).</summary>

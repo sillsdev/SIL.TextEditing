@@ -123,11 +123,11 @@ namespace SIL.TextEditing.Avalonia.Tests
             f.Editor.SetCaret(new TextPosition(0, at - 1));
             f.Press(rtl ? Key.Left : Key.Right);
             Assert.Equal(at, f.Editor.Caret.Offset);
-            Assert.Equal(trailingBefore, f.CaretRect().X, 1);
+            Assert.Equal(System.Math.Min(trailingBefore, 520 - ParagraphLayout.CaretWidth), f.CaretRect().X, 1);   // a caret at the edge of the control is held inside it
             f.Editor.SetCaret(new TextPosition(0, at + 1));
             f.Press(rtl ? Key.Right : Key.Left);
             Assert.Equal(at, f.Editor.Caret.Offset);
-            Assert.Equal(leadingAfter, f.CaretRect().X, 1);
+            Assert.Equal(System.Math.Min(leadingAfter, 520 - ParagraphLayout.CaretWidth), f.CaretRect().X, 1);
         });
 
         [Theory]
