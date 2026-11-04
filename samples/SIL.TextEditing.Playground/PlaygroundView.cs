@@ -479,6 +479,22 @@ namespace SIL.TextEditing.Playground
             Add("Cut", field.Editor.HasSelection && field.Editor.CanEdit, () => ClipboardIdle = CopyAsync(true));
             Add("Copy", field.Editor.HasSelection, () => ClipboardIdle = CopyAsync(false));
             Add("Paste", field.Editor.CanEdit, () => ClipboardIdle = PasteAsync());
+            var copyAs = new MenuItem { Header = CopyAsCaption, IsEnabled = field.Editor.HasSelection };
+            var copyAsItems = new List<Control>();
+            void AddCopyAs(string caption, bool enabled, string? formId)
+            {
+                var item = new MenuItem { Header = caption, IsEnabled = enabled };
+                if (formId != null) item.Click += (s, a) => ClipboardIdle = CopyAsAsync(formId);
+                copyAsItems.Add(item);
+                LastCopyAsItems.Add(caption);
+            }
+            LastCopyAsItems.Clear();
+            AddCopyAs("Plain text", true, ClipboardForms.PlainTextId);
+            foreach (var form in field.ClipboardForms.CopyAsForms) AddCopyAs(form.DisplayName, true, form.Id);
+            if (field.ClipboardForms.Find(ClipboardForms.FieldWorksMarkdownId) == null) AddCopyAs("FieldWorks Markdown (no converter registered)", false, null);
+            copyAs.ItemsSource = copyAsItems;
+            items.Add(copyAs);
+            captions.Add(CopyAsCaption);
             LastContextMenuItems = captions;
             Log("context menu (" + e.Trigger + ") at " + e.Position.X.ToString("0", CultureInfo.InvariantCulture) + "," + e.Position.Y.ToString("0", CultureInfo.InvariantCulture)
                 + ": word " + (info.Word.Length == 0 ? "none" : "\"" + info.Word + "\" " + info.WordRange)
@@ -561,6 +577,12 @@ namespace SIL.TextEditing.Playground
                 PreferredWidth = many ? 300 : 500,
                 Margin = new Thickness(many ? 2 : 6),
             };
+            // The playground has no liblcm and no Markdown converter, so its one rich clipboard form is the field's debug dump
+            // (a real host registers TsString and FieldWorks Markdown, ADR 0029).
+            var dump = new InterchangeClipboardForm();
+            field.ClipboardForms.Add(dump).PasteOrder.Insert(0, dump.Id);
+            field.WritingSystemsMapped += (o, mapped) => Log("clipboard: notice, writing system(s) " + string.Join(", ", mapped.Missing.Select(m => m.Length == 0 ? "(none)" : m))
+                + " are not in this project; pasted text is now " + mapped.Target);
             global::Avalonia.Automation.AutomationProperties.SetName(field, many ? "Text field " + number.ToString(CultureInfo.InvariantCulture) : "Text field");
             var session = new Session(field, number);
             session.Undo.Attach(field.Editor);
@@ -889,6 +911,27 @@ namespace SIL.TextEditing.Playground
             Log("picture inserted at " + editor.Caret);
         }
 
+        /// <summary>The caption of the "Copy as" submenu in the context menu.</summary>
+        public const string CopyAsCaption = "Copy as ▸";
+
+        /// <summary>The captions in the "Copy as" submenu the last time the context menu was shown.</summary>
+        public List<string> LastCopyAsItems { get; } = new List<string>();
+
+        /// <summary>Copy as: one form on the clipboard as text (a registered form's id, or <see cref="ClipboardForms.PlainTextId"/>).</summary>
+        public async Task CopyAsAsync(string formId)
+        {
+            var field = _active.Field;
+            try
+            {
+                bool done = await field.CopyAsAsync(formId);
+                Log("clipboard: " + (done ? "copied as " + formId : "copy as " + formId + " ignored, nothing to copy"));
+            }
+            catch (Exception ex)
+            {
+                Log("clipboard: copy as " + formId + " failed: " + ex.Message);
+            }
+        }
+
         public async Task CopyAsync(bool cut)
         {
             var field = _active.Field;
@@ -902,7 +945,7 @@ namespace SIL.TextEditing.Playground
             try
             {
                 await field.CopyAsync(cut);
-                Log("clipboard: " + (cut ? "cut " : "copied ") + fragment.Count + " paragraph(s), " + chars + " chars, as " + Interchange.ClipboardFormat + " and plain text");
+                Log("clipboard: " + (cut ? "cut " : "copied ") + fragment.Count + " paragraph(s), " + chars + " chars, as " + string.Join(", ", field.ClipboardForms.Select(f => f.Id).Concat(new[] { "plain text" })));
             }
             catch (Exception ex)
             {

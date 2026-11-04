@@ -77,5 +77,50 @@ namespace SIL.TextEditing.LCModel.Tests
             Assert.Equal("e\u0301cole\u0301 a\u0300", fragment[0].Text);
             Assert.Equal(Dump(Mixed()), Dump(TsStringConversion.ToTsString(fragment[1], H)));
         }
+
+        [Fact]
+        public void The_form_writes_TsString_xml_with_FieldWorks_separator_and_pastes_one_paragraph()
+        {
+            var form = new TsStringClipboardForm(H);
+            Assert.Equal("TsString", form.Id);
+            Assert.Equal(TsStringClipboard.FormatName, form.FormatName);
+            Assert.False(form.OffersCopyAs);
+            var doc = TsStringConversion.ToDocument(new[] { new TextParagraph(null, Nfd(), null), new TextParagraph(null, Fr2(), null) }, H);
+            var xml = form.Write(doc.Paragraphs)!;
+            Assert.Contains("<Str", xml);
+            var pasted = Assert.Single(form.Read(xml)!);
+            Assert.Equal("e\u0301cole\u0301 a\u0300; deux", pasted.Text);
+        }
+
+        [Fact]
+        public void The_form_can_split_a_pasted_string_and_refuses_text_that_is_not_TsString()
+        {
+            var form = new TsStringClipboardForm(H) { WriteParagraphSeparator = "\n", PasteParagraphSeparator = "\n" };
+            var doc = TsStringConversion.ToDocument(new[] { new TextParagraph(null, Nfd(), null), new TextParagraph(null, Fr2(), null) }, H);
+            Assert.Equal(2, form.Read(form.Write(doc.Paragraphs)!)!.Count);
+            Assert.Null(form.Read("just some text"));
+            Assert.Null(form.Write(new System.Collections.Generic.List<Paragraph>()));
+        }
+
+        sealed class WideHandles : IWritingSystemHandles
+        {
+            public int GetHandle(string wsId) => wsId == "xx" ? 9 : Handles.Instance.GetHandle(wsId);
+            public string GetId(int handle) => handle == 9 ? "xx" : Handles.Instance.GetId(handle);
+        }
+
+        [Fact]
+        public void A_writing_system_the_host_does_not_know_keeps_its_id_so_the_field_can_map_it()
+        {
+            var wide = new WideHandles();
+            var xml = new TsStringClipboardForm(wide).Write(TsStringConversion.ToDocument(new[]
+            {
+                new TextParagraph(null, Build(("known ", Props(Handles.Fr)), ("stranger", Props(9))), null),
+            }, wide).Paragraphs)!;
+            var fragment = new TsStringClipboardForm(H).Read(xml)!;
+            Assert.Equal(new[] { "fr", "xx" }, fragment[0].Runs.Select(r => r.Ws).ToArray());
+            var mapping = ClipboardWritingSystems.MapMissing(fragment, ws => ws == "fr", "en");
+            Assert.Equal(new[] { "xx" }, mapping.Missing.ToArray());
+            Assert.Equal(new[] { "fr", "en" }, fragment[0].Runs.Select(r => r.Ws).ToArray());
+        }
     }
 }

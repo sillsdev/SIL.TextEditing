@@ -143,8 +143,8 @@ are not tab stops (click them).
 
 ## 8. Clipboard with other applications (all hosts)
 
-The playground copies two formats: the library's `SIL.TextEditing.Runs.v1` (runs, writing systems and properties) and
-plain text.
+The playground copies two forms: the field's debug dump (`SIL.TextEditing.Runs.v1`, runs, writing systems and properties, registered
+only by the playground and the tests) and plain text. A FieldWorks host also copies TsString and FieldWorks Markdown (ADR 0029).
 
 | # | Steps | Expected | D10 | D48 | W48 | Notes |
 |---|---|---|---|---|---|---|
@@ -155,6 +155,7 @@ plain text.
 | 8.5 | *Unknown properties*: copy a run with 9001/9002/9003, paste it into another paragraph. | The properties come with the text, unchanged. | | | | |
 | 8.6 | Copy in one host window, paste in another (run `run desktop10` and `run desktop48`). | The runs and properties arrive. | | | | |
 | 8.7 | Cut with a selection across paragraphs, then Undo. | The text and paragraph keys return. | | | | |
+| 8.9 | Select text, right-click, open *Copy as*, choose *Plain text*, paste into Notepad, then Paste in the field. | Notepad gets the text; the field pastes it as one run in the active writing system, with no formatting. | | | | |
 | 8.8 | From a FieldWorks build, if you have one: copy styled text out of a FieldWorks field, paste here, and the reverse. | Record what arrives; FieldWorks does not read our format yet. | | | | |
 
 ## 9. Look and feel (all hosts)

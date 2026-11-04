@@ -14,9 +14,9 @@ change, and the list under "Known gaps" is the work still to do.
 
 | Project | Targets | What it is |
 |---|---|---|
-| `src/SIL.TextEditing` | netstandard2.0, net10.0 | UI-free run model (`Run`, `Paragraph`, `Document`, `PropertyBag`), editing (`DocumentEditor`), paragraph-key rules (`Paragraph.Key`, opaque, null until the host assigns one), clipboard/debug interchange, grapheme helpers. No Avalonia, no liblcm. |
-| `src/SIL.TextEditing.Avalonia` | netstandard2.0, net10.0 | `RichTextField`: layout with Avalonia's `TextFormatter`, caret, selection, hit testing, bidi caret stops, IME client, clipboard. |
-| `src/SIL.TextEditing.LCModel` | netstandard2.0, net10.0 | The LCModel adapter (ADR 0016). `TsStringConversion` maps `ITsString`, and an IStText-shaped list of paragraphs, to runs and a `Document` and back, carrying every int (with its variation) and string text property by number, ObjData and NamedStyle included. `TsStringClipboard` reads and writes FieldWorks' "TsString" clipboard XML through LCModel's own `TsStringSerializer` and builds the NFC plain text that goes beside it. A multi-paragraph copy joins paragraphs with "; " (a parameter), as FieldWorks' `EditingHelper.CopySelection` does. The host puts the XML on the clipboard in the "TsString" format wrapped as FieldWorks does, with `TsStringWrapper.FromXml` (SimpleRootSite), next to the NFC plain text. The serializer needs no ICU setup (Hangul and composition-exclusion strings tested, net48 and net10.0). The host supplies the writing-system handle mapping (`IWritingSystemHandles`) and the paragraph keys. References `SIL.LCModel.Core`. **Not trimmable or AOT-compatible, and deliberately not in `tests/AotCheck`: it is for FieldWorks' and Motif's LCModel-side host code, not Motif's GUI.** |
+| `src/SIL.TextEditing` | netstandard2.0, net10.0 | UI-free run model (`Run`, `Paragraph`, `Document`, `PropertyBag`), editing (`DocumentEditor`), paragraph-key rules (`Paragraph.Key`, opaque, null until the host assigns one), clipboard forms (`IClipboardForm`, `ClipboardForms`), the paste writing-system rule, the debug interchange dump, grapheme helpers. No Avalonia, no liblcm. |
+| `src/SIL.TextEditing.Avalonia` | netstandard2.0, net10.0 | `RichTextField`: layout with Avalonia's `TextFormatter`, caret, selection, hit testing, bidi caret stops, IME client, copy, cut, paste and "Copy as" through the host's clipboard forms. |
+| `src/SIL.TextEditing.LCModel` | netstandard2.0, net10.0 | The LCModel adapter (ADR 0016). `TsStringConversion` maps `ITsString`, and an IStText-shaped list of paragraphs, to runs and a `Document` and back, carrying every int (with its variation) and string text property by number, ObjData and NamedStyle included. `TsStringClipboard` reads and writes FieldWorks' "TsString" clipboard XML through LCModel's own `TsStringSerializer` and builds the NFC plain text that goes beside it. A multi-paragraph copy joins paragraphs with "; " (a parameter), as FieldWorks' `EditingHelper.CopySelection` does. The host puts the XML on the clipboard in the "TsString" format wrapped as FieldWorks does, with `TsStringWrapper.FromXml` (SimpleRootSite), next to the NFC plain text. `TsStringClipboardForm` is the same format as a clipboard form a host registers on a field (ADR 0029). The serializer needs no ICU setup (Hangul and composition-exclusion strings tested, net48 and net10.0). The host supplies the writing-system handle mapping (`IWritingSystemHandles`) and the paragraph keys. References `SIL.LCModel.Core`. **Not trimmable or AOT-compatible, and deliberately not in `tests/AotCheck`: it is for FieldWorks' and Motif's LCModel-side host code, not Motif's GUI.** |
 | `tests/SIL.TextEditing.Tests` | net48, net10.0 | Unit tests for the model. |
 | `tests/SIL.TextEditing.Avalonia.Tests` | net48, net10.0 | Avalonia.Headless tests for the surface (Skia, real shaping). |
 | `tests/SIL.TextEditing.SecondDispatcher.Tests` | net10.0 | The tests that make a dispatcher on a second thread (Avalonia 12 allows it). `Dispatcher.UIThread` is process-wide, so they run in a test host of their own and cannot change it for the other tests (issue #72). |
@@ -93,7 +93,26 @@ person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.
 - **Normalisation.** `Document.Normalization` (also `RichTextField.Normalization`) is a nullable `NormalizationForm`, null by
   default (text is inserted as it arrives). A host sets `NormalizationForm.FormD` for FieldWorks: typed text, IME commits
   and pasted text (plain or rich) are converted before insertion and the caret lands after the converted text. Plain
-  text the field puts on the clipboard is always NFC; the internal rich format keeps the stored form.
+  text the field puts on the clipboard is always NFC; the rich forms keep the stored form.
+
+## Clipboard (ADR 0029)
+
+The host registers the clipboard forms the field copies and pastes; the field takes no dependency on liblcm or the Markdown
+converter. `RichTextField.ClipboardForms` holds `IClipboardForm`s (an id, a display name, a clipboard format name, `Write` and
+`Read` over text). Plain text is built in. A FieldWorks host registers `TsStringClipboardForm` (the `SIL.TextEditing.LCModel` package)
+and the FieldWorks Markdown form (the Markdown library will provide it; only the registration point and the ids
+`ClipboardForms.FieldWorksMarkdownId` and `ClipboardForms.TsStringId` exist here).
+
+- **Copy** puts every registered form on the clipboard and the plain text in NFC. A form that throws or has nothing to say is left out.
+- **Paste** tries `ClipboardForms.PasteOrder` in turn, by default TsString, FieldWorks Markdown, plain text (FieldWorks' own preference),
+  and uses the first form the clipboard holds and that reads. The list is the host's to change; a form that is not in it is never read.
+- **Writing systems the target lacks** take the writing system of the selection the text replaces, as FieldWorks does. The field asks
+  `RichTextField.KnowsWritingSystem` (by default: its `WritingSystems` registry, and a registry with no entries accepts everything), and
+  raises `WritingSystemsMapped` after the paste so the host can show a notice.
+- **Copy as** (`RichTextField.CopyAsAsync(formId)`) puts one form on the clipboard as text: the plain text, or a form that offers it
+  (`IClipboardForm.OffersCopyAs`, such as FieldWorks Markdown). The playground's context menu has a "Copy as" submenu.
+- `SIL.TextEditing.Runs.v1` is no longer on the clipboard. `Interchange` stays as a test and debug dump, and
+  `InterchangeClipboardForm` lets tests and the playground carry formatting without liblcm or the Markdown library.
 
 ## Keyboards (ADR 0008)
 

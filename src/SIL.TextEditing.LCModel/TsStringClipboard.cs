@@ -24,8 +24,8 @@ namespace SIL.TextEditing.LCModel
     /// <summary>The "TsString" clipboard format, through <see cref="TsStringSerializer"/>. The XML holds one ITsString.
     /// A selection over several paragraphs is joined with <see cref="FieldWorksParagraphSeparator"/> first, in the XML and in
     /// the plain text, as FieldWorks' EditingHelper.CopySelection does (its GetSelectionString fallback), so a FieldWorks
-    /// paste of the payload agrees with its own copy. The paragraph keys stay out of the clipboard. The field's own
-    /// copy inside itself uses <see cref="Interchange"/>, which keeps real paragraphs.</summary>
+    /// paste of the payload agrees with its own copy. The paragraph keys stay out of the clipboard.
+    /// <see cref="TsStringClipboardForm"/> registers it on a field.</summary>
     public static class TsStringClipboard
     {
         /// <summary>The clipboard format name FieldWorks registers for this payload.</summary>

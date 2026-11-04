@@ -7,7 +7,7 @@ using System.Xml;
 
 namespace SIL.TextEditing
 {
-    /// <summary>The clipboard and debug interchange of paragraphs: an XML form that carries every run, writing system
+    /// <summary>The debug and test interchange of paragraphs (ADR 0029 retired it from the clipboard; <see cref="InterchangeClipboardForm"/> lets a test or the playground put it there): an XML form that carries every run, writing system
     /// and property, and a JSON dump for comparing documents in tests. Control characters and U+FFFC are escaped,
     /// so any XML reader gets the exact UTF-16 text back.</summary>
     public static class Interchange

@@ -49,6 +49,12 @@ namespace SIL.TextEditing.Avalonia
             return this;
         }
 
+        /// <summary>How many writing systems are registered.</summary>
+        public int Count => _byId.Count;
+
+        /// <summary>True when the id is registered (a fallback for an unknown id does not count).</summary>
+        public bool Contains(string? id) => id != null && _byId.ContainsKey(id);
+
         /// <summary>The registered writing system, or a plain 16 point fallback for an unknown id.</summary>
         public WritingSystemInfo Get(string? id)
         {
