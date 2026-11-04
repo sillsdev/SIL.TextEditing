@@ -47,5 +47,71 @@ namespace SIL.TextEditing.Avalonia.Tests
             }
             return wb;
         }
+
+        /// <summary>The field drawn on a white page, as pixels.</summary>
+        public static Shot Render(RichTextField field) => new Shot(field);
+
+        /// <summary>A rendered field, readable by pixel.</summary>
+        public sealed class Shot
+        {
+            readonly byte[] _buffer;
+            readonly int _stride;
+
+            public Shot(Control control)
+            {
+                var size = new PixelSize((int)Math.Ceiling(control.Bounds.Width), (int)Math.Ceiling(control.Bounds.Height));
+                Width = size.Width;
+                Height = size.Height;
+                using (var bitmap = new RenderTargetBitmap(size))
+                {
+                    bitmap.Render(control);
+                    _stride = size.Width * 4;
+                    _buffer = new byte[_stride * size.Height];
+                    var handle = System.Runtime.InteropServices.GCHandle.Alloc(_buffer, System.Runtime.InteropServices.GCHandleType.Pinned);
+                    try { bitmap.CopyPixels(new PixelRect(0, 0, size.Width, size.Height), handle.AddrOfPinnedObject(), _buffer.Length, _stride); }
+                    finally { handle.Free(); }
+                }
+            }
+
+            public int Width { get; }
+            public int Height { get; }
+
+            /// <summary>True when the pixel is dark: text ink on a white page.</summary>
+            public bool IsInk(int x, int y, int threshold = 140)
+            {
+                if (x < 0 || y < 0 || x >= Width || y >= Height) return false;
+                int o = y * _stride + x * 4;
+                return _buffer[o + 3] > 128 && _buffer[o] < threshold && _buffer[o + 1] < threshold && _buffer[o + 2] < threshold;
+            }
+
+            /// <summary>True when the pixel was drawn on at all (it is not transparent).</summary>
+            public bool HasColor(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height && _buffer[y * _stride + x * 4 + 3] > 128;
+
+            /// <summary>True when any pixel of the column between the rows is ink.</summary>
+            public bool ColumnHasInk(int x, double top, double bottom, int threshold = 140)
+            {
+                for (int y = (int)Math.Floor(top); y < (int)Math.Ceiling(bottom); y++)
+                    if (IsInk(x, y, threshold)) return true;
+                return false;
+            }
+
+            /// <summary>The lowest row with ink in the columns between <paramref name="left"/> and <paramref name="right"/> (inner ones), or -1.</summary>
+            public int InkBottom(double left, double right, double top, double bottom)
+            {
+                for (int y = Math.Min(Height - 1, (int)Math.Ceiling(bottom) - 1); y >= (int)top; y--)
+                    for (int x = (int)Math.Floor(left) + 1; x < (int)Math.Ceiling(right) - 1; x++)
+                        if (IsInk(x, y)) return y;
+                return -1;
+            }
+
+            /// <summary>The highest row with ink in the columns between <paramref name="left"/> and <paramref name="right"/> (inner ones), or -1.</summary>
+            public int InkTop(double left, double right, double top, double bottom)
+            {
+                for (int y = Math.Max(0, (int)top); y < Math.Min(Height, (int)Math.Ceiling(bottom)); y++)
+                    for (int x = (int)Math.Floor(left) + 1; x < (int)Math.Ceiling(right) - 1; x++)
+                        if (IsInk(x, y)) return y;
+                return -1;
+            }
+        }
     }
 }

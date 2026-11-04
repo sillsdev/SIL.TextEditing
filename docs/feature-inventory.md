@@ -44,10 +44,10 @@ Engine entry: `VwPropertyStore::put_IntProperty` (V/VwPropertyStore.cpp:1177, ca
 | ktptItalic (2) on/off/invert | :1190-1215 DRAW; invert resolved against parent style (:1196-1206) | PARTIAL: bool Italic FA/DetailModel.cs:137, edited by Ctrl+I | PARTIAL: on only, Invert not resolved (`ParagraphLayout.MakeProperties`) | S |
 | ktptBold (3) on/off/invert, numeric weights 100-900, Bolder/Lighter | :1217-1262 DRAW; weight <550 normal; >900 clamped | PARTIAL: bool Bold FA/DetailModel.cs:136 | PARTIAL: on only (`ParagraphLayout.MakeProperties`); no weights, no invert | S |
 | ktptSuperscript (4) off/super/sub | :1335; DRAW using the font's OS/2 super/subscript size and offset V/lib/VwGraphics.cpp:1751-1805 | NO (carry-only round-trip check lossy: read-only) | NO: carried, not drawn | M |
-| ktptUnderline (5) none/dotted/dashed/single/double/strikethrough/squiggle (KRN:636-647, FwUnderlineType) | :1344; DRAW `VwParagraphBox::DrawUnderline` V/VwTextBoxes.cpp:8761-8820 (continuous, dotted 2px, dashed 6/3, double two lines, strikethrough at ascent/3, squiggle) | PARTIAL: bool Underline FA/DetailModel.cs:138 | PARTIAL: any non-zero as one solid line (`ParagraphLayout.MakeProperties`); no types | M |
+| ktptUnderline (5) none/dotted/dashed/single/double/strikethrough/squiggle (KRN:636-647, FwUnderlineType) | :1344; DRAW `VwParagraphBox::DrawUnderline` V/VwTextBoxes.cpp:8761-8820 (continuous, dotted 2px, dashed 6/3, double two lines, strikethrough at ascent/3, squiggle) | PARTIAL: bool Underline FA/DetailModel.cs:138 | YES: dotted, dashed, single, double, strikethrough through Avalonia decorations; the squiggle is a zigzag the layout draws after the text (ParagraphLayout.DrawSquiggles) | M |
 | ktptUnderColor (10) | :1351; DRAW (clrUnder passed to DrawUnderline) | NO | NO | S |
 | ktptFontSize (6) mpt, relative (ktpvRelative), enum sizes | :1264-1313 DRAW | YES: FontSizeMilliPoints FA/DetailModel.cs:135 | YES: mpt only (`ParagraphLayout.MakeProperties`); relative and enum NO | S |
-| ktptOffset (7) baseline offset mpt | :1314; DRAW baseline shift V/lib/UniscribeSegment.cpp:993,1023,1877,2303,2721 (underline lowered for subscripts only :2727) | NO | NO | S |
+| ktptOffset (7) baseline offset mpt | :1314; DRAW baseline shift V/lib/UniscribeSegment.cpp:993,1023,1877,2303,2721 (underline lowered for subscripts only :2727) | NO | YES: the run is drawn shifted by the layout (LineInfo.Draw), the line slot makes room, caret, selection, backgrounds and squiggle follow | S |
 | ktptForeColor (8) | :1362; DRAW; inverted when the range is selected V/lib/UniscribeSegment.cpp:3516-3530 | NO (lossy: read-only) | NO: foreground brush is a field-level brush, run colour ignored (`RunTextProperties`, `ParagraphLayout.MakeProperties`) | S |
 | ktptBackColor (9) | :1368; DRAW run background (UniscribeSegment DrawText, :1012-1014 comments) | NO | NO (`RunTextProperties.BackgroundBrush` is null) | S |
 | ktptBaseWs (16) | :1403; CARRY mostly: `m_wsBase` seeds the font size for relative line height (:1470) | NO | NO (carried) | S |
@@ -69,25 +69,25 @@ Engine entry: `VwPropertyStore::put_IntProperty` (V/VwPropertyStore.cpp:1177, ca
 
 | Feature | Legacy source and behaviour | FA | TE | Size |
 |---|---|---|---|---|
-| ktptAlign (17): Leading, Left, Center, Right, Trailing, Justify (not on last line) | :1185; V/VwTextBoxes.cpp:3252-3275; enum KRN:653-663 | NO | NO (TextAlignment.Start, `ParagraphProperties`) | M |
+| ktptAlign (17): Leading, Left, Center, Right, Trailing, Justify (not on last line) | :1185; V/VwTextBoxes.cpp:3252-3275; enum KRN:653-663 | NO | YES: leading, left, centre, right, trailing; justify stretches every line but the last (ParagraphLayout Justification) | M |
 | ktptFirstIndent (18) negative = hanging | :1460; V/VwTextBoxes.cpp:1252,7136; negative handled as pad V/VwTextBoxes.cpp:9394 | NO | NO (Indent=>0, `ParagraphProperties`) | M |
 | ktptLeadingIndent / ktptMarginLeading (19) | :1417; V/VwSimpleBoxes.cpp:679,1087,1165 | NO | NO | M |
 | ktptTrailingIndent / ktptMarginTrailing (20) | :1421 | NO | NO | M |
 | ktptSpaceBefore = ktptMswMarginTop (21): "only MswMarginTop used in paragraph dialogs" KRN comment | :1406 (MSW margin-collapse semantics UNVERIFIED) | NO | NO | M |
 | ktptSpaceAfter = ktptMarginBottom (22) | :1413 | NO | NO | M |
 | ktptMarginTop (50) | :1409 | NO | NO | S |
-| ktptLineHeight (24) exact/at-least/relative; ktpvRelative uses 1.4 x ws font size | :1463-1495; V/VwTextBoxes.cpp:1374,5447,6195 | NO | NO (LineHeight NaN, `ParagraphProperties`) | M |
+| ktptLineHeight (24) exact/at-least/relative; ktpvRelative uses 1.4 x ws font size | :1463-1495; V/VwTextBoxes.cpp:1374,5447,6195 | NO | YES: slot height per rule; under an exact height the baseline keeps the text's own share of the slot, so taller text overflows both ways (ParagraphLayout.LineInfo.TextY) | M |
 | ktptParaColor (25): paragraph background, treated as BackColor | :1368 ("kludge"); fill V/VwTextBoxes.cpp (box background) | NO | NO | S |
 | ktptRightToLeft (128) paragraph direction | :1357; V/VwTextBoxes (para RightToLeft()) | PARTIAL: box FlowDirection from ws (FA/FwFieldControls.cs:~790) | YES: Paragraph.Rtl (`ParagraphLayout.Build`) | S |
 | ktptPadLeading/Trailing/Top/Bottom (134-137) | :1425-1434; V/VwTextBoxes.cpp:9394 | NO | NO | S |
 | ktptBorderTop/Bottom/Leading/Trailing (138-141) + ktptBorderColor (142) | :1437-1446,1375; drawn V/VwSimpleBoxes.cpp:743,1087, V/VwTextBoxes.cpp:9766 | NO | NO | M |
-| ktptBulNumScheme (143): none, Arabic(10), RomanUpper, RomanLower, LetterUpper, LetterLower, Arabic01, bullets 100+ (25 glyphs, font "Quivira") | :1449; `GetBulNumString` V/VwTextBoxes.cpp:6604-6770; glyph table :6373; sequence `ParaNumber` :6380-6470; drawn :975,7105-7122; KRN:1273-1286 | NO | NO | L |
+| ktptBulNumScheme (143): none, Arabic(10), RomanUpper, RomanLower, LetterUpper, LetterLower, Arabic01, bullets 100+ (25 glyphs, font "Quivira") | :1449; `GetBulNumString` V/VwTextBoxes.cpp:6604-6770; glyph table :6373; sequence `ParaNumber` :6380-6470; drawn :975,7105-7122; KRN:1273-1286 | NO | YES: label drawn at the first indent; a label wider than the line takes a line of its own, as in FieldWorks, and otherwise stays beside the text, which wraps there (ParagraphLayout.PlaceFirstLine) | L |
 | ktptBulNumStartAt (144) | :1455 (VwCacheDa.cpp:1376 resets) | NO | NO | S |
 | ktptBulNumTxtBef/Aft (145,146) | :1630-1635; text around the number (:6760) | NO | NO | S |
 | ktptBulNumFontInfo (147) packed font props for the number | :1636; parsed :6700-6745 | NO | NO | M |
 | ktptKeepWithNext (148), ktptKeepTogether (149), ktptWidowOrphanControl (162) | :1514-1528; CARRY for on-screen; page layout and print only (V/VwLayoutStream.cpp:1252, VwSimpleBoxes.cpp:3016) | NO | NO (carry OK) | S |
 | ktptHyphenate (150) | :1529; stored, NOT implemented (V/VwTextBoxes.cpp:1368) | NO | NO (carry OK) | S |
-| ktptMaxLines (151) | :1534; DRAW truncates lines V/VwSimpleBoxes.cpp:2419,2495, V/VwInvertedViews.cpp:312; who sets it UNVERIFIED | NO | NO | S |
+| ktptMaxLines (151) | :1534; DRAW truncates lines V/VwSimpleBoxes.cpp:2419,2495, V/VwInvertedViews.cpp:312; who sets it UNVERIFIED | NO | YES: lines past the limit are left out and the last visible line ends with "..." (ParagraphLayout.EllipsisRect) | S |
 | ktptTabDef (23), ktptTabList (4) | NOT handled: int default throws E_NOTIMPL; no tab-stop drawing found; CARRY | NO | NO | S |
 
 Unit and variation note: lengths are mpt (ktpvMilliPoint); colours are ktpvDefault ints (BGR, kclrTransparent for none); toggles are Enum with kttvOff=0, kttvForceOn=1, kttvInvert=2 (KRN:588-590).
@@ -346,7 +346,7 @@ U+FFFC (ORC) carries `ktptObjData`: first char = kodt type, rest = payload (KRN:
 | Valid insertion points (no IP inside a cluster/ligature) | V/lib/UniscribeSegment.cpp:1508 `IsValidInsertionPoint`, 2477 `FindValidIPBackward`/`Forward` | YES | YES (shaper stops) | M |
 | Combining marks and NFC/NFD: layout in NFC, offsets mapped back | V/lib/NfcOffsetMap.h; UniscribeSegment.cpp:1605-1700 `OffsetInNfc`, `OffsetToOrig` | N/A | PARTIAL: no normalisation; offsets are UTF-16 of stored text | M |
 | Line breaking per ws locale (ICU) | V/lib/LgLineBreaker.cpp:77-115 | NO | NO (Avalonia default breaker) | M |
-| Justification stretch (kashida/inter-word) | V/lib/UniscribeSegment.cpp:3737 `NumStretchableGlyphs`, 3760 `StretchGlyphs` | NO | NO | M |
+| Justification stretch (kashida/inter-word) | V/lib/UniscribeSegment.cpp:3737 `NumStretchableGlyphs`, 3760 `StretchGlyphs` | NO | PARTIAL: inter-word stretch only (equal share per interior space), no kashida | M |
 | Surrogate pairs / grapheme clusters / Indic conjuncts | V/VwSelection.cpp:3938-4000 | PARTIAL | YES (`GraphemeClusters` incl. GB9c, TE/M/GraphemeClusters.cs) | M |
 | Vertical orientation | SRS/OrientationManager.cs | NO | NO | L |
 
