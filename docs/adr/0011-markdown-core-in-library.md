@@ -9,3 +9,6 @@ copy and paste from the same code.
 `gdr-markdown-spec`, is updated to this split. The owner approved `Markdig.Signed` 0.37.0 as the parser on 2026-11-03.
 
 Owner decision, 2026-11-03.
+
+Superseded in part by ADR 0028 (2026-11-04): the format, its name (FieldWorks Markdown; GDR Markdown is its GDR
+profile) and the parser version policy.
