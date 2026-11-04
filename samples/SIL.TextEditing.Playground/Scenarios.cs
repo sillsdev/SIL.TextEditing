@@ -274,7 +274,8 @@ namespace SIL.TextEditing.Playground
                 ArabicStyled("List Number", "فقرة مرقمة: " + ArabicSentence), ArabicStyled("List Number", "فقرة مرقمة ثانية."),
                 Styled("List Flush", "Numbered with no hanging indent: the text starts after the number. " + Sentence),
                 ArabicStyled("Centered", ArabicSentence + ArabicSentence), ArabicStyled("List Bullet", "نقطة: " + ArabicSentence),
-                Styled("List Wide Label", "Wonderful words follow a label too wide for a narrow field."), ArabicStyled("List Wide Label", "المعلومات المهمة تأتي بعد عنوان عريض."));
+                Styled("List Wide Label", "Wonderful words follow a label too wide for a narrow field."), ArabicStyled("List Wide Label", "المعلومات المهمة تأتي بعد عنوان عريض."),
+                Styled("Exact 10", "xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx"));
         }
 
         static Run Fonts(string family)

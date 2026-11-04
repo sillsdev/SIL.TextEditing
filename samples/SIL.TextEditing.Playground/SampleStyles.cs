@@ -50,6 +50,7 @@ namespace SIL.TextEditing.Playground
             ["Justified"] = Bag().SetInt(TextPropertyNumbers.Align, 5),
             ["Double Spaced"] = Bag().SetInt(TextPropertyNumbers.LineHeight, 20000, TextPropertyNumbers.VariationRelative),
             ["Exact 30"] = Bag().SetInt(TextPropertyNumbers.LineHeight, Mpt(-30), 1),
+            ["Exact 10"] = Bag().SetInt(TextPropertyNumbers.LineHeight, Mpt(-10), 1),
             ["Boxed"] = Bag().SetInt(TextPropertyNumbers.BorderTop, Mpt(1), 1).SetInt(TextPropertyNumbers.BorderBottom, Mpt(1), 1)
                 .SetInt(TextPropertyNumbers.BorderLeading, Mpt(3), 1).SetInt(TextPropertyNumbers.BorderTrailing, Mpt(1), 1).SetInt(TextPropertyNumbers.BorderColor, Blue)
                 .SetInt(TextPropertyNumbers.PadTop, Mpt(4), 1).SetInt(TextPropertyNumbers.PadBottom, Mpt(4), 1).SetInt(TextPropertyNumbers.PadLeading, Mpt(6), 1).SetInt(TextPropertyNumbers.PadTrailing, Mpt(6), 1)

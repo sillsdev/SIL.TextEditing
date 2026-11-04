@@ -128,12 +128,13 @@ namespace SIL.TextEditing.Avalonia
 
     public sealed class LineInfo
     {
-        public LineInfo(TextLine line, double y, double x = 0, double height = -1)
+        public LineInfo(TextLine line, double y, double x = 0, double height = -1, double baselineInSlot = double.NaN)
         {
             Line = line;
             Y = y;
             X = x;
             Height = height < 0 ? line.Height : height;
+            _baselineInSlot = baselineInSlot;
             Start = line.FirstTextSourceIndex;
             Length = line.Length;
             End = Start + Length;
@@ -141,7 +142,7 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>The empty line after a hard line break that ends the paragraph. <paramref name="metrics"/> is a formatted line
         /// that only gives its height; it has no text of this paragraph, so nothing but the caret place is asked of it.</summary>
-        internal LineInfo(TextLine metrics, double y, double x, double height, int at, double caretX)
+        internal LineInfo(TextLine metrics, double y, double x, double height, int at, double caretX, double baselineInSlot = double.NaN)
         {
             Line = metrics;
             Y = y;
@@ -152,6 +153,7 @@ namespace SIL.TextEditing.Avalonia
             End = at;
             IsEmpty = true;
             EmptyCaretX = caretX;
+            _baselineInSlot = baselineInSlot;
         }
 
         /// <summary>True for the empty last line a trailing hard line break makes: it holds no text, only a caret place.</summary>
@@ -167,8 +169,10 @@ namespace SIL.TextEditing.Avalonia
         public double X { get; }
         /// <summary>The height of the slot.</summary>
         public double Height { get; }
-        /// <summary>Where the text of the line starts vertically.</summary>
-        public double TextY => Y + Height - Line.Height;
+        /// <summary>Where the text of the line starts vertically: at the bottom of the slot, or, under an exact line height, wherever puts the
+        /// baseline at the same fraction of the slot as the text's own (the text then overflows the slot both ways when it is taller).</summary>
+        public double TextY => double.IsNaN(_baselineInSlot) ? Y + Height - Line.Height : Y + _baselineInSlot - Line.Baseline;
+        readonly double _baselineInSlot;
         public int Start { get; }
         public int Length { get; }
         public int End { get; }
@@ -395,6 +399,19 @@ namespace SIL.TextEditing.Avalonia
                 if (lineHeight <= 0) lineHeight = fontSize * 1.3;
                 double slot = layout.SlotHeight(lineHeight);
                 layout.EmptyLineTop = layout.TopInset + slot - lineHeight;
+                if (pf.ExactLineHeight && pf.LineHeight > 0)
+                {
+                    // An exact line height keeps the baseline at the same share of the slot as on a line with text: a space gives the metrics.
+                    var spaceSource = new ParagraphSource { Text = " " };
+                    spaceSource.Segments.Add(new ParagraphSource.Segment { Start = 0, End = 1, Properties = defaultProperties });
+                    using (var metrics = TextFormatter.Current.FormatLine(spaceSource, 0, w, paragraphProperties, null))
+                        if (metrics != null && metrics.Height > 0)
+                        {
+                            layout._exactAscentFraction = metrics.Baseline / metrics.Height;
+                            layout.EmptyLineTop = layout.TopInset + layout.BaselineIn(slot) - metrics.Baseline;
+                            lineHeight = metrics.Height;
+                        }
+                }
                 layout.EmptyLineHeight = lineHeight;
                 layout.Height = layout.TopInset + slot + layout.BottomInset;
                 layout.Width = 0;
@@ -414,7 +431,8 @@ namespace SIL.TextEditing.Avalonia
                 var line = formatter.FormatLine(source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
                 double slot = layout.SlotHeight(line.Height);
-                layout.Lines.Add(new LineInfo(line, y, lineX, slot));
+                if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = line.Baseline / line.Height;
+                layout.Lines.Add(new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot)));
                 y += slot;
                 layout.Width = Math.Max(layout.Width, line.WidthIncludingTrailingWhitespace);
                 if (line.Length <= 0) break;
@@ -436,7 +454,7 @@ namespace SIL.TextEditing.Avalonia
                     if (metrics != null)
                     {
                         double slot = layout.SlotHeight(metrics.Height);
-                        layout.Lines.Add(new LineInfo(metrics, y, layout.ContentLeft, slot, source.Text.Length, layout.AlignedX(layout.ContentLeft, w)));
+                        layout.Lines.Add(new LineInfo(metrics, y, layout.ContentLeft, slot, source.Text.Length, layout.AlignedX(layout.ContentLeft, w), layout.BaselineIn(slot)));
                         y += slot;
                     }
                 }
@@ -550,6 +568,14 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
+        /// <summary>Under an exact line height, the share of the text's height that is above its baseline, taken from the first line and used
+        /// for every line so baselines are one slot apart; NaN otherwise.</summary>
+        double _exactAscentFraction = double.NaN;
+
+        /// <summary>Where the baseline sits from the top of a slot of the given height: the first line's ascent share of the slot under an
+        /// exact line height, else NaN (the text sits at the bottom of the slot).</summary>
+        double BaselineIn(double slot) => double.IsNaN(_exactAscentFraction) ? double.NaN : _exactAscentFraction * slot;
+
         /// <summary>The slot a line of the given natural height takes under the style's line height: exact fixes it, otherwise it is at least that.</summary>
         double SlotHeight(double natural)
         {
@@ -620,7 +646,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 var label = LabelLine(LabelText);
                 if (label == null) return default;
-                double lineTop = _labelLineHeight > 0 ? TopInset + _labelLineHeight - label.Height : Lines.Count > 0 ? Lines[0].TextY : EmptyLineTop;
+                double lineTop = _labelLineHeight > 0 ? TopInset + (double.IsNaN(_exactAscentFraction) ? _labelLineHeight - label.Height : BaselineIn(_labelLineHeight) - label.Baseline) : Lines.Count > 0 ? Lines[0].TextY : EmptyLineTop;
                 double width = label.WidthIncludingTrailingWhitespace;
                 double x = Rtl ? ContentLeft + ContentWidth - Format.FirstIndent - width : ContentLeft + Format.FirstIndent;
                 return new Rect(x, lineTop, width, label.Height);

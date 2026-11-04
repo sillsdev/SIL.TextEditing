@@ -155,7 +155,7 @@ namespace SIL.TextEditing.Playground.Tests
                 foreach (var li in d.Lines) Assert.Equal(44.8, li.Height, 3);
                 var e = s.Field.ParagraphLayoutFor(Exact);
                 foreach (var li in e.Lines) Assert.Equal(30, li.Height, 3);
-                foreach (var li in e.Lines) Assert.Equal(li.Y + 30 - li.Line.Height, li.TextY, 3);
+                foreach (var li in e.Lines) Assert.Equal(li.Y + e.Lines[0].Line.Baseline / e.Lines[0].Line.Height * 30, li.TextY + li.Line.Baseline, 3);   // the baseline keeps the text's own proportion of the slot
                 // Hit testing and the caret follow the slot: a point low in the first slot is still the first line.
                 var hit = e.HitTestDetailed(new Point(10, e.Lines[0].Y + 29));
                 Assert.True(hit.Offset < e.Lines[1].Start);
@@ -586,6 +586,38 @@ namespace SIL.TextEditing.Playground.Tests
             {
                 var pl = s.Field.ParagraphLayoutFor(WideLabel);
                 Assert.Equal(pl.Lines[0].TextY, pl.LabelRect.Y, 3);
+            }
+        });
+
+        const int ExactTen = 32;
+
+        [Fact]
+        public void An_exact_line_height_keeps_the_baseline_at_the_same_fraction_of_the_slot_so_text_larger_than_the_slot_overflows_both_ways() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Paragraphs, 400, 7000))
+            {
+                var pl = s.Field.ParagraphLayoutFor(ExactTen);
+                Assert.True(pl.Lines.Count > 2);
+                foreach (var li in pl.Lines) Assert.Equal(10, li.Height, 3);
+                Assert.True(pl.Lines[0].Line.Height > 15, "the text is taller than its slot");
+                // The baseline sits at the proportion of the slot that the font's ascent is of the text's height, so lines are one slot apart.
+                double fraction = pl.Lines[0].Line.Baseline / pl.Lines[0].Line.Height;
+                foreach (var li in pl.Lines) Assert.Equal(li.Y + fraction * 10, li.TextY + li.Line.Baseline, 3);
+                Assert.Equal(10, pl.Lines[1].TextY + pl.Lines[1].Line.Baseline - (pl.Lines[0].TextY + pl.Lines[0].Line.Baseline), 3);
+                // The caret keeps the text's own height and sits on the text.
+                var caret = pl.CaretRect(0);
+                Assert.Equal(pl.Lines[0].TextY, caret.Y, 3);
+                Assert.Equal(pl.Lines[0].Line.Height, caret.Height, 3);
+                // Pixels: the letters (no descenders) end on the baseline.
+                var shot = new Shot(s);
+                double top = s.Field.ParagraphTop(ExactTen);
+                var first = pl.Lines[0];
+                int baselineRow = (int)Math.Round(top + first.TextY + first.Line.Baseline);
+                int inkBottom = shot.InkBottom(new Rect(first.X, baselineRow - 12, 200, 14));   // rows up to just below the baseline: the next line's letters start 10 rows lower
+                Assert.InRange(inkBottom, baselineRow - 2, baselineRow + 1);
+                // Not bottom-aligned in the slot (where the baseline would sit by the descent above the slot's bottom).
+                double bottomAligned = top + first.Y + first.Height - (first.Line.Height - first.Line.Baseline);
+                Assert.True(top + first.TextY + first.Line.Baseline > bottomAligned + 1.5, "baseline " + (top + first.TextY + first.Line.Baseline) + " vs bottom aligned " + bottomAligned);
             }
         });
 
