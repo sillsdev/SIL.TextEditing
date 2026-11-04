@@ -50,13 +50,22 @@ namespace SIL.TextEditing.Avalonia.Tests
                     while (core > li.Start && pl.EffectiveText[core - 1] == ' ') core--;
                     if (!rtl && li != pl.Lines[pl.Lines.Count - 1] && end - core >= 2 && li.Line.WidthIncludingTrailingWhitespace <= pl.ContentWidth)   // the spaces fit the text area
                     {
-                        var endStop = pl.VisualStops(li).Where(s => s.Offset == end).ToList();
-                        if (endStop.Count == 0) continue;
+                        var stops = pl.VisualStops(li);
+                        var endStop = stops.Where(s => s.Offset == end).ToList();
+                        Assert.True(endStop.Count > 0, "width " + width + ": the line that ends at " + end + " has no End caret stop");   // Avalonia 12 gave none without the correction
                         double ex = endStop.Last().X;   // where the End caret is drawn
                         if (ex >= 0 && ex <= width - ParagraphLayout.CaretWidth)
                         {
                             var clicked = pl.HitTestDetailed(new Point(ex, li.Y + 2));
                             Assert.True(clicked.Offset == end, "width " + width + ": a click at " + ex + " (the End caret of a line that ends at " + end + ") gave offset " + clicked.Offset);
+                            for (int o = core + 1; o <= end; o++)
+                            {
+                                var mid = stops.Where(s => s.Offset == o).ToList();
+                                Assert.True(mid.Count > 0, "width " + width + ": no caret stop at " + o + " among the hanging spaces of the line that ends at " + end);
+                                double mx = pl.CaretXBeforeClamp(li, new global::Avalonia.Media.CharacterHit(o - 1, 1));
+                                if (Math.Abs(mid[0].X - mx) > 0.01) continue;
+                                Assert.True(pl.HitTestDetailed(new Point(mx, li.Y + 2)).Offset == o, "width " + width + ": a click after the hanging space at " + (o - 1) + " did not give offset " + o);
+                            }
                             hanging++;
                         }
                     }
