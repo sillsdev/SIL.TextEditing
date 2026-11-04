@@ -746,7 +746,7 @@ namespace SIL.TextEditing.Avalonia
                     using (var metrics = TextFormatter.Current.FormatLine(spaceSource, 0, w, paragraphProperties, null))
                         if (metrics != null && metrics.Height > 0)
                         {
-                            layout._exactAscentFraction = metrics.Baseline / metrics.Height;
+                            layout._exactAscentFraction = ExactFraction(metrics);
                             layout.EmptyLineTop = layout.TopInset + layout.BaselineIn(slot) - metrics.Baseline;
                             lineHeight = metrics.Height;
                         }
@@ -793,7 +793,7 @@ namespace SIL.TextEditing.Avalonia
                     }
                 }
                 double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
-                if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = line.Baseline / line.Height;
+                if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = ExactFraction(line);
                 var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets) { Available = usedWidth };
                 layout.Lines.Add(shown);
                 if (pf.Align == 5 && index + line.Length < source.Text.Length) layout.Justify(shown, usedWidth);
@@ -1048,6 +1048,26 @@ namespace SIL.TextEditing.Avalonia
                 case 5: return TextAlignment.Start;
                 default: return TextAlignment.Start;
             }
+        }
+
+        /// <summary>The share of a text's height that is above its baseline which an exact line height keeps on every line: the one most of the first
+        /// line's characters are in, each run's share cut to a whole per cent (the first of equally popular ones winning). It is taken from the line
+        /// once and used for every line, so the baselines are one slot apart.</summary>
+        static double ExactFraction(TextLine line)
+        {
+            var characters = new Dictionary<int, int>();
+            int best = -1, bestCharacters = -1;
+            foreach (var run in line.TextRuns)
+            {
+                if (!(run is ShapedTextRun shaped)) continue;
+                int percent = shaped.Size.Height > 0 ? (int)(shaped.Baseline * 100 / shaped.Size.Height) : 0;
+                characters.TryGetValue(percent, out int count);
+                count += shaped.Length;
+                characters[percent] = count;
+                if (count > bestCharacters) { bestCharacters = count; best = percent; }
+            }
+            if (best < 0) return line.Height > 0 ? Math.Floor(line.Baseline * 100 / line.Height) / 100 : double.NaN;
+            return best / 100.0;
         }
 
         /// <summary>Under an exact line height, the share of the text's height that is above its baseline, taken from the first line and used

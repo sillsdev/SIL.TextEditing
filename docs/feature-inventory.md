@@ -76,7 +76,7 @@ Engine entry: `VwPropertyStore::put_IntProperty` (V/VwPropertyStore.cpp:1177, ca
 | ktptSpaceBefore = ktptMswMarginTop (21): "only MswMarginTop used in paragraph dialogs" KRN comment | :1406 (MSW margin-collapse semantics UNVERIFIED) | NO | NO | M |
 | ktptSpaceAfter = ktptMarginBottom (22) | :1413 | NO | NO | M |
 | ktptMarginTop (50) | :1409 | NO | NO | S |
-| ktptLineHeight (24) exact/at-least/relative; ktpvRelative uses 1.4 x ws font size | :1463-1495; V/VwTextBoxes.cpp:1374,5447,6195 | NO | YES: slot height per rule; under an exact height the baseline keeps the text's own share of the slot, so taller text overflows both ways (ParagraphLayout.LineInfo.TextY) | M |
+| ktptLineHeight (24) exact/at-least/relative; ktpvRelative uses 1.4 x ws font size | :1463-1495; V/VwTextBoxes.cpp:1374,5447,6195 | NO | YES: slot height per rule; under an exact height the baseline keeps one share of the slot on every line, the ascent share (a whole per cent) of the font most of the first line's characters are in, as in FieldWorks, so taller text overflows both ways (ParagraphLayout.LineInfo.TextY, ExactFraction) | M |
 | ktptParaColor (25): paragraph background, treated as BackColor | :1368 ("kludge"); fill V/VwTextBoxes.cpp (box background) | NO | NO | S |
 | ktptRightToLeft (128) paragraph direction | :1357; V/VwTextBoxes (para RightToLeft()) | PARTIAL: box FlowDirection from ws (FA/FwFieldControls.cs:~790) | YES: Paragraph.Rtl (`ParagraphLayout.Build`) | S |
 | ktptPadLeading/Trailing/Top/Bottom (134-137) | :1425-1434; V/VwTextBoxes.cpp:9394 | NO | NO | S |
