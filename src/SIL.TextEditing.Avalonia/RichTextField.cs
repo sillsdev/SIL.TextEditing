@@ -17,7 +17,7 @@ namespace SIL.TextEditing.Avalonia
     /// TextFormatter, and its own caret, selection, hit testing and IME client. Every run carries its
     /// writing system. No Avalonia type leaks into the model project.
     /// </summary>
-    public class RichTextField : Control
+    public partial class RichTextField : Control
     {
         readonly List<ParagraphLayout?> _layouts = new List<ParagraphLayout?>();
         // One entry per paragraph, kept in step with _layouts: what a paragraph's layout needs from the paragraphs before it.
@@ -33,6 +33,9 @@ namespace SIL.TextEditing.Avalonia
             public int Number = NoNumber;
             /// <summary>The bullet or number text, or null until worked out.</summary>
             public string? Label;
+            /// <summary>The spelling marks of the paragraph's text as it was when checked (null until checked), and that text.</summary>
+            public List<SpellingMark>? Marks;
+            public string? CheckedText;
         }
         readonly InputMethodClient _ime;
         IStyleResolver? _styles;
@@ -129,6 +132,7 @@ namespace SIL.TextEditing.Avalonia
             {
                 if (Editor.IsReadOnly == value) return;
                 Editor.IsReadOnly = value;
+                RestartSpelling();   // read-only text is not checked (ADR 0020)
                 if (value && _preedit != null) SetPreedit(null, null);   // an input method cannot go on composing into read-only text
                 _peer?.RaiseReadOnlyChanged(!value, value);
             }
@@ -189,6 +193,7 @@ namespace SIL.TextEditing.Avalonia
             }
             for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
             ForgetNumbersFrom(start);
+            RequestSpellingIdle();
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -255,6 +260,7 @@ namespace SIL.TextEditing.Avalonia
             var layout = ParagraphLayout.Build(Editor.Document.Paragraphs[index], _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, preeditAt, preedit, template, _styles, label, above);
             _layouts[index] = layout;
             LayoutCount++;
+            ApplySpelling(index, layout);
             return layout;
         }
 
@@ -365,6 +371,7 @@ namespace SIL.TextEditing.Avalonia
                 y += pl.Height;
             }
             if (IsFocused || ShowCaretAlways) context.DrawRectangle(ResolveCaretBrush(), null, CaretRect());
+            ScheduleSpellingIfWanted();
         }
 
         // ------------------------------------------------ caret movement
@@ -425,11 +432,13 @@ namespace SIL.TextEditing.Avalonia
         {
             _onScreen = true;
             base.OnAttachedToVisualTree(e);
+            WatchScrolling();
         }
 
         protected override void OnDetachedFromVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
         {
             _onScreen = false;
+            StopWatchingScrolling();
             _pauseTimer?.Stop();
             Editor.CloseUndoGroup();
             base.OnDetachedFromVisualTree(e);

@@ -916,11 +916,12 @@ namespace SIL.TextEditing.Avalonia
         /// run's text on every line it is on, in its under colour. Drawn after the text; <paramref name="top"/> is the paragraph's top in the control.</summary>
         public void DrawSquiggles(DrawingContext context, double top)
         {
-            if (_squiggles.Count == 0) return;
+            if (_squiggles.Count == 0 && _spelling.Count == 0) return;
+            var all = _spelling.Count == 0 ? _squiggles : _squiggles.Concat(_spelling).ToList();
             foreach (var li in Lines)
             {
                 if (li.IsEmpty) continue;
-                foreach (var sq in _squiggles)
+                foreach (var sq in all)
                 {
                     int a = Math.Max(sq.Key, li.Start), b = Math.Min(sq.Value.Key, TextEnd(li));
                     if (b <= a) continue;
@@ -950,6 +951,26 @@ namespace SIL.TextEditing.Avalonia
                 }
             }
         }
+
+        // Spelling marks (ADR 0020): start, then end and brush (effective offsets), drawn with the squiggles.
+        readonly List<KeyValuePair<int, KeyValuePair<int, IBrush>>> _spelling = new List<KeyValuePair<int, KeyValuePair<int, IBrush>>>();
+
+        /// <summary>Sets the spelling marks drawn under the text, in model offsets: red for a misspelled or embedded word, blue for a word the
+        /// dictionary cannot judge. Replaces the earlier marks; null or empty clears them. A mark that an input method's text sits inside is
+        /// not drawn.</summary>
+        internal void SetSpellingMarks(IReadOnlyList<SpellingMark>? marks)
+        {
+            _spelling.Clear();
+            if (marks == null) return;
+            foreach (var m in marks)
+            {
+                if (PreeditAt >= 0 && m.Start < PreeditAt && m.End > PreeditAt) continue;
+                _spelling.Add(new KeyValuePair<int, KeyValuePair<int, IBrush>>(ToEffective(m.Start), new KeyValuePair<int, IBrush>(ToEffective(m.End), m.Problem == SpellingProblem.Mixed ? Brushes.Blue : Brushes.Red)));
+            }
+        }
+
+        /// <summary>For a test: the spelling marks that will be drawn, as effective start and end offsets and brush.</summary>
+        internal IReadOnlyList<(int Start, int End, IBrush Brush)> SpellingMarksDrawn => _spelling.Select(m => (m.Key, m.Value.Key, m.Value.Value)).ToList();
 
         int _ellipsisLineIndex = -1;
         TextLine? _ellipsis;
