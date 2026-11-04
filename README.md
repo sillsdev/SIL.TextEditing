@@ -152,6 +152,17 @@ system or object data, a replaced property bag and a new style (`Paragraph.Chang
 property bag changed in place are seen only after `RefreshFromDocument()`. After a style change that alters what is checked,
 `RestartSpelling()`. After repairing a failed dictionary, raise `DictionariesChanged`.
 
+## Colours and themes
+
+Until the host sets `Foreground` (text, and a border with no colour of its own) and `Background` (the page), the field takes them from the
+theme: the text colour the caret uses and the theme's window colour, and in a Windows high contrast theme the system's window text and window
+colours, as FieldWorks does (the selection takes the system highlight). The text keeps one default brush that the field changes in place when
+the theme or the system's colours change, so a theme switch redraws the text and does not lay out the paragraphs again.
+
+A colour the host sets is kept as it is under every theme, high contrast included. So a host that sets one sets the other, or neither: a host
+that sets only `Foreground = Black` on a dark theme gets black text on the theme's dark page. `ResetForeground()` and `ResetBackground()` go back
+to following the theme. A run's own colours (text property 8 and 9) are the document's and do not change with the theme.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
@@ -168,7 +179,10 @@ property bag changed in place are seen only after `RefreshFromDocument()`. After
   of two or more runs, and likewise on a left-to-right paragraph's line of two or more runs with a right-to-left run in it (on 12 some of its ranges throw); an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by
   reading such a line from its runs as they are drawn (`LineInfo.UsesRuns`: caret x, hit testing, visual stops and selection boxes
   from each run's glyphs). It is not behind `#if`, because 12 has the second fault too (ADR 0015 expected a layer for 11.3 only).
-  `RichTextField.ObjectAsGlyph` is the workaround for the third.
+  `RichTextField.ObjectAsGlyph` is the workaround for the third. On 12 only, the spaces a wrapped line ends with after a run of Arabic in a
+  left-to-right paragraph come with glyph clusters numbered against the run's direction and answer distances and hits that do not add up
+  (a click at the end of the line lands one space short); `RunSlot` places such a run by counting its spaces (`ClusterOrderTests` names the
+  fault and fails when 12 stops doing it).
 - **Paragraph and character properties**: drawn, with the host's `IStyleResolver` supplying named styles (ADR 0004): weight (any 100 to
   900, invert), italic, foreground and background colour, underline type and colour (dotted, dashed, single, double,
   strikethrough, and the squiggle, which the layout draws itself as a zigzag below the baseline), superscript and subscript, font size (absolute, relative, named), font

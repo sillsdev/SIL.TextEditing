@@ -166,7 +166,7 @@ plain text.
 | 9.3 | *Long document*: press Ctrl+End, type, press Ctrl+Home. | The view follows the caret; typing is not slower than in a short document; the inspector shows a window around the caret. | | | | |
 | 9.4 | *Many fields* with 1000 fields (Fields picker, then pick the scenario again): scroll and type in a field far down. | The window stays usable. Record how long it takes to load and whether scrolling stutters. | | | | |
 | 9.5 | Select all (Ctrl+A) in the *Long document* and press B. | It finishes in a reasonable time; Undo restores it in one step. | | | | |
-| 9.6 | Dark or high-contrast Windows theme. | The field stays readable (it draws its own colours); record anything unreadable. | | | | |
+| 9.6 | Switch Windows between light, dark and a high contrast theme (Settings, Accessibility, Contrast themes) while the playground is open, with the fields' Foreground and Background not set. | The text and page follow at once, without a pause: in high contrast the page is the system window colour, the text the window text colour and a selection the highlight colour. Record anything unreadable. A field whose host set both colours keeps them (the host's choice, README "Colours and themes"). | | | | |
 
 ## 10. Mouse and keyboard selection (all hosts)
 

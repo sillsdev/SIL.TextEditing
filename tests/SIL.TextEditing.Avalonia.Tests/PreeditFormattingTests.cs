@@ -44,8 +44,8 @@ namespace SIL.TextEditing.Avalonia.Tests
             field.Editor.SetCaret(new TextPosition(0, 7));
             var properties = PreeditProperties(field, "xyz");
             Assert.Equal(FontWeight.Bold, properties.Typeface.Weight);
-            Assert.NotNull(properties.TextDecorations);
-            Assert.Single(properties.TextDecorations!);
+            Assert.Equal(3, field.ParagraphLayoutFor(0).DecorationAt(field.ParagraphLayoutFor(0).EffectiveText.IndexOf("xyz", System.StringComparison.Ordinal))?.LineKind);   // the composition underline: a single line the field draws itself
+            Assert.Null(properties.TextDecorations);
         });
 
         [Fact]
