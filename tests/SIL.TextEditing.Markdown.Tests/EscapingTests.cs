@@ -100,7 +100,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var context = BlockContext.Plain();
             var generator = new InlineGenerator(options, context);
-            var cells = new List<List<Run>> { Equivalence.Normalized(paragraph).Runs };
+            var cells = new List<List<Run>> { Equivalence.Normalized(paragraph).Runs.ToList() };
             bool Accepts(string candidate)
             {
                 var read = MarkdownReader.ReadParagraphs(context.FirstPrefix + candidate + "\n", options, out bool clean);

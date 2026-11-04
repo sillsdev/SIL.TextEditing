@@ -242,7 +242,7 @@ namespace SIL.TextEditing.Markdown.Reader
             var p = new Paragraph { Runs = runs };
             p.Normalize();
             if (_options.NormalizeText) ToNfd(p.Runs);
-            return p.Runs;
+            return p.Runs.ToList();
         }
 
         static string Describe(Block block)
@@ -719,7 +719,7 @@ namespace SIL.TextEditing.Markdown.Reader
 
         /// <summary>The text of every run as NFD, the form the editor stores (ADR 0018). Done once the runs are merged, so a mark and its base
         /// that Markdig handed over in two pieces compose as one string. Findings and objects keep the source's offsets: only the runs change.</summary>
-        static void ToNfd(List<Run> runs)
+        static void ToNfd(IList<Run> runs)
         {
             foreach (var run in runs) run.Text = TextNormalizer.Normalize(run.Text, NormalizationForm.FormD);
         }

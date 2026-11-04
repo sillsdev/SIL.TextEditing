@@ -36,7 +36,7 @@ namespace SIL.TextEditing.Markdown.Writer
             var writer = new MarkdownWriter(options);
             var paragraph = new Paragraph { Runs = runs.Select(r => r.Clone()).ToList() };
             paragraph.Normalize();
-            var cells = new List<List<Run>> { paragraph.Runs };
+            var cells = new List<List<Run>> { paragraph.Runs.ToList() };
             var generator = new InlineGenerator(options, BlockContext.Plain());
             bool Reads(string candidate)
             {
@@ -129,7 +129,7 @@ namespace SIL.TextEditing.Markdown.Writer
             => !other.IsEmpty && other.Paragraph.Style == first.Paragraph.Style && other.Props.ContentEquals(first.Props) && KindOf(other) == Kind.None
                && !(other.Paragraph.Style == Names.TableHeader && other.Props.Count == 0);
 
-        static List<List<Run>> OneCell(Entry e) => new List<List<Run>> { e.Paragraph.Runs };
+        static List<List<Run>> OneCell(Entry e) => new List<List<Run>> { e.Paragraph.Runs.ToList() };
 
         string PlainInline(Entry e, BlockContext context)
         {

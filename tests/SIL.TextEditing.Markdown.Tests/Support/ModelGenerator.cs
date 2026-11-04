@@ -104,7 +104,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             paragraph.DefaultWs = paragraph.Runs.Count > 0 ? paragraph.Runs[0].Ws : Pick(new[] { "en", "ceb", "ar" });
             // Runs the way the adapter builds them: an empty run is never kept.
-            paragraph.Runs.RemoveAll(r => r.Text.Length == 0);
+            for (int i = paragraph.Runs.Count - 1; i >= 0; i--) if (paragraph.Runs[i].Text.Length == 0) paragraph.Runs.RemoveAt(i);
             paragraph.DefaultWs = paragraph.Runs.Count > 0 ? paragraph.Runs[0].Ws : paragraph.DefaultWs;
         }
 
