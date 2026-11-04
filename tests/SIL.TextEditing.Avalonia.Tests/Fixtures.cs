@@ -85,10 +85,10 @@ namespace SIL.TextEditing.Avalonia.Tests
             }
 
             /// <summary>True when any pixel of the column between the rows is ink.</summary>
-            public bool ColumnHasInk(int x, double top, double bottom)
+            public bool ColumnHasInk(int x, double top, double bottom, int threshold = 140)
             {
                 for (int y = (int)Math.Floor(top); y < (int)Math.Ceiling(bottom); y++)
-                    if (IsInk(x, y)) return true;
+                    if (IsInk(x, y, threshold)) return true;
                 return false;
             }
 

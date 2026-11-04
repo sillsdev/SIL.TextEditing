@@ -144,16 +144,28 @@ namespace SIL.TextEditing.Avalonia
     /// mouse and the drawing.</summary>
     sealed class Justification
     {
-        public Justification(List<KeyValuePair<double, double>> spaces, double extra, bool rightAnchor)
+        public Justification(List<KeyValuePair<double, double>> spaces, double extra, bool rightAnchor, bool decorated)
         {
             Spaces = spaces;
             Extra = extra;
             RightAnchor = rightAnchor;
+            Decorated = decorated;
         }
 
         public List<KeyValuePair<double, double>> Spaces { get; }
         public double Extra { get; }
         public bool RightAnchor { get; }
+
+        /// <summary>True when a run of the line has a text decoration, which the stretched spaces must carry on.</summary>
+        public bool Decorated { get; }
+
+        /// <summary>How much of a space, at each of its edges, is left to the letters beside it when the line is drawn: half of it, or all
+        /// of it but a middle strip of a pixel (or half of a narrower space) when the strip is drawn (<see cref="Decorated"/>).</summary>
+        public double Guard(int space)
+        {
+            double width = Spaces[space].Value - Spaces[space].Key;
+            return Decorated ? (width - Math.Min(1, width / 2)) / 2 : width / 2;
+        }
 
         /// <summary>The stretched x of a natural x: each space to the anchor's far side adds <see cref="Extra"/>, and one the x is inside adds its share.</summary>
         public double Map(double x)
@@ -320,19 +332,24 @@ namespace SIL.TextEditing.Avalonia
         public void Draw(DrawingContext context, double top)
         {
             if (_justification == null) { DrawNatural(context, top); return; }
-            // A justified line is Avalonia's line drawn in pieces: each word is the whole line clipped to it and moved to where it now is, each
-            // space the same clipped to the space and stretched (so an underline runs on through it).
+            // A justified line is Avalonia's line drawn in pieces: each word is the whole line clipped to it and moved to where it now is. A
+            // letter's ink can reach past its advance (the hook of a "j", italics), into the space beside it, so a word's piece takes the half of
+            // the space on its side, unstretched, and the ink stays with its letter. A line with a text decoration (an underline) also draws the
+            // narrow middle of each space, clipped and stretched, so the decoration runs on through it.
             const double Far = 100000;
             var j = _justification;
             int n = j.Spaces.Count;
             double previous = -Far;
             for (int k = 0; k <= n; k++)
             {
-                double end = k < n ? j.Spaces[k].Key : Far;
+                double guard = k < n ? j.Guard(k) : 0;
+                double end = k < n ? j.Spaces[k].Key + guard : Far;
                 if (end > previous)
                     DrawPiece(context, top, previous, end, Matrix.CreateTranslation(j.RightAnchor ? -j.Extra * (n - k) : j.Extra * k, 0));
                 if (k == n) break;
-                double a = j.Spaces[k].Key, b = j.Spaces[k].Value, scale = (b - a + j.Extra) / (b - a);
+                double a = j.Spaces[k].Key + guard, b = j.Spaces[k].Value - guard;
+                if (!j.Decorated) { previous = b; continue; }
+                double scale = (b - a + j.Extra) / (b - a);
                 double from = j.RightAnchor ? X + b : X + a, to = j.RightAnchor ? X + b - j.Extra * (n - 1 - k) : X + a + j.Extra * k;
                 DrawPiece(context, top, a, b, Matrix.CreateTranslation(-from, 0) * Matrix.CreateScale(scale, 1) * Matrix.CreateTranslation(to, 0));
                 previous = b;
@@ -822,7 +839,7 @@ namespace SIL.TextEditing.Avalonia
             }
             if (spaces.Count == 0) return;
             spaces.Sort((p, q) => p.Key.CompareTo(q.Key));
-            li.Justify(new Justification(spaces, slack / spaces.Count, Rtl));
+            li.Justify(new Justification(spaces, slack / spaces.Count, Rtl, li.Line.TextRuns.Any(r => r.Properties?.TextDecorations?.Count > 0)));
         }
 
         /// <summary>The room a line needs for its shifted runs, above and below its own height.</summary>

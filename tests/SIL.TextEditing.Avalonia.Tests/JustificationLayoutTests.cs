@@ -120,5 +120,61 @@ namespace SIL.TextEditing.Avalonia.Tests
             var ink = Ink(single, single.Lines[0]);
             Assert.True(ink.Right < 200, "a single line is the last line: " + ink.Right);
         });
+
+        const string Overhang = "a fox jumps over a jolly jug, just a jiffy joke: jam, jazz, jets and jugs, a jab, a jig, jewels, a fjord, jaws, a jaunty jaguar, joyful jays";
+
+        /// <summary>Counts the interior gaps of the justified lines (stretched spaces at least 8 pixels wide) and those with a smear in their
+        /// middle: a row of ink three pixels long or more. The ink of the letters beside a gap stays with them, unstretched, so the middle of a
+        /// stretched space holds none (at most a stray pixel of an italic's slant).</summary>
+        static (int Gaps, int Smeared) GapsWithInk(string text, bool italic, double width)
+        {
+            var p = Para("en", "en", text);
+            if (italic) p.Runs[0].Props.SetInt(TextPropertyNumbers.Italic, TextPropertyNumbers.ToggleOn, 0);
+            p.Props.SetInt(TextPropertyNumbers.Align, 5);
+            var field = Fixtures.Field(Doc(p), width);
+            var pl = field.ParagraphLayoutFor(0);
+            var shot = Fixtures.Render(field);
+            int gaps = 0, smeared = 0;
+            for (int l = 0; l < pl.Lines.Count - 1; l++)
+            {
+                var li = pl.Lines[l];
+                double top = field.ParagraphTop(0) + li.TextY;
+                int first = li.Start, last = pl.TextEnd(li);
+                while (first < last && pl.EffectiveText[first] == ' ') first++;
+                while (last > first && pl.EffectiveText[last - 1] == ' ') last--;
+                for (int i = first; i < last; i++)
+                {
+                    if (pl.EffectiveText[i] != ' ') continue;
+                    var rects = pl.SelectionRects(i, i + 1);
+                    double x0 = rects.Min(r => r.X), x1 = rects.Max(r => r.Right);
+                    if (x1 - x0 < 8) continue;
+                    gaps++;
+                    bool smear = false;
+                    for (int y = (int)top; y < (int)System.Math.Ceiling(top + li.Line.Height) && !smear; y++)
+                    {
+                        int run = 0;
+                        for (int x = (int)System.Math.Ceiling(x0) + 2; x < (int)System.Math.Floor(x1) - 2; x++)
+                        {
+                            run = shot.IsInk(x, y, 200) ? run + 1 : 0;
+                            if (run >= 3) smear = true;
+                        }
+                    }
+                    if (smear) smeared++;
+                }
+            }
+            return (gaps, smeared);
+        }
+
+        [Theory]
+        [InlineData(false, 140)]
+        [InlineData(false, 190)]
+        [InlineData(true, 140)]
+        [InlineData(true, 190)]
+        public void The_overhang_of_a_letter_beside_a_stretched_space_stays_with_the_letter_and_is_not_smeared_across_the_gap(bool italic, int width) => Headless.Run(() =>
+        {
+            var (gaps, smeared) = GapsWithInk(Overhang, italic, width);
+            Assert.True(gaps >= 3, "stretched gaps looked at: " + gaps);
+            Assert.True(smeared == 0, smeared + " of " + gaps + " stretched spaces have a smear of ink in their middle");
+        });
     }
 }
