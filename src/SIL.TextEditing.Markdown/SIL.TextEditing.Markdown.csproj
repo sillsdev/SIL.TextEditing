@@ -3,7 +3,7 @@
     <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
     <RootNamespace>SIL.TextEditing.Markdown</RootNamespace>
     <AssemblyName>SIL.TextEditing.Markdown</AssemblyName>
-    <Description>Converts between SIL.TextEditing runs and GDR Markdown text: the parser, the writer and the escaping (ADR 0011).</Description>
+    <Description>Converts between SIL.TextEditing runs and FieldWorks Markdown, a strict profile of Pandoc Markdown: the parser, the writer, the front matter, the link grammar and the escaping (ADRs 0011 and 0028).</Description>
   </PropertyGroup>
   <!-- Trimmable and AOT-compatible on net10.0 (Motif's target); CI proves it with tests/AotCheck. -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">

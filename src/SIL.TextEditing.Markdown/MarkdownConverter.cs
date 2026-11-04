@@ -35,13 +35,14 @@ namespace SIL.TextEditing.Markdown
             => _context.CreateDiagnostic(id, severity, message, start, end, replacement, choices, nearest);
     }
 
-    /// <summary>Converts between the run model and GDR Markdown (ADR 0011; the notation is Motif's spec 2026-11-03-gdr-markdown-design).
+    /// <summary>Converts between the run model and FieldWorks Markdown, a strict profile of Pandoc Markdown (ADRs 0011 and 0028; the notation is Motif's spec 2026-11-03-gdr-markdown-design, revised on 2026-11-04, and the conformance fixtures in tests/conformance).
     /// Writing then reading gives back the same paragraphs, and reading then writing is stable: the writer is a function of the model
     /// alone, and it checks every paragraph it writes by reading it back.</summary>
     public static class MarkdownConverter
     {
-        /// <summary>Writes the document as canonical Markdown: one line per paragraph, one blank line between blocks, <c>\n</c> line ends,
-        /// minimal escaping, the attribute order of spec 3.3. The text is as stored; nothing is normalised.</summary>
+        /// <summary>Writes the document as canonical FieldWorks Markdown: the front matter (unless <see cref="MarkdownOptions.WriteFrontMatter"/> is false),
+        /// one line per paragraph, one blank line between blocks, <c>\n</c> line ends, the escapes of the table in spec 3.4 and no others, the attribute
+        /// order of spec 3.3, and links in the form <see cref="MarkdownOptions.LinkForm"/> asks for. The text is as stored; nothing is normalised.</summary>
         /// <exception cref="MarkdownWriteException">A paragraph cannot be written so that it reads back unchanged.</exception>
         public static string ToMarkdown(Document document, MarkdownOptions? options = null)
         {
@@ -71,7 +72,7 @@ namespace SIL.TextEditing.Markdown
             return ToMarkdown(Parse(markdown, options).Document, options);
         }
 
-        /// <summary>Writes the runs of one string with the inline grammar only (the abstract of spec 3.5).</summary>
+        /// <summary>Writes the runs of one string with the inline grammar only (a multi-string field such as the abstract, spec 5.1).</summary>
         public static string ToInlineMarkdown(IEnumerable<Run> runs, MarkdownOptions? options = null)
         {
             if (runs == null) throw new ArgumentNullException(nameof(runs));
