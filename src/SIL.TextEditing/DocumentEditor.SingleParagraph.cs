@@ -62,8 +62,14 @@ namespace SIL.TextEditing
             if (!paragraph.Runs.Any(r => !r.IsObject && r.Text.Any(c => c == '\t' || IsParagraphSeparator(c)))) return;
             var chars = new List<char>();
             var owners = new List<Run>();
+            var afterTab = new List<bool>();   // a tab stood just before this character, so a CR before it is not paired with it
+            bool tab = false;
             foreach (var r in paragraph.Runs)
-                foreach (var c in r.Text) if (c != '\t') { chars.Add(c); owners.Add(r); }
+                foreach (var c in r.Text)
+                {
+                    if (c == '\t') { tab = true; continue; }
+                    chars.Add(c); owners.Add(r); afterTab.Add(tab); tab = false;
+                }
             var runs = new List<Run>();
             var sb = new System.Text.StringBuilder();
             Run? owner = null;        // the source run the pending text copies, null for a synthesised space
@@ -87,7 +93,7 @@ namespace SIL.TextEditing
             {
                 if (!IsParagraphSeparator(chars[i])) { Emit(chars[i], owners[i], false); i++; continue; }
                 int j = i + 1;
-                if (chars[i] == (char)13 && j < n && chars[j] == (char)10) j++;
+                if (chars[i] == (char)13 && j < n && chars[j] == (char)10 && !afterTab[j]) j++;
                 if (i < end) Emit(' ', i > 0 ? owners[i - 1] : owners[i], true);
                 i = j;
             }

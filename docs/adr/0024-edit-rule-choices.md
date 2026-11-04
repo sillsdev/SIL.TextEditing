@@ -47,8 +47,9 @@ one, and can change without superseding anything.
   U+2028 is kept as a hard line break and is not a separator for this. NEL and U+2029 count as separators here (ADR 0012),
   whereas FieldWorks converts only CR and LF. A separator followed only by tabs is dropped too (tabs are removed first, so
   "a", a newline and a tab gives "a"); this is deliberate and differs slightly from FieldWorks, which keeps a space there.
-  Typed text gets the same treatment. Pasting only
-  one separator over a selection replaces the selection with nothing. Because a trailing separator is dropped, pasting
+  Typed text gets the same treatment. CR LF pairs only when the two are next to each other, so CR, tab, LF gives two
+  spaces on every path (as in FieldWorks). Pasting only separators and tabs, however many, over a selection replaces the
+  selection with nothing. Because a trailing separator is dropped, pasting
   "a" and a newline at the start of "bcd" gives "abcd": the words fuse. That is the FieldWorks result, not a bug.
 - **Enter at an editable and read-only boundary can leave a paragraph the field cannot join back.** Enter between an
   editable and a read-only run can make a paragraph that is entirely read-only. Backspace into it is refused (ADR 0019),

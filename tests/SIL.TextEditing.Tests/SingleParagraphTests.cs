@@ -187,6 +187,7 @@ namespace SIL.TextEditing.Tests
         [InlineData("a\tb", "Xab")]
         [InlineData("\ta\t\tb\t", "Xab")]
         [InlineData("a\t\nb", "Xa b")]
+        [InlineData("a\r\t\nb", "Xa  b")]
         [InlineData("a\n\t", "Xa")]
         [InlineData("\t", "X")]
         public void Tabs_are_removed(string pasted, string expected)
