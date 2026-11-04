@@ -266,6 +266,12 @@ namespace SIL.TextEditing.Avalonia
             _firstCluster = int.MaxValue;
             if (Glyphs != null)
                 foreach (var info in Glyphs.GlyphInfos) _firstCluster = Math.Min(_firstCluster, (int)info.GlyphCluster);
+            ClustersAgainstDirection = false;
+            if (Glyphs != null && Glyphs.GlyphInfos.Count >= 2)
+            {
+                var infos = Glyphs.GlyphInfos;
+                ClustersAgainstDirection = (infos[0].GlyphCluster < infos[infos.Count - 1].GlyphCluster) != Glyphs.IsLeftToRight;
+            }
         }
 
         readonly int _firstCluster;
@@ -301,16 +307,39 @@ namespace SIL.TextEditing.Avalonia
         public double? Distance(int index, int trailing = 0)
         {
             if (!HasGlyphs || index < Start || index > Start + Length) return null;
+            if (UsesEvenSpacing) return DistanceByCount(Math.Min(Math.Max(index + trailing - Start, 0), Length));
             return Glyphs!.GetDistanceFromCharacterHit(new CharacterHit(_firstCluster + index - Start, trailing));
         }
 
-        /// <summary>The caret hit (in paragraph text offsets) at a distance from the run's origin, or null when the run cannot say.</summary>
+        /// <summary>The caret hit (in paragraph text offsets) at a distance from the run's origin, or null when the run cannot say. A distance
+        /// outside the run is read as the run's nearest edge (Avalonia is not consistent about which character a point on or past an edge is
+        /// in).</summary>
         public CharacterHit? HitFromDistance(double distance)
         {
             if (!HasGlyphs) return null;
-            var hit = Glyphs!.GetCharacterHitFromDistance(distance, out _);
+            double inside = Math.Max(Math.Min(distance, Width - Edge), Math.Min(Edge, Width / 2));
+            if (UsesEvenSpacing)
+            {
+                double each = Width / Length, from = Glyphs!.IsLeftToRight ? inside : Width - inside;
+                int k = Math.Min(Math.Max((int)(from / each), 0), Length - 1);
+                return new CharacterHit(Start + k, from - k * each >= each / 2 ? 1 : 0);
+            }
+            var hit = Glyphs!.GetCharacterHitFromDistance(inside, out _);
             return new CharacterHit(hit.FirstCharacterIndex - _firstCluster + Start, hit.TrailingLength);
         }
+
+        const double Edge = 0.01;
+
+        /// <summary>True when the run's glyphs are numbered against the direction it says it has: a left-to-right run whose clusters fall from one glyph
+        /// to the next, or a right-to-left one whose rise. Avalonia 12 does this to the spaces a wrapped line ends with after a right-to-left run
+        /// (ClusterOrderTests); the run's own distance and hit answers are then wrong.</summary>
+        public bool ClustersAgainstDirection { get; }
+
+        /// <summary>True for such a run of spaces, which are all one width and so can be placed by counting them instead.</summary>
+        bool UsesEvenSpacing => ClustersAgainstDirection && IsSpaces && Length > 0;
+
+        /// <summary>The distance to the edge before the character that many characters in: the run's own direction decides which side that is.</summary>
+        double DistanceByCount(int count) => Glyphs!.IsLeftToRight ? Width * count / Length : Width - Width * count / Length;
     }
     public sealed class LineInfo
     {

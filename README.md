@@ -114,7 +114,10 @@ that is not a field. The field raises nothing when it loses focus.
   of two or more runs, and likewise on a left-to-right paragraph's line of two or more runs with a right-to-left run in it (on 12 some of its ranges throw); an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by
   reading such a line from its runs as they are drawn (`LineInfo.UsesRuns`: caret x, hit testing, visual stops and selection boxes
   from each run's glyphs). It is not behind `#if`, because 12 has the second fault too (ADR 0015 expected a layer for 11.3 only).
-  `RichTextField.ObjectAsGlyph` is the workaround for the third.
+  `RichTextField.ObjectAsGlyph` is the workaround for the third. On 12 only, the spaces a wrapped line ends with after a run of Arabic in a
+  left-to-right paragraph come with glyph clusters numbered against the run's direction and answer distances and hits that do not add up
+  (a click at the end of the line lands one space short); `RunSlot` places such a run by counting its spaces (`ClusterOrderTests` names the
+  fault and fails when 12 stops doing it).
 - **Paragraph and character properties**: drawn, with the host's `IStyleResolver` supplying named styles (ADR 0004): weight (any 100 to
   900, invert), italic, foreground and background colour, underline type and colour (dotted, dashed, single, double,
   strikethrough, and the squiggle, which the layout draws itself as a zigzag below the baseline), superscript and subscript, font size (absolute, relative, named), font
