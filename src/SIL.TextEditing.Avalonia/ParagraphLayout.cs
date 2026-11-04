@@ -1428,11 +1428,23 @@ namespace SIL.TextEditing.Avalonia
                         right = Math.Max(right, piece.Key.Right - li.X);
                     }
                 else
-                    foreach (var tb in li.Line.GetTextBounds(i, 1))
+                {
+                    try
                     {
-                        left = Math.Min(left, tb.Rectangle.X);
-                        right = Math.Max(right, tb.Rectangle.Right);
+                        foreach (var tb in li.Line.GetTextBounds(i, 1))
+                        {
+                            left = Math.Min(left, tb.Rectangle.X);
+                            right = Math.Max(right, tb.Rectangle.Right);
+                        }
                     }
+                    catch (InvalidOperationException)
+                    {
+                        // Avalonia 12 refuses a range that covers no width ("Covered length must be greater than zero"), such as a space an Arabic letter mark
+                        // takes the width of: it is no gap to stretch.
+                        left = double.MaxValue;
+                        right = double.MinValue;
+                    }
+                }
                 if (right - left > 0.01) spaces.Add(new KeyValuePair<double, double>(left, right));
             }
             if (spaces.Count == 0) return;
