@@ -74,10 +74,19 @@ namespace SIL.TextEditing.Avalonia
             ActualThemeVariantChanged += (o, e) => InvalidateVisual();
         }
 
+        /// <summary>The dispatcher the field belongs to. Avalonia 12 lets a control live on a dispatcher other than the main UI
+        /// thread's; Avalonia 11 has only the one.</summary>
+        global::Avalonia.Threading.Dispatcher OwnDispatcher =>
+#if NET10_0_OR_GREATER
+            Dispatcher;
+#else
+            global::Avalonia.Threading.Dispatcher.UIThread;
+#endif
+
         void RequireUIThread()
         {
             if (!CheckAccess())
-                throw new InvalidOperationException("A RichTextField's document must be edited on the UI thread: the field changes Avalonia state when the document changes. Marshal the edit with Dispatcher.UIThread.");
+                throw new InvalidOperationException("A RichTextField's document must be edited on the thread of the dispatcher the field belongs to: the field changes Avalonia state when the document changes. Marshal the edit with the field's Dispatcher (the UI thread's, Dispatcher.UIThread, for a field on the main window).");
         }
 
         /// <summary>The editing session: caret, selection, active writing system and edit events. Like the control, it must be
@@ -362,11 +371,11 @@ namespace SIL.TextEditing.Avalonia
         void RestartPauseTimer()
         {
             // Edits are refused off the UI thread (Editor.AccessCheck), so this is only reached from another thread when a host
-            // has removed that check; a DispatcherTimer has thread affinity, so the timer is handed to the UI thread then. A field
+            // has removed that check; a DispatcherTimer has thread affinity, so the restart is handed to the field's own dispatcher then. A field
             // that is not on screen has no timer (it closes the step when it leaves the screen).
             if (!CheckAccess())
             {
-                global::Avalonia.Threading.Dispatcher.UIThread.Post(RestartPauseTimer);
+                OwnDispatcher.Post(RestartPauseTimer);
                 return;
             }
             if (!_onScreen)
@@ -388,7 +397,11 @@ namespace SIL.TextEditing.Avalonia
             }
             if (_pauseTimer == null)
             {
+#if NET10_0_OR_GREATER
+                _pauseTimer = new global::Avalonia.Threading.DispatcherTimer(global::Avalonia.Threading.DispatcherPriority.Background, OwnDispatcher);
+#else
                 _pauseTimer = new global::Avalonia.Threading.DispatcherTimer();
+#endif
                 _pauseTimer.Tick += (o, e) => { _pauseTimer.Stop(); Editor.CloseUndoGroup(); };
             }
             _pauseTimer.Interval = Editor.TypingPause;

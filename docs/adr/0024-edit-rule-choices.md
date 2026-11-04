@@ -59,7 +59,7 @@ one, and can change without superseding anything.
 - **Edits belong on the UI thread.** A change to the document made through `DocumentEditor` from another thread throws an
   `InvalidOperationException` at once, before anything changes (issue #33; `DocumentEditor.AccessCheck`, which
   `RichTextField` sets). The field answers document changes by changing Avalonia state, which only the UI thread may do,
-  so a clear refusal is enough; marshalling the notification would leave the document changing under a layout on
+  so a clear refusal is enough ("the UI thread" is the thread of the dispatcher the field belongs to, which on Avalonia 12 may not be the main window's; the message and the pause-timer fallback name that dispatcher, issue #68); marshalling the notification would leave the document changing under a layout on
   another thread. FieldWorks marshals off-thread data changes itself, so a host adapter that forwards LCModel
   `PropChanged` into `ExternalReplaceParagraph` or `Apply` must marshal to the UI thread first. Default, not an owner
   decision.
