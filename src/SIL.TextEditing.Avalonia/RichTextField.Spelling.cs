@@ -504,7 +504,13 @@ namespace SIL.TextEditing.Avalonia
                 {
                     // A mark that ends one character before the edit is safe unless that character joins words: then the edit may have made one word of it and
                     // what follows.
-                    foreach (var m in head.Marks) if (m.End < headEnd && !(m.End == headEnd - 1 && joinerAt(m.End))) state.Marks.Add(m);
+                    foreach (var m in head.Marks)
+                    {
+                        if (m.End < headEnd && !(m.End == headEnd - 1 && joinerAt(m.End))) state.Marks.Add(m);
+                        // A mark that goes is checked again over its own stretch, whatever the edit did to the text beside it: an edit that splits a
+                        // surrogate pair leaves a lone surrogate that ends the word the recheck from the edit would start at, so the mark would never be looked at again.
+                        else if (m.Start < headEnd) pending.Add((m.Start, m.End));
+                    }
                     foreach (var (s, en) in head.Pending) if (s < headEnd) pending.Add((s, Math.Min(en, headEnd)));
                 }
             }
@@ -515,7 +521,10 @@ namespace SIL.TextEditing.Avalonia
                 else
                 {
                     foreach (var m in tail.Marks)
+                    {
                         if (m.Start > tailStart && !(m.Start + shift == dirtyEnd + 1 && joinerAt(m.Start + shift - 1))) state.Marks.Add(new SpellingMark(m.Start + shift, m.Length, m.Problem));
+                        else if (m.End > tailStart) pending.Add((m.Start + shift, m.End + shift));   // likewise
+                    }
                     foreach (var (s, en) in tail.Pending) if (en > tailStart) pending.Add((Math.Max(s, tailStart) + shift, en + shift));
                 }
             }

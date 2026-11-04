@@ -202,6 +202,7 @@ namespace SIL.TextEditing.Tests
             return p;
         }
 
+#if TEXTEDITING_COUNTERS
         [Fact]
         public void Looking_up_runs_and_the_length_reads_a_few_runs_not_all_of_them()
         {
@@ -252,6 +253,7 @@ namespace SIL.TextEditing.Tests
             long reads = runList.ElementReads - before;
             Assert.True(reads <= 500 * 30, $"{reads} runs read for 500 searches");
         }
+#endif
 
         // ---- NearestEditable against a plain walk over the insertion points
 
@@ -371,6 +373,7 @@ namespace SIL.TextEditing.Tests
             }
         }
 
+#if TEXTEDITING_COUNTERS
         [Fact]
         public void Slicing_a_long_paragraph_reads_the_runs_the_range_touches()
         {
@@ -380,6 +383,7 @@ namespace SIL.TextEditing.Tests
             for (int i = 0; i < 500; i++) p.Slice(i * 7, i * 7 + 9);
             Assert.True(p.Runs.ElementReads - before <= 500 * 8, (p.Runs.ElementReads - before) + " runs read for 500 slices");
         }
+#endif
 
         // ---- a run is held by the paragraph that holds it and by no other
 

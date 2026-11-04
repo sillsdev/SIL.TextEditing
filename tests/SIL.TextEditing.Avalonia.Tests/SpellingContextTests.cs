@@ -184,6 +184,7 @@ namespace SIL.TextEditing.Avalonia.Tests
 
         // ---- drawing does not rebuild the paragraphs' text
 
+#if TEXTEDITING_COUNTERS
         [Fact]
         public void Drawing_a_field_with_marks_in_several_runs_does_not_read_the_text_of_its_paragraphs_again() => Headless.Run(() =>
         {
@@ -201,5 +202,6 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(before, doc.Paragraphs.Sum(p => p.TextReads));
             window.Close();
         });
+#endif
     }
 }

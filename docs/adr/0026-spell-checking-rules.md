@@ -53,7 +53,11 @@ owner decisions.
 - **An edit keeps the marks it leaves alone.** A mark outside the edit moves with the text, and only the words around the edit are checked
   again: the stretch the edit touched, widened to whole words and past an apostrophe or joiner next to it (a mark that ends one
   character before the edit stays unless that character joins words). The word being typed has no squiggle until the next idle step; no other
-  squiggle blinks. This is ours: FieldWorks checks a changed paragraph again from scratch. An undo, a redo, an external replacement, an edit the
+  squiggle blinks. A mark the edit drops is checked again over its own stretch, so an edit that splits a surrogate pair (a host's or a regular
+  expression's; the field's own caret never does) cannot lose the mark of a word beside it. A stale squiggle can show beside the edit for one idle
+  step: a mark that ends just before the edit is kept unless that character joins words, so when the edit changes what the neighbouring word is (it
+  mixes writing systems or unchecked runs now, so it is blue, or is no longer wrong) the old red mark stays until the next step checks that stretch.
+  Once the idle work has caught up the marks equal a full recheck. This is ours: FieldWorks checks a changed paragraph again from scratch. An undo, a redo, an external replacement, an edit the
   field was not told the range of (the host's `Apply`) and any edit to a paragraph with a line limit (the edit moves where the limit cuts
   it) check the paragraphs they replace again from scratch. A result is for one state of its paragraph
   (`Paragraph.ChangeStamp`) and is never used for another.

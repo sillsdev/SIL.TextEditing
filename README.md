@@ -47,6 +47,13 @@ the list directly. `RunList` has `Add`, `Insert`, `RemoveAt`, `RemoveRange`, `Ad
 (use LINQ for `ConvertAll`, `FindIndex` and the like); assign a `new RunList(runs)` to `Paragraph.Runs` to replace the runs. A
 change to a run's `PropertyBag` in place is not seen (see the spelling section for what to call).
 
+`Paragraph.Runs = list` takes a `List<Run>` directly (the paragraph adopts a new `RunList` over the same runs). `Run.Text = null` throws
+`ArgumentNullException` (use an empty string). Looping over `Paragraph.Runs` while the list is added to, removed from or has a run
+replaced throws `InvalidOperationException`, as it does for a `List<Run>`; changing a run's text or properties meanwhile is fine.
+`Paragraph.Text` is safe to read from any thread while nothing changes the paragraph (the model itself is edited on the UI thread only).
+The work counters tests use (`TextReads`, `ElementReads`) exist in a build that defines `TEXTEDITING_COUNTERS` (every configuration but
+Release) and cost nothing in a Release build.
+
 ## Build and test
 
 Windows with the .NET 10 SDK and the .NET Framework 4.8 targeting pack (net48 builds and tests run only on Windows):

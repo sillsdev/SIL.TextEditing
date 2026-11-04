@@ -142,25 +142,45 @@ namespace SIL.TextEditing
             }
         }
 
-        string? _text;
-        long _textStamp;
+        // The joined text and the stamp it was joined at, as one object that is never changed after it is made: a reader on another thread
+        // takes the whole pair or none of it, never the new stamp with the old string.
+        sealed class JoinedText
+        {
+            public readonly long Stamp;
+            public readonly string Text;
+            public JoinedText(long stamp, string text) { Stamp = stamp; Text = text; }
+        }
 
-        /// <summary>For a test: how many times <see cref="Text"/> has been asked for, so a test can count that work instead of timing it.</summary>
+        JoinedText? _joined;
+
+#if TEXTEDITING_COUNTERS
+        /// <summary>For a test (a build that defines <c>TEXTEDITING_COUNTERS</c>, as Debug does): how many times <see cref="Text"/> has been asked for,
+        /// so a test can count that work instead of timing it. A release build counts nothing and this stays 0.</summary>
         internal long TextReads { get; private set; }
+#else
+        internal long TextReads => 0;
+#endif
 
         /// <summary>The paragraph's text. One run's text is that run's string; several are joined once and the result kept until the paragraph changes
-        /// (<see cref="ChangeStamp"/>), so asking again is free.</summary>
+        /// (<see cref="ChangeStamp"/>), so asking again is free. Reading it is safe from any thread while nothing changes the paragraph (the
+        /// model is edited on the UI thread only, ADR 0024).</summary>
         public string Text
         {
             get
             {
+#if TEXTEDITING_COUNTERS
                 TextReads++;
-                if (Runs.Count == 1) return Runs[0].Text;
-                if (_text != null && _textStamp == _stamp) return _text;
+#endif
+                var runs = _runs;
+                if (runs.Count == 1) return runs[0].Text;
+                long stamp = _stamp;
+                var joined = _joined;
+                if (joined != null && joined.Stamp == stamp) return joined.Text;
                 var sb = new StringBuilder();
-                foreach (var r in Runs) sb.Append(r.Text);
-                _textStamp = _stamp;
-                return _text = sb.ToString();
+                foreach (var r in runs) sb.Append(r.Text);
+                var made = new JoinedText(stamp, sb.ToString());
+                _joined = made;
+                return made.Text;
             }
         }
 
