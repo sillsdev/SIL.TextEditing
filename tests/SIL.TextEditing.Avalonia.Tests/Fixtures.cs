@@ -49,7 +49,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         }
 
         /// <summary>The field drawn on a white page, as pixels.</summary>
-        public static Shot Render(RichTextField field) => new Shot(field);
+        public static Shot Render(RichTextField field, double scale = 1) => new Shot(field, scale);
 
         /// <summary>A rendered field, readable by pixel.</summary>
         public sealed class Shot
@@ -57,12 +57,12 @@ namespace SIL.TextEditing.Avalonia.Tests
             readonly byte[] _buffer;
             readonly int _stride;
 
-            public Shot(Control control)
+            public Shot(Control control, double scale = 1)
             {
-                var size = new PixelSize((int)Math.Ceiling(control.Bounds.Width), (int)Math.Ceiling(control.Bounds.Height));
+                var size = new PixelSize((int)Math.Ceiling(control.Bounds.Width * scale), (int)Math.Ceiling(control.Bounds.Height * scale));
                 Width = size.Width;
                 Height = size.Height;
-                using (var bitmap = new RenderTargetBitmap(size))
+                using (var bitmap = new RenderTargetBitmap(size, new Vector(96 * scale, 96 * scale)))
                 {
                     bitmap.Render(control);
                     _stride = size.Width * 4;

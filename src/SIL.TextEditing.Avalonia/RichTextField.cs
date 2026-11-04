@@ -351,6 +351,7 @@ namespace SIL.TextEditing.Avalonia
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
                     foreach (var li in pl.Lines) if (!li.IsEmpty) li.Draw(context, y);
+                    pl.DrawDecorations(context, y);
                     pl.DrawSquiggles(context, y);
                     pl.DrawLabel(context, y);
                     pl.DrawEllipsis(context, y);

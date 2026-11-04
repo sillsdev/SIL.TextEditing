@@ -346,7 +346,7 @@ U+FFFC (ORC) carries `ktptObjData`: first char = kodt type, rest = payload (KRN:
 | Valid insertion points (no IP inside a cluster/ligature) | V/lib/UniscribeSegment.cpp:1508 `IsValidInsertionPoint`, 2477 `FindValidIPBackward`/`Forward` | YES | YES (shaper stops) | M |
 | Combining marks and NFC/NFD: layout in NFC, offsets mapped back | V/lib/NfcOffsetMap.h; UniscribeSegment.cpp:1605-1700 `OffsetInNfc`, `OffsetToOrig` | N/A | PARTIAL: no normalisation; offsets are UTF-16 of stored text | M |
 | Line breaking per ws locale (ICU) | V/lib/LgLineBreaker.cpp:77-115 | NO | NO (Avalonia default breaker) | M |
-| Justification stretch (kashida/inter-word) | V/lib/UniscribeSegment.cpp:3737 `NumStretchableGlyphs`, 3760 `StretchGlyphs` | NO | PARTIAL: inter-word stretch only (equal share per interior space), no kashida | M |
+| Justification stretch (kashida/inter-word) | V/lib/UniscribeSegment.cpp:3737 `NumStretchableGlyphs`, 3760 `StretchGlyphs` | NO | PARTIAL: inter-word stretch only (equal share per interior space), no kashida; underlines and strikethrough run on as one line across the stretched text (ParagraphLayout.DrawDecorations) | M |
 | Surrogate pairs / grapheme clusters / Indic conjuncts | V/VwSelection.cpp:3938-4000 | PARTIAL | YES (`GraphemeClusters` incl. GB9c, TE/M/GraphemeClusters.cs) | M |
 | Vertical orientation | SRS/OrientationManager.cs | NO | NO | L |
 
