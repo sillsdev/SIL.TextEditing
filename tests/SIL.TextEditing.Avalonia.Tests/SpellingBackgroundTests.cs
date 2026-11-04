@@ -27,16 +27,32 @@ namespace SIL.TextEditing.Avalonia.Tests
             public readonly List<string> Asked = new List<string>();
             public readonly List<int> Threads = new List<int>();
             public Exception? Throws;
+            /// <summary>When set, a question from a thread other than <see cref="GateOwner"/> sets Entered and waits for Release before answering.</summary>
+            public ManualResetEventSlim? Entered, Release;
+            public int GateOwner;
+            int _inside;
+            public int MaxInside;
 
             public bool Check(string word)
             {
-                lock (Asked)
+                int now = Interlocked.Increment(ref _inside);
+                try
                 {
-                    Asked.Add(word);
-                    Threads.Add(Environment.CurrentManagedThreadId);
+                    lock (Asked)
+                    {
+                        Asked.Add(word);
+                        Threads.Add(Environment.CurrentManagedThreadId);
+                        MaxInside = Math.Max(MaxInside, now);
+                    }
+                    if (Release != null && Environment.CurrentManagedThreadId != GateOwner)
+                    {
+                        Entered!.Set();
+                        Release.Wait();
+                    }
+                    if (Throws != null) throw Throws;
+                    return Known.Contains(word);
                 }
-                if (Throws != null) throw Throws;
-                return Known.Contains(word);
+                finally { Interlocked.Decrement(ref _inside); }
             }
 
             public IReadOnlyList<string> Suggest(string word) => new[] { "the" };
@@ -275,6 +291,28 @@ namespace SIL.TextEditing.Avalonia.Tests
             rig.RunAll();
             Assert.Equal(0, seen);
             Assert.Equal(new[] { "saat" }, rig.Words(0));    // and the writing system is checked again
+        });
+
+        [Fact]
+        public void A_menu_asked_while_a_batch_is_out_calls_Check_on_the_field_thread_at_the_same_time_as_the_worker() => Headless.Run(() =>
+        {
+            var host = BgHost(out var en);
+            en.Entered = new ManualResetEventSlim();
+            en.Release = new ManualResetEventSlim();
+            en.GateOwner = Environment.CurrentManagedThreadId;
+            using var rig = new Rig(Two(), host);
+            rig.Step();
+            var run = rig.Worker[0];
+            var worker = new Thread(() => run());
+            rig.Worker.Clear();
+            worker.Start();
+            en.Entered.Wait();                               // the worker is inside Check
+            var s = rig.Field.SpellingSuggestionsAt(new TextPosition(0, 10));   // the menu: Check on this thread now
+            en.Release.Set();
+            worker.Join();
+            Assert.NotNull(s);
+            Assert.Equal(2, en.MaxInside);                   // so a background checker's Check must be fully thread-safe
+            rig.RunAll();
         });
 
         // ---- failures stay on the field's thread

@@ -138,7 +138,9 @@ owner decisions.
   for ignoring; adding a member to `ISpellCheckHost` would have broken every host) says that `Check` may be called on a worker thread, and a host whose
   dictionary is slow does not hold up input for even one word. The field still finds and judges the words of a step (at most 25) on its own thread,
   where it reads the model, and sends only the dictionary questions (the checker, the NFC word) to a worker, one batch at a time and one question at a
-  time within it, so a checker is never asked on two threads at once by one field. The answers are posted back and applied on the field's thread only if
+  time within it. The checker must be fully thread-safe all the same: a context menu or request asks `Check` on the UI thread (through
+  `SpellingSuggestionsAt`) while a batch is out, so `Check` can run on the UI thread and a worker at the same time. (The field does not lock around
+  it: that would make the menu wait for the batch.) The answers are posted back and applied on the field's thread only if
   the paragraph is the one that was asked about, in the state it had (a restart, a width change that moves a line limit, an edit through the editor
   or a direct change all replace or invalidate it) and at the stamp it had (`Paragraph.ChangeStamp`), in the same epoch; otherwise they are dropped and
   the text is asked again, so no mark is ever drawn for text that is not there. While a batch is out the idle work starts nothing new and does not

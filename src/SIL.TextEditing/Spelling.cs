@@ -26,8 +26,10 @@ namespace SIL.TextEditing
     /// be called on a worker thread, so a slow dictionary does not hold up input. The field finds and judges the words on its own thread, sends the
     /// dictionary questions for one idle step (at most <c>25</c> words) to a worker, one batch at a time and one question at a time within it, and applies
     /// the answers on its own thread, only if the paragraph and the checking are as they were when the questions were sent (<see cref="Paragraph.ChangeStamp"/>):
-    /// an answer for text that has changed since is dropped and the text is asked again. The checker must be safe to call while the UI thread calls its other
-    /// members (<see cref="ISpellChecker.Suggest"/> for a menu, <see cref="ISpellChecker.Add"/>), which stay on the UI thread. A checker that throws on the
+    /// an answer for text that has changed since is dropped and the text is asked again. The checker must be fully thread-safe: <see cref="ISpellChecker.Check"/>
+    /// can run on the UI thread (a context menu or request judges its word there) and on the worker at the same time, and its other members
+    /// (<see cref="ISpellChecker.Suggest"/>, <see cref="ISpellChecker.Add"/>) stay on the UI thread meanwhile. A <c>Check</c> that is running cannot be
+    /// interrupted, but no further word is asked once the field has let go of the host. A checker that throws on the
     /// worker is reported through <c>RichTextField.SpellCheckerFailed</c>, on the UI thread, as before. A checker without this interface is asked on the
     /// UI thread, one step at a time, as it always was.</summary>
     public interface IBackgroundSpellChecker : ISpellChecker
