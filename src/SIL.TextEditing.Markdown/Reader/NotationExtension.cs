@@ -16,6 +16,8 @@ namespace SIL.TextEditing.Markdown.Reader
     internal sealed class SpanInline : ContainerInline
     {
         public AttrBlock Attrs = null!;
+        /// <summary>Where the opening bracket is, as Markdig numbers it (the source text; a fence line is numbered from its own start).</summary>
+        public int OpenAt;
     }
 
     /// <summary>A <c>[[kind:Name]]</c> link with its optional attribute block.</summary>
@@ -199,7 +201,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 ReportBadBlock(context, status, braceAt, errorPos, error, delta);
                 return false;
             }
-            var span = new SpanInline { Attrs = block!.Shifted(delta) };
+            var span = new SpanInline { Attrs = block!.Shifted(delta), OpenAt = open.Span.Start };
             int openStart = open.Span.Start;
             int line = open.Line, column = open.Column;
             open.ReplaceBy(span);

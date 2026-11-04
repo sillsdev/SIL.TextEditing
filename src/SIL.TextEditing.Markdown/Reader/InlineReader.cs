@@ -168,7 +168,8 @@ namespace SIL.TextEditing.Markdown.Reader
 
         void ReadSpan(SpanInline span, Fmt fmt)
         {
-            var inner = ApplyAttrs(span.Attrs, fmt, new ObjectForm());
+            // The text form [text]{link=...} is placed on the whole span: from the opening bracket to the closing brace.
+            var inner = ApplyAttrs(span.Attrs, fmt, new ObjectForm { Start = span.OpenAt, End = span.Attrs.End - 1 });
             Walk(span, inner);
         }
 

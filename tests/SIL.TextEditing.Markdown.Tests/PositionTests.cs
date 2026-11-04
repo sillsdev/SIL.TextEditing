@@ -64,6 +64,64 @@ namespace SIL.TextEditing.Markdown.Tests
             => AssertFindings("a\n\n| h | h |\n| --- | --- |\n| `x` | [[w:nope]] |", 5,
                 ("gdr.syntax.unsupported-markup", "`x`"), ("gdr.link.not-found", "[[w:nope]]"));
 
+        // The text form [text]{link=...} is the common way to write a link; its finding sits on the whole [text]{...} span.
+        const string TextLink = "[see]{link=w:zzz}";
+        const string TextLinkWithUrl = "[see this]{url=\"x\" link=w:zzz}";
+
+        [Fact]
+        public void ATextFormLinkInAParagraph() => AssertFindings("a\n\nb " + TextLink + " c", 3, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkWithAUrlInAParagraph() => AssertFindings("a\n\nb " + TextLinkWithUrl + " c", 3, ("gdr.link.not-found", TextLinkWithUrl));
+
+        [Fact]
+        public void ATextFormLinkOnTheSecondLineOfAParagraph() => AssertFindings("a\n\nfirst line\nsecond " + TextLink + " c", 4, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkOnTheContinuationLineOfAListItem() => AssertFindings("a\n\n- first\n  b " + TextLink, 4, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkInAQuote() => AssertFindings("a\n\n> b " + TextLink, 3, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkInAHeading() => AssertFindings("a\n\n# b " + TextLink, 3, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkInAFenceLine() => AssertFindings("a\n\n::: {style=S}\nb " + TextLink + " c\n:::", 4, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkInATableCell() => AssertFindings("a\n\n| h | h |\n| --- | --- |\n| x | b " + TextLink + " c |", 5, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkInTheHeaderOfASecondTable() => AssertFindings("| h |\n| --- |\n\nb\n\n| x " + TextLink + " | y |\n| --- | --- |", 6, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkInACellNextToAnotherSpan() => AssertFindings("a\n\n| [p]{v} | " + TextLink + " |\n| --- | --- |", 3, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkInALaterRowOfATableAfterAFence()
+            => AssertFindings("::: {style=S}\nq\n:::\n\n| h | h |\n| --- | --- |\n| a | b |\n| c | d " + TextLink + " |", 8, ("gdr.link.not-found", TextLink));
+
+        [Fact]
+        public void ATextFormLinkWithCrlfLineEnds()
+        {
+            var d = Assert.Single(MarkdownConverter.Parse("a\r\n\r\nb " + TextLink + " c\r\n", Hosts.Project()).Diagnostics);
+            Assert.Equal((3, 3, 3, 3 + TextLink.Length), (d.Line, d.Column, d.EndLine, d.EndColumn));
+            Assert.Equal(TextLink, d.Observed);
+        }
+
+        [Fact]
+        public void ANestedSpanInsideATextFormLinkDoesNotMoveIt() => AssertFindings("a\n\nb [see [c]{v} d]{link=w:zzz} e", 3, ("gdr.link.not-found", "[see [c]{v} d]{link=w:zzz}"));
+
+        [Fact]
+        public void ATextFormLinkTheHostResolvesRaisesNothing()
+        {
+            var host = new TestObjects();
+            var guid = new System.Guid("11111111-2222-3333-4444-555555555555");
+            host.Names[guid] = "palit";
+            Assert.Empty(MarkdownConverter.Parse("a\n\n[see]{link=w:palit guid=" + guid + "}", Hosts.Project(host)).Diagnostics);
+        }
+
         [Theory]
         [InlineData("a `x` b", "\\`x\\`")]
         [InlineData("a <b>x</b> c", "\\<b>")]
