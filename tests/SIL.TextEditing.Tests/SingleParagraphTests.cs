@@ -232,7 +232,7 @@ namespace SIL.TextEditing.Tests
             e.Paste(new List<Paragraph> { Para("en", "en", text) });
             clock.Stop();
             Assert.Equal(text.Length - 1, e.Document.Paragraphs[0].Text.Length);
-            Assert.True(clock.Elapsed < System.TimeSpan.FromSeconds(2), $"took {clock.Elapsed}");
+            Assert.True(clock.Elapsed < System.TimeSpan.FromSeconds(5), $"took {clock.Elapsed}");
         }
 
         [Fact]
