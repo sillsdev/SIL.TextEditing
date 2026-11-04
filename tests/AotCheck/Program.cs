@@ -6,8 +6,15 @@ using SIL.TextEditing.Avalonia;
 var clusters = GraphemeClusters.Starts("áb");
 Console.WriteLine(clusters.Count == 2 ? "ok" : "unexpected");
 
-// Touches the Markdown converter so Markdig has something to link.
-Console.WriteLine(SIL.TextEditing.Markdown.MarkdownConverter.Parse("a [b]{v}").Document.Paragraphs.Count == 1 ? "md ok" : "md unexpected");
+// Runs the Markdown converter both ways, so Markdig's parser, tables and our extension are linked and executed under AOT.
+{
+    const string md = "# Title\n\nHello **bold** [mang]{ws=ceb} [x](https://example.org)\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n::: {style=Example}\nline\n:::\n";
+    var parsed = SIL.TextEditing.Markdown.MarkdownConverter.Parse(md);
+    string written = SIL.TextEditing.Markdown.MarkdownConverter.ToMarkdown(parsed.Document);
+    bool same = !parsed.HasErrors && parsed.Document.Paragraphs.Count == 5 && written == md;
+    Console.WriteLine(same ? "md ok" : "md unexpected: " + written);
+    if (!same) return 1;
+}
 
 // Runs the libpalaso path under AOT: SLDR offline init (reads langtags JSON with Newtonsoft) and a definition.
 try
