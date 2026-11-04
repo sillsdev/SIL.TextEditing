@@ -103,5 +103,27 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Equal("cafe" + Acute, back.Runs[0].Text);
             Assert.True(MarkdownConverter.AreEquivalent(nfc, back));
         }
+
+        [Fact]
+        public void AttributeValuesAreNeverNormalised()
+        {
+            const string nfc = "caf\u00E9";
+            var result = MarkdownConverter.Parse("[caf\u00E9]{s6=\"" + nfc + "\" s2=\"" + nfc + "\" cs=\"" + nfc + "\"} [x](https://e.org/" + nfc + ")");
+            var runs = result.Document.Paragraphs[0].Runs;
+            Assert.Equal("cafe" + Acute, runs[0].Text);
+            Assert.Equal(nfc, runs[0].ObjData);
+            Assert.Equal(nfc, runs[0].Props.StrProps[2]);
+            Assert.Equal(nfc, runs[0].Props.StrProps[TextPropertyNumbers.NamedStyle]);
+            Assert.EndsWith("https://e.org/" + nfc, runs.Last(r => r.ObjData != null).ObjData);
+        }
+
+        [Fact]
+        public void NormalisationCanBeSwitchedOff()
+        {
+            var options = new MarkdownOptions { NormalizeText = false };
+            Assert.Equal("caf\u00E9", MarkdownConverter.Parse("caf\u00E9", options).Document.Paragraphs[0].Runs[0].Text);
+            Assert.Equal("caf\u00E9", MarkdownConverter.ParseInline("caf\u00E9", options).Runs[0].Text);
+            Assert.True(new MarkdownOptions().NormalizeText);
+        }
     }
 }

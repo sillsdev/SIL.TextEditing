@@ -31,6 +31,12 @@ namespace SIL.TextEditing.Markdown
         /// <summary>Whether a style name exists in the project; null accepts every name.</summary>
         public IStyleCatalog? Styles { get; set; }
 
+        /// <summary>True (the default) when <see cref="MarkdownConverter.Parse"/> and <see cref="MarkdownConverter.ParseInline"/> return the text of
+        /// every run as NFD, the form the editor stores (ADR 0018, issue 75). Only run text is normalised: attribute values (<c>s6</c> object data,
+        /// <c>url</c>, <c>guid</c>, <c>cs</c> and other <c>sN</c> or <c>pN</c> strings) are opaque and come back byte for byte. Finding and object
+        /// offsets refer to the source as written either way. False leaves the text as written.</summary>
+        public bool NormalizeText { get; set; } = true;
+
         /// <summary>What an object run's data means. Default: <see cref="DefaultObjectMapper"/>. Never null.</summary>
         /// <exception cref="ArgumentNullException">The value is null.</exception>
         public IObjectMapper Objects

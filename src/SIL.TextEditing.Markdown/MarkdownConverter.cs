@@ -56,7 +56,7 @@ namespace SIL.TextEditing.Markdown
         }
 
         /// <summary>Reads Markdown into a document and the findings the parser makes. Paragraph keys are null. The text of every run is
-        /// normalised to NFD, the form the editor stores (ADR 0018), whatever form the Markdown was written in; the offsets, lines and columns of
+        /// normalised to NFD, the form the editor stores (ADR 0018), whatever form the Markdown was written in, unless <see cref="MarkdownOptions.NormalizeText"/> is false (attribute values are never normalised); the offsets, lines and columns of
         /// the findings and objects still refer to the text as written (<see cref="MarkdownParseResult.Source"/>).</summary>
         public static MarkdownParseResult Parse(string markdown, MarkdownOptions? options = null)
         {

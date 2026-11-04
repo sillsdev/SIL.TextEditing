@@ -241,7 +241,7 @@ namespace SIL.TextEditing.Markdown.Reader
             }
             var p = new Paragraph { Runs = runs };
             p.Normalize();
-            ToNfd(p.Runs);
+            if (_options.NormalizeText) ToNfd(p.Runs);
             return p.Runs;
         }
 
@@ -704,7 +704,7 @@ namespace SIL.TextEditing.Markdown.Reader
             if (style.Length > 0) paragraph.Props.StrProps[TextPropertyNumbers.NamedStyle] = style;
             paragraph.Rtl = paragraph.Props.TryGetInt(128, out int rtl) && rtl != 0;
             paragraph.Normalize();
-            ToNfd(paragraph.Runs);
+            if (_options.NormalizeText) ToNfd(paragraph.Runs);
             paragraph.DefaultWs = paragraph.Runs.Count > 0 ? paragraph.Runs[0].Ws : defaultWs ?? _options.WritingSystems.DefaultAnalysis;
             return paragraph;
         }
