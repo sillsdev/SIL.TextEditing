@@ -8,10 +8,14 @@ namespace SIL.TextEditing.Avalonia.Tests
 {
     static class Fixtures
     {
+        /// <summary>The registry the geometry tests start from: the fallback at 16 point, the size their widths were chosen for (the field's own
+        /// fallback is FieldWorks' 10 point, which <see cref="FallbackTests"/> covers). A test that cares about the default makes its own field.</summary>
+        public static WritingSystemRegistry SixteenPoint() => new WritingSystemRegistry { FallbackSize = 16 };
+
         /// <summary>A field laid out at the given width, not in a window.</summary>
         public static RichTextField Field(Document doc, double width = 520, Action<RichTextField>? configure = null)
         {
-            var field = new RichTextField(doc);
+            var field = new RichTextField(doc) { WritingSystems = SixteenPoint() };
             configure?.Invoke(field);
             Layout(field, width);
             return field;
@@ -26,7 +30,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         /// <summary>A field shown in a headless window, so it has a TopLevel (clipboard, focus).</summary>
         public static (Window Window, RichTextField Field) InWindow(Document doc, double width = 520)
         {
-            var field = new RichTextField(doc);
+            var field = new RichTextField(doc) { WritingSystems = SixteenPoint() };
             var window = new Window { Width = width, Height = 400, Content = field };
             window.Show();
             Headless.Pump();

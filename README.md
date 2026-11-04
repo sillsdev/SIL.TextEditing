@@ -114,6 +114,8 @@ and the FieldWorks Markdown form (the Markdown library will provide it; only the
 - `SIL.TextEditing.Runs.v1` is no longer on the clipboard. `Interchange` stays as a test and debug dump, and
   `InterchangeClipboardForm` lets tests and the playground carry formatting without liblcm or the Markdown library.
 
+A writing system the host did not register (`RichTextField.WritingSystems`) is drawn in Segoe UI at 10 point, FieldWorks' own default size.
+
 ## Keyboards (ADR 0008)
 
 The field never switches keyboards; the host does. Subscribe to `RichTextField.ActiveWsChanged` (old and new writing system)
