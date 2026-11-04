@@ -44,6 +44,19 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void A_slow_regular_expression_is_given_up_in_the_highlight_and_the_paint_never_runs_it_again() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(OneParagraph(new string('a', 40) + "!"));
+            field.SetFindHighlight(new FindOptions { Pattern = "(a+)+$", UseRegularExpression = true, RegexTimeout = System.TimeSpan.FromMilliseconds(20) });
+            Fixtures.Render(field);
+            Assert.True(field.FindHighlightTimedOut);
+            Fixtures.Render(field);   // no second attempt: the flag stays until the options change
+            Assert.True(field.FindHighlightTimedOut);
+            field.SetFindHighlight(new FindOptions { Pattern = "a" });
+            Assert.False(field.FindHighlightTimedOut);
+        });
+
+        [Fact]
         public void Shift_F10_raises_the_request_only_when_a_host_listens_and_leaves_the_key_alone_otherwise() => Headless.Run(() =>
         {
             var (window, field) = Fixtures.InWindow(OneParagraph("hello world"));

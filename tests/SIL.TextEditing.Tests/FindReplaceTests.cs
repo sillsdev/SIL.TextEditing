@@ -370,5 +370,67 @@ namespace SIL.TextEditing.Tests
             Assert.True(e.ReplaceMatch(new TextRange(0, 0, 1), Opt("x"), "caf\u00E9"));
             Assert.Equal("cafe" + Acute, Text(e));
         }
+
+        [Fact]
+        public void A_regular_expression_that_would_cut_a_letter_from_its_marks_does_not_match_and_the_answer_does_not_depend_on_the_stored_form()
+        {
+            foreach (var original in new[] { "caf\u00E9 x", "cafe" + Acute + " x" })
+            foreach (NormalizationForm? form in new NormalizationForm?[] { null, NormalizationForm.FormC, NormalizationForm.FormD })
+            {
+                // The letters run stops before the accent, so it is not a whole letter: refused, in every form.
+                var e = One(original, form);
+                string before = Text(e);
+                var letters = new FindOptions { Pattern = "(\\p{L}+)", UseRegularExpression = true };
+                Assert.Equal(1, e.ReplaceAll(letters, "<$1>"));
+                Assert.Equal(before.Replace(" x", " <x>"), Text(e));
+                var e2 = One(original, form);
+                Assert.Equal(0, e2.ReplaceAll(new FindOptions { Pattern = "e", UseRegularExpression = true }, "X"));
+                // A pattern that takes the marks with the letter replaces whole letters, in every form.
+                var e3 = One(original, form);
+                Assert.Equal(5, e3.ReplaceAll(new FindOptions { Pattern = "\\p{L}\\p{M}*", UseRegularExpression = true }, "<$0>"));
+                Assert.Equal("<c><a><f><\u00E9> <x>", TextNormalizer.Normalize(Text(e3), NormalizationForm.FormC));
+            }
+        }
+
+        [Fact]
+        public void A_regular_expression_skips_embedded_objects_like_the_plain_search_does()
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(new Run { Ws = "en", Text = "ab" });
+            p.Runs.Add(Run.Object("en", ((char)8) + "pic"));
+            p.Runs.Add(new Run { Ws = "en", Text = "cd" });
+            var e = new DocumentEditor(Doc(p));
+            Assert.Equal(new[] { new TextRange(0, 0, 5) }, e.FindAll(new FindOptions { Pattern = "abcd", UseRegularExpression = true }));
+            Assert.Empty(e.FindAll(new FindOptions { Pattern = "b.c", UseRegularExpression = true }));   // the object is not a character to match
+        }
+
+        [Fact]
+        public void Whole_word_treats_an_embedded_object_inside_a_word_as_ignorable_on_both_sides()
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(new Run { Ws = "en", Text = "cat" });
+            p.Runs.Add(Run.Object("en", ((char)8) + "pic"));
+            p.Runs.Add(new Run { Ws = "en", Text = "s" });
+            var e = new DocumentEditor(Doc(p));
+            Assert.Empty(e.FindAll(Opt("cat", wholeWord: true)));
+            Assert.Single(e.FindAll(Opt("cats", wholeWord: true)));
+        }
+
+        [Fact]
+        public void A_regular_expression_that_runs_too_long_matches_nothing_and_says_it_timed_out_in_every_search()
+        {
+            var e = One(new string('a', 40) + "!");
+            var slow = new FindOptions { Pattern = "(a+)+$", UseRegularExpression = true, RegexTimeout = System.TimeSpan.FromMilliseconds(20) };
+            Assert.Empty(e.FindAll(slow));
+            Assert.True(e.FindTimedOut);
+            Assert.False(e.TryFind(slow, true, true, out _, out _));
+            Assert.True(e.FindTimedOut);
+            Assert.Equal(0, e.ReplaceAll(slow, "x"));
+            Assert.True(e.FindTimedOut);
+            Assert.Empty(e.FindAllIn(0, slow));
+            Assert.True(e.FindTimedOut);
+            Assert.NotEmpty(e.FindAll(Opt("a")));
+            Assert.False(e.FindTimedOut);   // the next search starts afresh
+        }
     }
 }

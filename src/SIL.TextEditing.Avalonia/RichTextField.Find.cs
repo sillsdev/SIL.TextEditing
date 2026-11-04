@@ -11,6 +11,7 @@ namespace SIL.TextEditing.Avalonia
         FindOptions? _highlightOptions;
         bool _highlightAll;
         TextRange? _currentMatch;
+        bool _highlightTimedOut;
         Dictionary<int, IReadOnlyList<TextRange>>? _highlightCache;
 
         /// <summary>The fill of every match when all matches are highlighted (<see cref="SetFindHighlight"/>).</summary>
@@ -59,8 +60,14 @@ namespace SIL.TextEditing.Avalonia
             _highlightOptions = options?.Clone();
             _highlightAll = all && options != null;
             _highlightCache = null;
+            _highlightTimedOut = false;
             InvalidateVisual();
         }
+
+        /// <summary>True when the highlight of all matches was given up because a regular expression ran out of time
+        /// (<see cref="FindOptions.RegexTimeout"/>): nothing but the current match is drawn until the options change, and the paint
+        /// never runs the expression again.</summary>
+        public bool FindHighlightTimedOut => _highlightTimedOut;
 
         /// <summary>Forgets the current match and every highlight.</summary>
         public void ClearFindHighlight()
@@ -78,11 +85,14 @@ namespace SIL.TextEditing.Avalonia
         void DrawFindHighlights(DrawingContext context, ParagraphLayout layout, int index, double y)
         {
             if (!_highlightAll && _currentMatch == null) return;
-            if (_highlightAll && _highlightOptions != null)
+            if (_highlightAll && _highlightOptions != null && !_highlightTimedOut)
             {
                 _highlightCache ??= new Dictionary<int, IReadOnlyList<TextRange>>();
                 if (!_highlightCache.TryGetValue(index, out var matches))
+                {
                     _highlightCache[index] = matches = Editor.FindAllIn(index, _highlightOptions);
+                    if (Editor.FindTimedOut) { _highlightTimedOut = true; _highlightCache = null; return; }
+                }
                 foreach (var m in matches) FillRange(context, layout, m, y, FindHighlightBrush);
             }
             if (_currentMatch is TextRange current && current.Start.Paragraph == index) FillRange(context, layout, current, y, CurrentMatchBrush);

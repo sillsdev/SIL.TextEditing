@@ -36,6 +36,11 @@ namespace SIL.TextEditing
         /// for any.</summary>
         public string? CharacterStyle { get; set; }
 
+        /// <summary>How long one regular-expression search of one paragraph may run before it is given up: a pattern that backtracks
+        /// without end would freeze the window. A search that times out finds nothing and says so (<see cref="DocumentEditor.FindTimedOut"/>).
+        /// Default a quarter of a second.</summary>
+        public TimeSpan RegexTimeout { get; set; } = TimeSpan.FromMilliseconds(250);
+
         public FindOptions Clone() => (FindOptions)MemberwiseClone();
 
         /// <summary>False when the options cannot search, with the reason: a regular expression that does not compile.</summary>

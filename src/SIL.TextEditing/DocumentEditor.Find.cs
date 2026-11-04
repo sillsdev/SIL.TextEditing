@@ -9,9 +9,20 @@ namespace SIL.TextEditing
     // because a selection cannot reach it (ADR 0024).
     public sealed partial class DocumentEditor
     {
+        /// <summary>True when the last find, find-all or replace gave up on a regular expression that ran past
+        /// <see cref="FindOptions.RegexTimeout"/>: it found nothing, so the host can say the pattern is too slow. Each search starts it afresh.</summary>
+        public bool FindTimedOut { get; private set; }
+
+        FindPlan NewPlan(FindOptions options)
+        {
+            FindTimedOut = false;
+            return FindPlan.Create(options);
+        }
+
         List<Hit> HitsIn(int paragraph, FindPlan plan, bool overlapping, string? replacement = null)
         {
             var hits = plan.Matches(Document.Paragraphs[paragraph], overlapping, replacement);
+            if (plan.TimedOut) FindTimedOut = true;
             int limit = LimitOf(paragraph);
             if (limit < Document.Paragraphs[paragraph].Length) hits.RemoveAll(h => h.End > limit);
             return hits;
@@ -27,7 +38,7 @@ namespace SIL.TextEditing
         {
             match = default;
             wrapped = false;
-            var plan = FindPlan.Create(options);
+            var plan = NewPlan(options);
             if (!plan.Valid) return false;
             Ordered(out var a, out var b);
             int count = Document.Paragraphs.Count;
@@ -75,7 +86,7 @@ namespace SIL.TextEditing
         public IReadOnlyList<TextRange> FindAll(FindOptions options)
         {
             var result = new List<TextRange>();
-            var plan = FindPlan.Create(options);
+            var plan = NewPlan(options);
             if (!plan.Valid) return result;
             for (int pi = 0; pi < Document.Paragraphs.Count; pi++)
                 foreach (var h in HitsIn(pi, plan, false)) result.Add(new TextRange(pi, h.Start, h.End));
@@ -86,7 +97,7 @@ namespace SIL.TextEditing
         public IReadOnlyList<TextRange> FindAllIn(int paragraph, FindOptions options)
         {
             var result = new List<TextRange>();
-            var plan = FindPlan.Create(options);
+            var plan = NewPlan(options);
             if (!plan.Valid) return result;
             foreach (var h in HitsIn(paragraph, plan, false)) result.Add(new TextRange(paragraph, h.Start, h.End));
             return result;
@@ -96,7 +107,7 @@ namespace SIL.TextEditing
         /// selection: the user may have moved it since the find).</summary>
         public bool IsMatch(TextRange range, FindOptions options)
         {
-            var plan = FindPlan.Create(options);
+            var plan = NewPlan(options);
             return plan.Valid && range.Start.Paragraph == range.End.Paragraph && !range.IsEmpty && FindHit(range, plan, null) != null;
         }
 
@@ -142,7 +153,7 @@ namespace SIL.TextEditing
         public bool ReplaceMatch(TextRange range, FindOptions options, string replacement, string? writingSystem = null, string? characterStyle = null)
         {
             CheckAccess();
-            var plan = FindPlan.Create(options);
+            var plan = NewPlan(options);
             if (!plan.Valid || range.IsEmpty || range.Start.Paragraph != range.End.Paragraph) return false;
             var hit = FindHit(range, plan, replacement);
             if (hit == null) return false;
@@ -160,7 +171,7 @@ namespace SIL.TextEditing
         public int ReplaceAll(FindOptions options, string replacement, string? writingSystem = null, string? characterStyle = null)
         {
             CheckAccess();
-            var plan = FindPlan.Create(options);
+            var plan = NewPlan(options);
             if (!plan.Valid || IsReadOnly) return 0;
             var todo = new List<(int Paragraph, Hit Hit)>();
             for (int pi = 0; pi < Document.Paragraphs.Count; pi++)

@@ -39,7 +39,7 @@ namespace SIL.TextEditing
             var nfd = TextNormalizer.Normalize(_o.Pattern, NormalizationForm.FormD);
             if (_o.UseRegularExpression)
             {
-                try { _regex = new Regex(nfd, (_o.MatchCase ? RegexOptions.None : RegexOptions.IgnoreCase) | RegexOptions.CultureInvariant); }
+                try { _regex = new Regex(nfd, (_o.MatchCase ? RegexOptions.None : RegexOptions.IgnoreCase) | RegexOptions.CultureInvariant, _o.RegexTimeout); }
                 catch (ArgumentException) { Valid = false; }
             }
             else
@@ -54,6 +54,9 @@ namespace SIL.TextEditing
 
         /// <summary>False when the pattern is a regular expression that does not compile: nothing matches.</summary>
         public bool Valid { get; } = true;
+
+        /// <summary>True once a regular-expression search ran out of time: the plan then matches nothing more.</summary>
+        public bool TimedOut { get; private set; }
 
         static int CodePointLength(string s, int i) => char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]) ? 2 : 1;
 
@@ -147,13 +150,14 @@ namespace SIL.TextEditing
         public List<Hit> Matches(Paragraph para, bool overlapping, string? replacement = null)
         {
             var hits = new List<Hit>();
-            if (!Valid) return hits;
+            if (!Valid || TimedOut) return hits;
             if (_o.PropertiesOnly) { PropertyStretches(para, hits); return hits; }
             if (_o.Pattern.Length == 0) return hits;
             var text = para.Text;
             if (text.Length == 0) return hits;
             var map = NfdMap.Build(text);
             bool[]? boundaries = null;
+            string? stripped = null;
             bool Accept(int ns, int ne, string? expansion)
             {
                 int os = map.Start[ns];
@@ -162,8 +166,13 @@ namespace SIL.TextEditing
                 if (oe <= os) return false;
                 if (!_o.UseRegularExpression && _o.WholeWord)
                 {
-                    boundaries ??= WordBreaks.Boundaries(text);
-                    if (!boundaries[os] || !boundaries[oe]) return false;
+                    // An embedded object is ignorable here too: word boundaries are judged on the text without them.
+                    if (boundaries == null)
+                    {
+                        stripped = text.IndexOf(Run.ObjectReplacement) < 0 ? null : text.Replace(Run.ObjectReplacement.ToString(), string.Empty);
+                        boundaries = WordBreaks.Boundaries(stripped ?? text);
+                    }
+                    if (!boundaries[Unobjected(text, os, stripped != null)] || !boundaries[Unobjected(text, oe, stripped != null)]) return false;
                 }
                 if (!PropertiesMatch(para, os, oe)) return false;
                 hits.Add(new Hit(os, oe, expansion));
@@ -172,8 +181,27 @@ namespace SIL.TextEditing
 
             if (_regex != null)
             {
-                foreach (Match m in _regex.Matches(map.Nfd))
-                    if (m.Length > 0) Accept(m.Index, m.Index + m.Length, replacement == null ? null : m.Result(replacement));
+                // The expression sees the text without embedded objects, as the plain search does, and a match that would cut a letter from
+                // its marks (it starts or ends beside one) is refused, so the answer is the same whichever form the document stores.
+                var seen = new StringBuilder(map.Nfd.Length);
+                var back = new List<int>(map.Nfd.Length);
+                for (int i = 0; i < map.Nfd.Length; i++)
+                    if (map.Nfd[i] != Run.ObjectReplacement) { seen.Append(map.Nfd[i]); back.Add(i); }
+                try
+                {
+                    foreach (Match m in _regex.Matches(seen.ToString()))
+                    {
+                        if (m.Length == 0) continue;
+                        int ns = back[m.Index], ne = back[m.Index + m.Length - 1] + 1;
+                        if ((ns > 0 && IsMark(map.Nfd, ns)) || (ne < map.Nfd.Length && IsMark(map.Nfd, ne))) continue;
+                        Accept(ns, ne, replacement == null ? null : m.Result(replacement));
+                    }
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    TimedOut = true;
+                    hits.Clear();
+                }
                 return hits;
             }
 
@@ -200,6 +228,15 @@ namespace SIL.TextEditing
                 if (Accept(ns, ne, null) && !overlapping) k += len - 1;
             }
             return hits;
+        }
+
+        /// <summary>An offset in the text, as an offset in the text with its embedded objects removed.</summary>
+        static int Unobjected(string text, int offset, bool has)
+        {
+            if (!has) return offset;
+            int n = 0;
+            for (int i = 0; i < offset; i++) if (text[i] == Run.ObjectReplacement) n++;
+            return offset - n;
         }
 
         /// <summary>True when every run the range touches has the writing system and character style asked for. Embedded objects are
