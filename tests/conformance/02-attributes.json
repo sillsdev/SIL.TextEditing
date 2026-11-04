@@ -141,6 +141,18 @@
     "canonical": "x[2]{superscript=super} and H[2]{superscript=sub}O\n"
   },
   {
+    "name": "an inner span overrides an outer one, and the result is flat runs",
+    "markdown": "[a [b]{ws=ar} c]{.v}\n",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "a ", "ws": "ceb" }, { "text": "b", "ws": "ar" }, { "text": " c", "ws": "ceb" } ] } ],
+    "canonical": "[a&#x20;]{.v}[b]{ws=ar}[&#x20;c]{.v}\n"
+  },
+  {
+    "name": "an attribute inside a mark wins over the mark around it",
+    "markdown": "**[x]{bold=off}** and *[y]{italic=invert}*\n",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en", "props": { "bold": "off" } }, { "text": " and ", "ws": "en" }, { "text": "y", "ws": "en", "props": { "italic": "invert" } } ] } ],
+    "canonical": "[x]{bold=off} and [y]{italic=invert}\n"
+  },
+  {
     "name": "ok: fwmd.syntax.unknown-attribute a known key",
     "markdown": "[x]{ws=ceb-x-old}\n",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "ceb-x-old" } ] } ],
