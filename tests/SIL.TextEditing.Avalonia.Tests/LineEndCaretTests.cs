@@ -110,6 +110,53 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.True(walked > 20);
         });
 
+
+        [Theory]
+        [MemberData(nameof(Cases))]
+        public void The_arrow_keys_across_the_spaces_a_wrapped_line_ends_with_move_the_caret_visibly_each_time_even_with_no_room_beside_the_text_area(string text, bool rtl, int align) => Headless.Run(() =>
+        {
+            // The spaces hang past the control, where the caret cannot be drawn: it is held at the edge, and spaced so each step still shows. Only a
+            // line whose own text ends within the spaces' room of the edge has none to give (the host's margin is what gives it): its caret does not
+            // go back, and stays inside the control (every line of a justified paragraph is such a line).
+            int walked = 0, crowded = 0;
+            for (double width = 150; width <= 330; width += 2)
+            {
+                var field = Field(text, rtl, align, width, false);
+                var pl = field.ParagraphLayoutFor(0);
+                for (int i = 0; i < pl.Lines.Count - 1; i++)
+                {
+                    var li = pl.Lines[i];
+                    int core = Core(pl, li), end = pl.LineEnd(i, out _);
+                    double first = pl.CaretXBeforeClamp(li, new global::Avalonia.Media.CharacterHit(core));
+                    double room = (end - core) * ParagraphLayout.MinCaretStep;
+                    bool fits = rtl ? first - room >= 0 : first + room <= width - ParagraphLayout.CaretWidth;
+                    double least = fits ? 1.4 : 0;
+                    if (!fits) crowded++;
+                    field.Editor.SetCaret(new TextPosition(0, core));
+                    double x = field.CaretRect().X;
+                    for (int o = core + 1; o <= end; o++)
+                    {
+                        field.Press(rtl ? Key.Left : Key.Right);
+                        Assert.Equal(o, field.Editor.Caret.Offset);
+                        double next = field.CaretRect().X;
+                        Assert.True(rtl ? next <= x - least : next >= x + least, "width " + width + " line " + i + ": the caret did not visibly move across the space at " + (o - 1) + " (" + x + " to " + next + ")");
+                        Assert.True(next >= -0.01 && next <= width - ParagraphLayout.CaretWidth + 0.01, "the caret is outside the control at " + next);
+                        x = next;
+                    }
+                    for (int o = end - 1; o >= core; o--)
+                    {
+                        field.Press(rtl ? Key.Right : Key.Left);
+                        Assert.Equal(o, field.Editor.Caret.Offset);
+                        double next = field.CaretRect().X;
+                        Assert.True(rtl ? next >= x + least : next <= x - least, "width " + width + " line " + i + ": going back, the caret did not visibly move across the space at " + o + " (" + x + " to " + next + ")");
+                        x = next;
+                    }
+                    walked++;
+                }
+            }
+            Assert.True(walked > 100);
+            if (align != 5) Assert.True(crowded * 5 < walked, "lines too crowded for the spaces' carets to show: " + crowded + " of " + walked);   // a justified line always ends at the edge
+        });
         [Theory]
         [MemberData(nameof(Cases))]
         public void The_end_of_a_wrapped_line_is_never_drawn_outside_the_control(string text, bool rtl, int align) => Headless.Run(() =>
@@ -144,6 +191,61 @@ namespace SIL.TextEditing.Avalonia.Tests
                 if (caret.X < pl.LayoutWidth - ParagraphLayout.CaretWidth - 0.01)
                     Assert.True(System.Math.Abs(pl.CaretRect(clicked.Offset, false, clicked.CaretHit).X - caret.X) < 1, "line " + i + ": the click at the End caret " + caret.X + " put the caret at " + pl.CaretRect(clicked.Offset, false, clicked.CaretHit).X);
             }
+        });
+
+        [Theory]
+        [MemberData(nameof(Cases))]
+        public void A_click_at_a_caret_stop_held_at_the_right_edge_of_the_control_gives_a_caret_at_that_stop(string text, bool rtl, int align) => Headless.Run(() =>
+        {
+            // The stop-by-x theories skip a stop within a caret's width of the right edge, where the control holds the caret inside it: this is its pin.
+            // A line stretched to the edge, or text that ends there, has such a stop; the stops among the spaces it ends with are another matter.
+            int pinned = 0;
+            for (double width = 200; width <= 300; width += 1)
+            {
+                var pl = Layout(text, rtl, align, width);
+                foreach (var li in pl.Lines)
+                {
+                    int core = pl.TextEnd(li);
+                    while (core > li.Start && pl.EffectiveText[core - 1] == ' ') core--;
+                    foreach (var stop in pl.VisualStops(li))
+                    {
+                        if (stop.Offset > core || stop.X <= width - ParagraphLayout.CaretWidth - 0.01) continue;
+                        var hit = pl.HitTestDetailed(new Point(stop.X, li.Y + 2));
+                        var caret = pl.CaretRect(hit.Offset, false, hit.CaretHit);
+                        Assert.True(System.Math.Abs(caret.X - stop.X) < 1, "width " + width + ": a click at " + stop.X + " (the stop of offset " + stop.Offset + ") gave offset " + hit.Offset + ", whose caret is at " + caret.X);
+                        pinned++;
+                    }
+                }
+            }
+            Assert.True(pinned > 10, "stops pinned: " + pinned);
+        });
+
+        [Theory]
+        [MemberData(nameof(Cases))]
+        public void A_click_at_a_caret_among_the_hanging_spaces_that_the_control_holds_apart_gives_a_caret_at_that_stop(string text, bool rtl, int align) => Headless.Run(() =>
+        {
+            // The carets of the spaces a wrapped line ends with are drawn apart inside the control's edge when it leaves no room (MinCaretStep):
+            // the mouse follows the carets as drawn, so a click at one gives it and not a neighbour a space's width away.
+            int pinned = 0;
+            for (double width = 150; width <= 330; width += 1)
+            {
+                var pl = Field(text, rtl, align, width, false).ParagraphLayoutFor(0);
+                for (int i = 0; i < pl.Lines.Count - 1; i++)
+                {
+                    var li = pl.Lines[i];
+                    int core = Core(pl, li);
+                    foreach (var stop in pl.VisualStops(li))
+                    {
+                        double first = pl.CaretXBeforeClamp(li, new global::Avalonia.Media.CharacterHit(core));
+                        if (stop.Offset <= core || (rtl ? stop.X > first + 0.5 : stop.X < first - 0.5)) continue;   // a caret held over the text before the spaces is on the text
+                        var hit = pl.HitTestDetailed(new Point(stop.X, li.Y + 2));
+                        var caret = pl.CaretRect(hit.Offset, false, hit.CaretHit);
+                        Assert.True(System.Math.Abs(caret.X - stop.X) < 1, "width " + width + ": a click at " + stop.X + " (the stop of offset " + stop.Offset + ") gave offset " + hit.Offset + ", whose caret is at " + caret.X);
+                        pinned++;
+                    }
+                }
+            }
+            if (align != 5) Assert.True(pinned > 100, "stops pinned: " + pinned);   // a justified line ends at the edge: its spaces share one place
         });
 
         [Fact]

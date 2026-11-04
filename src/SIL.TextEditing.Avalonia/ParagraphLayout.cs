@@ -1425,13 +1425,29 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Where a caret hit is drawn on a line, in paragraph coordinates. A caret in the spaces a wrapped line ends with (End puts it
         /// after them) is drawn one space width further out for each, as FieldWorks does, even past the text area; it stops at the edge of
-        /// the control so that it is always seen.</summary>
+        /// the control so that it is always seen. With no room beside the area the spaces' carets would all be at that edge, so a step across
+        /// them would not show: they are held <see cref="MinCaretStep"/> apart, the End caret at the edge and the others inside it (by that default
+        /// the caret still moves each step, on the text's own last letters when the text itself reaches the edge).</summary>
         double CaretX(LineInfo li, CharacterHit h)
         {
             double x = CaretXBeforeClamp(li, h);
             if (li.IsEmpty || double.IsInfinity(LayoutWidth)) return x;
-            return Math.Max(0, Math.Min(x, LayoutWidth - CaretWidth));
+            double limit = LayoutWidth - CaretWidth;
+            int o = h.FirstCharacterIndex + h.TrailingLength;
+            int end = TextEnd(li), core = end;
+            while (core > li.Start && EffectiveText[core - 1] == ' ') core--;
+            if (o > core && o <= end)
+            {
+                // A caret among the hanging spaces: they hang at the end of the paragraph's direction, the caret after the last at the edge.
+                double room = (end - o) * MinCaretStep;
+                double first = CaretXBeforeClamp(li, new CharacterHit(core));   // before the first space: where they start
+                x = Rtl ? Math.Min(Math.Max(x, room), first) : Math.Max(Math.Min(x, limit - room), first);
+            }
+            return Math.Max(0, Math.Min(x, limit));
         }
+
+        /// <summary>The least distance between the carets of two hanging spaces that are held at the edge of the control.</summary>
+        internal const double MinCaretStep = 2;
 
         /// <summary>Where a caret hit is on a line before the control's edge holds it (<see cref="CaretX"/>): the place the line's layout says.</summary>
         internal double CaretXBeforeClamp(LineInfo li, CharacterHit h) => li.X + li.Map(li.DistanceOf(h));
@@ -1479,7 +1495,8 @@ namespace SIL.TextEditing.Avalonia
             var caretHit = h;
             if (e > max) { e = max; caretHit = new CharacterHit(e); }
             if (!last && e == max && max > li.Start) caretHit = TrailingHit(max);
-            int ch = Math.Max(0, Math.Min(Math.Max(0, EffectiveText.Length - 1), h.FirstCharacterIndex));
+            if (e <= max && PreeditAt < 0) HangingCaretAt(li, point.X, last, max, h.FirstCharacterIndex, ref e, ref caretHit);
+            int ch =Math.Max(0, Math.Min(Math.Max(0, EffectiveText.Length - 1), h.FirstCharacterIndex));
             var result = new HitResult
             {
                 Offset = Math.Max(0, Math.Min(Paragraph.Length, ToModel(e))),
@@ -1487,6 +1504,35 @@ namespace SIL.TextEditing.Avalonia
                 CaretHit = PreeditAt >= 0 ? new CharacterHit(e) : caretHit,
             };
             return result;
+        }
+
+        /// <summary>The carets of the spaces a line ends with are drawn where <see cref="CaretX"/> puts them, which is not where the line's layout has
+        /// them when the control holds them inside its edge: so a click in or beside those spaces goes to the caret nearest to it as drawn, not to the
+        /// character the layout has under it.</summary>
+        void HangingCaretAt(LineInfo li, double x, bool last, int max, int character, ref int e, ref CharacterHit caretHit)
+        {
+            int core = max;
+            while (core > li.Start && EffectiveText[core - 1] == ' ') core--;
+            if (core == max || character < core) return;
+            // Only for a click on one of the spaces (the character under it is among them): one on the text before them is on the text, though a
+            // caret held inside the control may be drawn over it.
+            bool moved = false;
+            for (int o = core + 1; o <= max && !moved; o++)
+            {
+                var hit = o == max && !last ? TrailingHit(max) : new CharacterHit(o - 1, 1);
+                moved = Math.Abs(CaretX(li, hit) - CaretXBeforeClamp(li, hit)) > 0.01;
+            }
+            if (!moved) return;
+            double best = Math.Abs(CaretX(li, caretHit) - x);   // the layout's own answer stands unless a caret as drawn is nearer
+            for (int o = core; o <= max; o++)
+            {
+                var hit = o == core ? new CharacterHit(core) : o == max && !last ? TrailingHit(max) : new CharacterHit(o - 1, 1);
+                double away = Math.Abs(CaretX(li, hit) - x);
+                if (away >= best) continue;
+                best = away;
+                e = o;
+                caretHit = hit;
+            }
         }
 
         public List<Rect> SelectionRects(int from, int to)

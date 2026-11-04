@@ -78,6 +78,10 @@ namespace SIL.TextEditing.Avalonia.Tests
                 foreach (var box in DrawnBoxes(li).Where(b => b.Offset < pl.TextEnd(li)))
                 {
                     if (box.Right - box.Left < 3) continue;
+                    // A space the line ends with, whose caret the control holds inside its edge, is where that caret is drawn (LineEndCaretTests).
+                    int core = pl.TextEnd(li);
+                    while (core > li.Start && pl.EffectiveText[core - 1] == ' ') core--;
+                    if (box.Offset >= core && System.Math.Abs(pl.CaretRect(pl.TextEnd(li), true).X - pl.CaretXBeforeClamp(li, new global::Avalonia.Media.CharacterHit(pl.TextEnd(li) - 1, 1))) > 0.01) continue;
                     double w = box.Right - box.Left;
                     int atLeft = pl.HitTestDetailed(new Point(box.Left + w * 0.25, li.Y + 2)).Offset;
                     int atRight = pl.HitTestDetailed(new Point(box.Left + w * 0.75, li.Y + 2)).Offset;
