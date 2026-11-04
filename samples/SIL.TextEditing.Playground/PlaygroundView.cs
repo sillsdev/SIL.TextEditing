@@ -43,6 +43,12 @@ namespace SIL.TextEditing.Playground
             public const string ReadOnly = "ReadOnlyCheck";
             public const string SingleParagraph = "SingleParagraphCheck";
             public const string HostHandlesLeave = "HostHandlesLeaveCheck";
+            public const string SpellCheck = "SpellCheckBox";
+            public const string SpellShow = "SpellShowButton";
+            public const string SpellReplace = "SpellReplaceButton";
+            public const string SpellSpaces = "SpellSpacesButton";
+            public const string SpellAdd = "SpellAddButton";
+            public const string SpellIgnore = "SpellIgnoreButton";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
             public const string DefaultVernacular = "DefaultVernacularButton";
             public const string WsLabel = "WsLabel";
@@ -91,6 +97,8 @@ namespace SIL.TextEditing.Playground
         CheckBox _readOnlyCheck = null!;
         CheckBox _singleParagraphCheck = null!;
         CheckBox _leaveHandled = null!;
+        CheckBox _spellCheck = null!;
+        SampleSpelling? _spelling;
         TextBox _findBox = null!;
         TextBox _replaceBox = null!;
         CheckBox _matchCase = null!;
@@ -206,6 +214,20 @@ namespace SIL.TextEditing.Playground
             _leaveHandled = new CheckBox { Name = Names.HostHandlesLeave, Content = "Host takes leave requests", Focusable = false, Margin = new Thickness(2) };
             ToolTip.SetTip(_leaveHandled, "Tab, Shift+Tab, Ctrl+Tab and arrows at the field's edge raise LeaveRequested; when ticked the host marks it handled, so Tab does not move focus");
             toolbar.Children.Add(_leaveHandled);
+            toolbar.Children.Add(Spacer());
+            _spellCheck = new CheckBox { Name = Names.SpellCheck, Content = "Spell checking", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_spellCheck, "Give the fields the playground's English and French word lists as the host's dictionaries; the field checks the paragraphs in view when idle");
+            _spellCheck.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                SetSpelling(_spellCheck.IsChecked == true);
+            };
+            toolbar.Children.Add(_spellCheck);
+            toolbar.Children.Add(Tool(Names.SpellShow, "Spelling at caret", "What the context menu would offer for the marked word at the caret: the word, why it is marked and the suggestions", () => ShowSpelling()));
+            toolbar.Children.Add(Tool(Names.SpellReplace, "Use first suggestion", "Replace the marked word at the caret with the first suggestion (one undo step)", () => ReplaceSpelling()));
+            toolbar.Children.Add(Tool(Names.SpellSpaces, "Insert missing spaces", "For a word that mixes writing systems or holds an object: put a space between the parts, each part keeping its own writing system", () => SpacesSpelling()));
+            toolbar.Children.Add(Tool(Names.SpellAdd, "Add to dictionary", "Add the marked word at the caret to its dictionary", () => AddSpelling(false)));
+            toolbar.Children.Add(Tool(Names.SpellIgnore, "Ignore", "Ignore the marked word at the caret", () => AddSpelling(true)));
 
             var wsBar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
             wsBar.Children.Add(_wsLabel);
@@ -481,7 +503,9 @@ namespace SIL.TextEditing.Playground
             _syncing = true;
             _readOnlyCheck.IsChecked = false;
             _singleParagraphCheck.IsChecked = false;
+            _spellCheck.IsChecked = scenario.Name == Scenarios.Spelling;
             _syncing = false;
+            SetSpelling(scenario.Name == Scenarios.Spelling);
             _selectionState = string.Empty;
             Log("scenario: " + scenario.Name + (scenario.Many ? " (" + documents.Count + " fields)" : string.Empty));
             UpdateFindHighlight();
@@ -564,10 +588,58 @@ namespace SIL.TextEditing.Playground
             _syncing = true;
             _readOnlyCheck.IsChecked = session.Field.IsReadOnly;
             _singleParagraphCheck.IsChecked = session.Field.SingleParagraph;
+            _spellCheck.IsChecked = session.Field.SpellChecking != null;
             _syncing = false;
             Log("focus: field " + session.Number);
             UpdateWsLabel();
             RefreshInspector();
+        }
+
+        // ------------------------------------------------------------ spelling
+
+        void SetSpelling(bool on)
+        {
+            _spelling = on ? new SampleSpelling(Log) : null;
+            foreach (var session in _sessions) session.Field.SpellChecking = _spelling;
+            Log("spell checking: " + (on ? "on (English and French word lists)" : "off"));
+        }
+
+        SpellingSuggestions? SpellingAtCaret(string action)
+        {
+            var field = _active.Field;
+            var at = field.SpellingSuggestionsAt(field.Editor.Caret);
+            if (at == null) Log(action + ": no marked word at the caret");
+            return at;
+        }
+
+        void ShowSpelling()
+        {
+            var at = SpellingAtCaret("context menu");
+            if (at == null) return;
+            Log("context menu: '" + at.Word + "' (" + at.Ws + ", " + at.Problem + "): " + (at.All.Count == 0 ? "No suggestions" : string.Join(", ", at.Inline) + (at.Additional.Any() ? " + Additional suggestions: " + string.Join(", ", at.Additional) : string.Empty)) + (at.CanAddToDictionary ? "; Add to dictionary" : "; (Add to dictionary disabled)"));
+        }
+
+        void ReplaceSpelling()
+        {
+            var at = SpellingAtCaret("replace");
+            if (at == null) return;
+            if (at.All.Count == 0) { Log("replace: no suggestions for '" + at.Word + "'"); return; }
+            Log("replace: '" + at.Word + "' -> '" + at.All[0] + "': " + (_active.Field.ApplySpellingSuggestion(at, at.All[0]) ? "done" : "refused"));
+        }
+
+        void SpacesSpelling()
+        {
+            var at = SpellingAtCaret("insert spaces");
+            if (at == null) return;
+            Log("insert spaces: '" + at.Word + "': " + (_active.Field.ApplySpellingSuggestion(at, at.WithMissingSpaces()) ? "done" : "refused"));
+        }
+
+        void AddSpelling(bool ignore)
+        {
+            var at = SpellingAtCaret(ignore ? "ignore" : "add");
+            if (at == null) return;
+            bool done = ignore ? _active.Field.IgnoreWord(at) : _active.Field.AddToDictionary(at);
+            if (!done) Log((ignore ? "ignore" : "add") + ": '" + at.Word + "' is not a plain misspelling" + (ignore && at.CanAddToDictionary ? " or its dictionary cannot ignore" : string.Empty));
         }
 
         // ------------------------------------------------------------ label, inspector, log

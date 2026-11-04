@@ -71,3 +71,12 @@ _Avoid_: undo group (in prose; `UndoGroup` is the member name), undo unit
 **Leave request**:
 The event a field raises, with a direction, when a key such as Tab or an arrow cannot move the caret any further inside it, so the host can move focus (ADR 0021).
 _Avoid_: focus request, tab-out
+
+## Spelling
+
+**Spelling mark**:
+A squiggle under a stretch of one paragraph that the field's spell checking found wrong: red for a misspelled word or a word with an embedded object, blue for a word it cannot judge because it mixes writing systems or has unchecked text inside.
+_Avoid_: error, underline (that is a text property)
+
+**Spell checker**:
+The host's dictionary for one writing system, behind `ISpellChecker`. The field never loads a dictionary.

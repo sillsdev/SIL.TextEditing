@@ -31,7 +31,8 @@ One source tree serves both Avalonia generations. The netstandard2.0 target comp
 versions are set per target framework in `Directory.Packages.props`. There is currently no `#if` in the source: the spike's one per-version spot (the clipboard API) is not needed,
 because Avalonia 11.3.17 already has the `DataTransfer` API that 12 uses, and `FontFeature` parsing is written
 without `FontFeatureCollection.Parse` (absent in 11.3) for both. Keep any future per-version difference small, behind
-`#if NET10_0_OR_GREATER`, and list it here.
+`#if NET10_0_OR_GREATER`, and list it here. The one difference now: `SpellScanner` asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a
+one-character string on netstandard2.0 (no overload there), which only costs an allocation for a letter outside the basic plane.
 
 Avalonia.Desktop, Avalonia.Themes.Fluent and Avalonia.Win32.Interoperability are used by the samples only; the
 libraries do not reference them. The playground tests load the Fluent theme so the sample's buttons and pickers have
@@ -118,12 +119,25 @@ The field owns one text; the window around it belongs to the host. These are the
   scrolling. The field never scrolls anything itself: it raises `ScrollRequested` (reason, the part to show, the distance)
   and a scroll viewer round the field answers when no handler marks it handled.
 
+## Spell checking (ADR 0020, 0026)
+
+The host gives the field its dictionaries: set `RichTextField.SpellChecking` to an `ISpellCheckHost` that returns an
+`ISpellChecker` (`Check`, `Suggest`, `Add`; `ISpellIgnorer` adds `Ignore` when a dictionary has it) for each writing system, says which
+characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. The
+field checks the paragraphs in view when idle and draws red squiggles (misspelled, or a word with an object in it) and blue
+ones (a word that mixes writing systems or has unchecked text inside). The rules are in `SpellScanner` (UI-free): words
+break at characters that are not word-forming, and do-not-check text and text that may not be edited (unless forced) are
+skipped. `SpellingSuggestionsAt`, `ApplySpellingSuggestion`, `AddToDictionary`, `IgnoreWord` and `RestartSpelling` are
+what a host's context menu and dictionary changes call (`ApplySpellingSuggestion` also takes runs, for "insert missing spaces"). A checker
+that throws raises `SpellCheckerFailed` and is left alone; it does not end the application. The playground's "Spell checking" scenario shows it with a
+short English and French word list.
+
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
   `WinFormsAvaloniaControlHost` Avalonia's UIA subtree was empty in the spike (unexplained).
 - **Input**: real IME and Keyman interaction are untested (the headless tests drive the IME client directly). Missing:
-  scrolling inside long fields (the host scrolls; see Host hooks), drag and drop, spelling squiggles, touch. Selection by mouse (click
+  scrolling inside long fields (the host scrolls; see Host hooks), drag and drop, touch. Selection by mouse (click
   with bidi and soft-wrap affinity, Shift+click, drag across paragraphs, double-click word, triple-click paragraph) and
   keyboard (Shift+arrows, Ctrl+arrows by word, Home/End by visual line, Ctrl+Home/End, Ctrl+A, Up/Down with the
   preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with
