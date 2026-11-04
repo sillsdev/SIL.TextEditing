@@ -115,7 +115,9 @@ namespace SIL.TextEditing.Avalonia.Tests
                 // Two different marks on the same space: if a mark is drawn the pictures differ, and only by the marks' own ink, because whatever stands in for the
                 // space (a no-break space, or on 11.3 a dotted circle) is the same in both. A mark that is not drawn leaves the two pictures alike (the old way out of the
                 // fault put a word joiner, which has no glyph, where the mark is, and hid it so).
-                Assert.True(Differ(Ink(" " + C(mark)), Ink(" " + C(other))) > 0, "width " + width + ": the mark's own ink is drawn");
+                // Three different marks must all give different pictures: two that are not drawn would give the same one (the bare stand-in for the space).
+                var a = Ink(" " + C(mark)); var b = Ink(" " + C(other)); var c = Ink(" " + C(0x20DD == mark ? 0x301 : 0x20DD));
+                Assert.True(Differ(a, b) > 0 && Differ(a, c) > 0 && Differ(b, c) > 0, "width " + width + ": each mark's own ink is drawn");
             }
         });
     }

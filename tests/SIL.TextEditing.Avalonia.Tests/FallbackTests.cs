@@ -31,5 +31,25 @@ namespace SIL.TextEditing.Avalonia.Tests
             double ratio = plain.ParagraphLayoutFor(0).Width / sixteen.ParagraphLayoutFor(0).Width;
             Assert.InRange(ratio, 0.55, 0.7);   // 10 / 16 = 0.625
         });
+
+        [Fact]
+        public void At_the_real_10_point_default_wrapped_text_has_carets_hits_and_selection_boxes_that_agree() => Headless.Run(() =>
+        {
+            const string text = "The quick brown fox jumps over the lazy dog while the five boxing wizards jump quickly and a mad boxer shot a gloved jab.";
+            var field = new RichTextField(OneParagraph(text));   // no fixture: nothing is pinned to 16 point
+            Fixtures.Layout(field, 150);
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.True(pl.Lines.Count >= 4, "lines: " + pl.Lines.Count);
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] == ' ') continue;
+                var rects = pl.SelectionRects(i, i + 1);
+                var box = Assert.Single(rects);
+                Assert.True(box.Width > 1 && box.Width < 12, "a 10 point letter is narrow: " + box.Width);
+                int hit = pl.HitTest(new global::Avalonia.Point(box.X + box.Width * 0.25, box.Y + box.Height / 2));
+                Assert.Equal(i, hit);
+                Assert.True(System.Math.Abs(pl.CaretRect(i).X - box.X) < 1.5, "caret at " + i);
+            }
+        });
     }
 }
