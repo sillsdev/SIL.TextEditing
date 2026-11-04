@@ -104,7 +104,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ANameWithoutAGuidAsksTheHost()
         {
             var ids = Ids("[[w:palt]]");
-            Assert.Equal(new[] { "gdr.link.not-found" }, ids);
+            Assert.Equal(new[] { "fwmd.link.not-found" }, ids);
         }
 
         [Fact]
@@ -168,10 +168,10 @@ namespace SIL.TextEditing.Markdown.Tests
             => Assert.Equal("Normal| en\"\\xFFFC\"<obj " + ModelDump.Escape(TestObjects.PictureData(Picture)) + ">", Dump("![a caption](fw:picture/" + Picture + ")"));
 
         [Fact]
-        public void AnUnknownPictureIsReported() => Assert.Equal(new[] { "gdr.picture.unknown" }, Ids("![c](fw:picture/" + Guid.Empty + ")"));
+        public void AnUnknownPictureIsReported() => Assert.Equal(new[] { "fwmd.picture.unknown" }, Ids("![c](fw:picture/" + Guid.Empty + ")"));
 
         [Fact]
-        public void AnythingOtherThanAPictureUrlInAnImageIsReported() => Assert.Equal(new[] { "gdr.picture.unknown" }, Ids("![c](http://x/y.png)"));
+        public void AnythingOtherThanAPictureUrlInAnImageIsReported() => Assert.Equal(new[] { "fwmd.picture.unknown" }, Ids("![c](http://x/y.png)"));
 
         [Fact]
         public void AnyOtherObjectDataIsTheS6Attribute()
@@ -204,7 +204,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var result = MarkdownConverter.Parse("[x]{p999=\"5:7\"}", Hosts.Project());
             var d = Assert.Single(result.Diagnostics);
-            Assert.Equal("gdr.prop.unknown-number", d.Id);
+            Assert.Equal("fwmd.prop.unknown-number", d.Id);
             Assert.Equal(MarkdownSeverity.Warning, d.Severity);
             Assert.False(result.HasErrors);
         }
@@ -213,22 +213,22 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AnUnknownKeyIsReportedWithTheNearestKey()
         {
             var d = Assert.Single(MarkdownConverter.Parse("[x]{wss=ceb}", Hosts.Project()).Diagnostics);
-            Assert.Equal("gdr.syntax.unknown-attribute", d.Id);
+            Assert.Equal("fwmd.syntax.unknown-attribute", d.Id);
             Assert.Contains("ws", d.Message);
             Assert.Equal(new[] { "ws" }, d.Choices);
         }
 
         [Fact]
-        public void ADuplicateKeyIsReported() => Assert.Equal(new[] { "gdr.syntax.duplicate-attribute" }, Ids("[x]{ws=ceb ws=en}"));
+        public void ADuplicateKeyIsReported() => Assert.Equal(new[] { "fwmd.syntax.duplicate-attribute" }, Ids("[x]{ws=ceb ws=en}"));
 
         [Fact]
-        public void TwoSpellingsOfOnePropertyAreADuplicate() => Assert.Contains("gdr.syntax.duplicate-attribute", Ids("[x]{MarginTop=1 marginTop=2}"));
+        public void TwoSpellingsOfOnePropertyAreADuplicate() => Assert.Contains("fwmd.syntax.duplicate-attribute", Ids("[x]{MarginTop=1 marginTop=2}"));
 
         [Fact]
         public void AnUnclosedBlockIsReportedAndStaysText()
         {
             var result = MarkdownConverter.Parse("[kaon]{ws=ceb-x-old", Hosts.Project());
-            Assert.Equal(new[] { "gdr.syntax.unclosed-mark" }, result.Diagnostics.Select(d => d.Id).ToArray());
+            Assert.Equal(new[] { "fwmd.syntax.unclosed-mark" }, result.Diagnostics.Select(d => d.Id).ToArray());
             Assert.Equal("Normal| en\"[kaon]{ws=ceb-x-old\"", ModelDump.Of(result.Document));
         }
 
@@ -241,21 +241,21 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AMalformedBlockIsReportedAndStaysText(string markdown)
         {
             var result = MarkdownConverter.Parse(markdown, Hosts.Project());
-            Assert.Contains(result.Diagnostics, d => d.Id == "gdr.syntax.malformed-attribute");
+            Assert.Contains(result.Diagnostics, d => d.Id == "fwmd.syntax.malformed-attribute");
             Assert.Equal("Normal| en\"" + ModelDump.Escape(markdown) + "\"", ModelDump.Of(result.Document));
         }
 
         [Fact]
-        public void AnUnknownWritingSystemIsReported() => Assert.Equal(new[] { "gdr.ws.unknown" }, Ids("[x]{ws=zzz-unknown}"));
+        public void AnUnknownWritingSystemIsReported() => Assert.Equal(new[] { "fwmd.ws.unknown" }, Ids("[x]{ws=zzz-unknown}"));
 
         [Fact]
-        public void AnUnknownEnumValueIsReported() => Assert.Contains("gdr.syntax.malformed-attribute", Ids("[x]{bold=maybe}"));
+        public void AnUnknownEnumValueIsReported() => Assert.Contains("fwmd.syntax.malformed-attribute", Ids("[x]{bold=maybe}"));
 
         [Fact]
-        public void AFlagThatIsNotKnownIsReported() => Assert.Contains("gdr.syntax.unknown-attribute", Ids("[x]{nope}"));
+        public void AFlagThatIsNotKnownIsReported() => Assert.Contains("fwmd.syntax.unknown-attribute", Ids("[x]{nope}"));
 
         [Fact]
-        public void AKeyThatNeedsAValueIsNotAKnownFlag() => Assert.Contains("gdr.syntax.unknown-attribute", Ids("[x]{bold}"));
+        public void AKeyThatNeedsAValueIsNotAKnownFlag() => Assert.Contains("fwmd.syntax.unknown-attribute", Ids("[x]{bold}"));
 
         [Fact]
         public void AQuotedValueMayHoldBraceSpacePipeAndEquals()

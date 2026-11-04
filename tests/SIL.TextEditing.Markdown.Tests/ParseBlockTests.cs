@@ -38,7 +38,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var result = MarkdownConverter.Parse("#### Too deep", Hosts.Project());
             var d = Assert.Single(result.Diagnostics);
-            Assert.Equal("gdr.heading.too-deep", d.Id);
+            Assert.Equal("fwmd.heading.too-deep", d.Id);
             Assert.Equal(MarkdownSeverity.Error, d.Severity);
             Assert.True(result.HasErrors);
         }
@@ -58,7 +58,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AListItemWithALineSeparatorKeepsIt() => Assert.Equal("Bulleted List| en\"a\\x2028b\"", Dump("- a\\\n  b"));
 
         [Fact]
-        public void ANestedListIsUnsupported() => Assert.Contains("gdr.syntax.unsupported-markup", Ids("- a\n  - b"));
+        public void ANestedListIsUnsupported() => Assert.Contains("fwmd.syntax.unsupported-markup", Ids("- a\n  - b"));
 
         [Theory]
         [InlineData("{empty}", "Normal| (empty en)")]
@@ -98,12 +98,12 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ARaggedRowIsReported()
         {
             var ids = Ids("| A | B | C |\n| --- | --- | --- |\n| 1 | 2 |");
-            Assert.Contains("gdr.table.ragged", ids);
+            Assert.Contains("fwmd.table.ragged", ids);
         }
 
         [Fact]
         public void ARowWithTooManyCellsIsReported()
-            => Assert.Contains("gdr.table.ragged", Ids("| A | B |\n| --- | --- |\n| 1 | 2 | 3 |"));
+            => Assert.Contains("fwmd.table.ragged", Ids("| A | B |\n| --- | --- |\n| 1 | 2 | 3 |"));
 
         // Rows count from the header, which is row 1; the delimiter row is not counted. The finding carries the row's line as well.
         [Theory]
@@ -113,7 +113,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("| A |\n| --- |\n| 1 | 2 |", "Row 2 has 2 cells, the header has 1. Add an empty cell or remove one.", 3)]
         public void ARaggedRowSaysHowManyCellsItHasWithTheHeaderAsRowOne(string markdown, string message, int line)
         {
-            var d = Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics, x => x.Id == "gdr.table.ragged");
+            var d = Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics, x => x.Id == "fwmd.table.ragged");
             Assert.Equal(message, d.Message);
             Assert.Equal(line, d.Line);
         }
@@ -122,13 +122,13 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AnAlignmentColonIsReportedNotDropped()
         {
             var result = MarkdownConverter.Parse("| A |\n| :---: |\n| x |", Hosts.Project());
-            Assert.Contains(result.Diagnostics, d => d.Id == "gdr.table.alignment" && d.Replacement == "---");
+            Assert.Contains(result.Diagnostics, d => d.Id == "fwmd.table.alignment" && d.Replacement == "---");
         }
 
         [Theory]
         [InlineData("| A |\n| --- |\n| x&#x9;y |")]
         [InlineData("| A |\n| --- |\n| x&#x2028;y |")]
-        public void ATabOrLineSeparatorInACellIsReported(string md) => Assert.Contains("gdr.table.tab-in-cell", Ids(md));
+        public void ATabOrLineSeparatorInACellIsReported(string md) => Assert.Contains("fwmd.table.tab-in-cell", Ids(md));
 
         [Fact]
         public void AnEscapedPipeStaysInTheCell()
@@ -168,7 +168,7 @@ namespace SIL.TextEditing.Markdown.Tests
 
         [Fact]
         public void AnUnclosedFenceIsReported()
-            => Assert.Contains("gdr.syntax.unclosed-mark", Ids("::: {style=\"Example\"}\ninside"));
+            => Assert.Contains("fwmd.syntax.unclosed-mark", Ids("::: {style=\"Example\"}\ninside"));
 
         [Fact]
         public void AnEmptyStyleIsWrittenAsAnEmptyString()
@@ -189,7 +189,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("    indented")]
         [InlineData("---")]
         [InlineData("[ng]: foo")]
-        public void RawHtmlCodeAndOtherUnsupportedMarkupIsReported(string md) => Assert.Contains("gdr.syntax.unsupported-markup", Ids(md));
+        public void RawHtmlCodeAndOtherUnsupportedMarkupIsReported(string md) => Assert.Contains("fwmd.syntax.unsupported-markup", Ids(md));
 
         [Fact]
         public void TheEscapedFormsAreFine()
@@ -203,7 +203,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var result = MarkdownConverter.Parse("fine\n\nsee [kaon]{ws=ceb-x-old", Hosts.Project());
             var d = Assert.Single(result.Diagnostics);
-            Assert.Equal("gdr.syntax.unclosed-mark", d.Id);
+            Assert.Equal("fwmd.syntax.unclosed-mark", d.Id);
             Assert.Equal(3, d.Line);
             Assert.Equal(11, d.Column);
         }

@@ -146,7 +146,7 @@ namespace SIL.TextEditing.Markdown.Reader
             Report(MarkdownDiagnosticIds.UnknownAttribute, MarkdownSeverity.Error, message, Base + item.Start, Base + item.End, null, choices);
         }
 
-        /// <summary>Asks the host about a writing system tag and reports what it says: <c>gdr.ws.unknown</c> when it does not know the tag (the
+        /// <summary>Asks the host about a writing system tag and reports what it says: <c>fwmd.ws.unknown</c> when it does not know the tag (the
         /// host's list, when it has one, as the choices and the closest tags as the nearest), or the host's own problem when it can give one.</summary>
         public void CheckWritingSystem(string tag, int start, int end)
         {
@@ -168,7 +168,7 @@ namespace SIL.TextEditing.Markdown.Reader
             ReportHostProblem(problem, MarkdownDiagnosticIds.WsUnknown, start, end, choices, nearest);
         }
 
-        /// <summary>Asks the host about a style name (a paragraph style or a character style) and reports what it says: <c>gdr.style.unknown</c>
+        /// <summary>Asks the host about a style name (a paragraph style or a character style) and reports what it says: <c>fwmd.style.unknown</c>
         /// with the closest names as the nearest when it does not know the style, or the host's own problem when it can give one.</summary>
         public void CheckStyle(string name, bool paragraph, int start, int end)
         {

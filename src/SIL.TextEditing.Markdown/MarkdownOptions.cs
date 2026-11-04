@@ -57,15 +57,15 @@ namespace SIL.TextEditing.Markdown
         /// <summary>The writing system <c>v</c> stands for: the project's default vernacular.</summary>
         string DefaultVernacular { get; }
 
-        /// <summary>True when the tag is a writing system of the project; false makes the parser report <c>gdr.ws.unknown</c>.</summary>
+        /// <summary>True when the tag is a writing system of the project; false makes the parser report <c>fwmd.ws.unknown</c>.</summary>
         bool IsKnown(string tag);
     }
 
     /// <summary>Optional: a writing-system mapper that also lists the tags of the project. When <see cref="MarkdownOptions.WritingSystems"/>
-    /// implements it, <c>gdr.ws.unknown</c> carries them as its choices and the closest ones as its nearest.</summary>
+    /// implements it, <c>fwmd.ws.unknown</c> carries them as its choices and the closest ones as its nearest.</summary>
     public interface IKnownWritingSystems
     {
-        /// <summary>The tags of the project's writing systems (the spec's choices for <c>gdr.ws.unknown</c>: its analysis and vernacular systems).</summary>
+        /// <summary>The tags of the project's writing systems (the spec's choices for <c>fwmd.ws.unknown</c>: its analysis and vernacular systems).</summary>
         IReadOnlyList<string> KnownTags { get; }
     }
 
@@ -73,7 +73,7 @@ namespace SIL.TextEditing.Markdown
     /// implements it, the parser calls <see cref="CheckWritingSystem"/> instead of <see cref="IWritingSystemMapper.IsKnown"/>.</summary>
     public interface IWritingSystemChecker
     {
-        /// <summary>Null when the tag is fine. Otherwise the problem to report on the tag: an error with the default id <c>gdr.ws.unknown</c>, or a
+        /// <summary>Null when the tag is fine. Otherwise the problem to report on the tag: an error with the default id <c>fwmd.ws.unknown</c>, or a
         /// warning or suggestion for a tag that is accepted but worth a word (a legacy system); the text keeps the tag either way. The host's
         /// <see cref="MarkdownProblem.Choices"/> and <see cref="MarkdownProblem.Nearest"/> are reported; when it leaves them empty and also
         /// implements <see cref="IKnownWritingSystems"/>, its list and the closest tags fill them.</summary>
@@ -120,7 +120,7 @@ namespace SIL.TextEditing.Markdown
         internal string? Heading(int level) => level == 1 ? Heading1 : level == 2 ? Heading2 : level == 3 ? Heading3 : null;
     }
 
-    /// <summary>Which style names exist in the project, so the parser can report <c>gdr.style.unknown</c>.</summary>
+    /// <summary>Which style names exist in the project, so the parser can report <c>fwmd.style.unknown</c>.</summary>
     public interface IStyleCatalog
     {
         bool IsParagraphStyle(string name);
@@ -128,7 +128,7 @@ namespace SIL.TextEditing.Markdown
     }
 
     /// <summary>Optional: a style catalog that also lists the style names of the project. When <see cref="MarkdownOptions.Styles"/> implements
-    /// it, <c>gdr.style.unknown</c> carries the closest names as its nearest (the spec: <c>Nearest: Example</c>).</summary>
+    /// it, <c>fwmd.style.unknown</c> carries the closest names as its nearest (the spec: <c>Nearest: Example</c>).</summary>
     public interface IKnownStyles
     {
         IReadOnlyList<string> ParagraphStyleNames { get; }
@@ -139,7 +139,7 @@ namespace SIL.TextEditing.Markdown
     /// the parser calls <see cref="CheckStyle"/> instead of <see cref="IStyleCatalog.IsParagraphStyle"/> and <see cref="IStyleCatalog.IsCharacterStyle"/>.</summary>
     public interface IStyleChecker
     {
-        /// <summary>Null when the style is fine. Otherwise the problem to report on the name: an error with the default id <c>gdr.style.unknown</c>, or a
+        /// <summary>Null when the style is fine. Otherwise the problem to report on the name: an error with the default id <c>fwmd.style.unknown</c>, or a
         /// warning or suggestion for a style that is accepted but worth a word. The host's <see cref="MarkdownProblem.Nearest"/> is reported; when it
         /// leaves it empty and also implements <see cref="IKnownStyles"/>, the closest names fill it.</summary>
         MarkdownProblem? CheckStyle(string name, bool paragraph);
@@ -169,10 +169,10 @@ namespace SIL.TextEditing.Markdown
 
     /// <summary>What a host found wrong, or worth saying, about an object the notation spells: the same parts as a finding. The parser places it
     /// on the object's range and reports it. A problem that comes with a failure is an error; one that comes with success is a warning
-    /// (<c>gdr.link.broken</c>) or a suggestion.</summary>
+    /// (<c>fwmd.link.broken</c>) or a suggestion.</summary>
     public sealed class MarkdownProblem
     {
-        /// <summary>A problem with the default id: <c>gdr.link.not-found</c> for a link, <c>gdr.picture.unknown</c> for a picture.</summary>
+        /// <summary>A problem with the default id: <c>fwmd.link.not-found</c> for a link, <c>fwmd.picture.unknown</c> for a picture.</summary>
         public MarkdownProblem(string message) : this(null, MarkdownSeverity.Error, message) { }
 
         public MarkdownProblem(string? id, MarkdownSeverity severity, string message)
@@ -252,7 +252,7 @@ namespace SIL.TextEditing.Markdown
         MarkdownObject? Describe(string objData);
 
         /// <summary>Import: builds the data for an object the notation spelled. On failure <paramref name="problem"/> says what
-        /// was not found, and the parser reports <c>gdr.link.not-found</c> or <c>gdr.picture.unknown</c>.</summary>
+        /// was not found, and the parser reports <c>fwmd.link.not-found</c> or <c>fwmd.picture.unknown</c>.</summary>
         bool TryCreateObjData(MarkdownObject target, out string objData, out string? problem);
 
         /// <summary>True when <paramref name="kind"/> is a link kind the host resolves; the name form <c>[[kind:Name]]</c> only
@@ -262,12 +262,12 @@ namespace SIL.TextEditing.Markdown
 
     /// <summary>Optional: an object mapper that can say more than yes or no. When <see cref="MarkdownOptions.Objects"/> implements it, the parser
     /// calls <see cref="TryResolve"/> instead of <see cref="IObjectMapper.TryCreateObjData"/>, so the host's own findings (the spec's
-    /// <c>gdr.link.not-found</c> with its nearest names, <c>gdr.link.ambiguous</c> with its choices, <c>gdr.link.broken</c> as a warning) reach
+    /// <c>fwmd.link.not-found</c> with its nearest names, <c>fwmd.link.ambiguous</c> with its choices, <c>fwmd.link.broken</c> as a warning) reach
     /// the result with the line and column of the object.</summary>
     public interface IObjectResolver
     {
         /// <summary>Import: builds the data for an object the notation spelled. Returns true with the data when it can, and then
-        /// <paramref name="problem"/> may still hold a warning or suggestion to report (a deleted target: <c>gdr.link.broken</c>). Returns false when it
+        /// <paramref name="problem"/> may still hold a warning or suggestion to report (a deleted target: <c>fwmd.link.broken</c>). Returns false when it
         /// cannot, and <paramref name="problem"/> says why (null for a plain "cannot be resolved"); that is always an error.
         /// <paramref name="target"/> carries the object's place in the text (<see cref="MarkdownObject.Source"/>).</summary>
         bool TryResolve(MarkdownObject target, out string objData, out MarkdownProblem? problem);

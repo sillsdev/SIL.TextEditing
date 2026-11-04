@@ -17,7 +17,7 @@ namespace SIL.TextEditing.Markdown.Tests
             const int count = 20_000;
             string text = string.Concat(Enumerable.Repeat("[x]{wss=1}\n\n", count)) + string.Concat(Enumerable.Repeat("{empty}\n\n", count));
             var result = MarkdownConverter.Parse(text);
-            Assert.Equal(count, result.Diagnostics.Count(d => d.Id == "gdr.syntax.unknown-attribute"));
+            Assert.Equal(count, result.Diagnostics.Count(d => d.Id == "fwmd.syntax.unknown-attribute"));
             Assert.Equal(count, result.Document.Paragraphs.Count(p => p.Runs.Count == 0));
             Assert.Equal(2 * count, result.Document.Paragraphs.Count);
         }
@@ -176,7 +176,7 @@ namespace SIL.TextEditing.Markdown.Tests
             var result = ParseSafely("# Before\n\n" + big + "\n\n- after **bold**\n\n[x]{wss=1}");
             Assert.Equal(new[] { "Heading 1", "Normal", "Bulleted List", "Normal" }, result.Document.Paragraphs.Select(p => p.Style).ToArray());
             Assert.Equal("after bold", result.Document.Paragraphs[2].Text);
-            Assert.Equal(new[] { MarkdownDiagnosticIds.TooDeep, "gdr.syntax.unknown-attribute" }, result.Diagnostics.Select(d => d.Id).ToArray());
+            Assert.Equal(new[] { MarkdownDiagnosticIds.TooDeep, "fwmd.syntax.unknown-attribute" }, result.Diagnostics.Select(d => d.Id).ToArray());
             Assert.Equal(3, result.Diagnostics[0].Line);
             Assert.Equal(big, result.Diagnostics[0].Observed);
         }

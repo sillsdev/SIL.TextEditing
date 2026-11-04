@@ -27,13 +27,13 @@ namespace SIL.TextEditing.Markdown.Tests
 
         static readonly (string, string)[] MarkFindings =
         {
-            ("gdr.syntax.unsupported-markup", "`x`"),
-            ("gdr.syntax.unsupported-markup", "<b>"),
-            ("gdr.syntax.unsupported-markup", "<http://x.y>"),
-            ("gdr.link.not-found", "[[w:nope]]"),
-            ("gdr.picture.unknown", "![c](fw:picture/00000000-0000-0000-0000-000000000000)"),
-            ("gdr.ws.unknown", "ws=zzz-unknown"),
-            ("gdr.syntax.unknown-attribute", "wss=1"),
+            ("fwmd.syntax.unsupported-markup", "`x`"),
+            ("fwmd.syntax.unsupported-markup", "<b>"),
+            ("fwmd.syntax.unsupported-markup", "<http://x.y>"),
+            ("fwmd.link.not-found", "[[w:nope]]"),
+            ("fwmd.picture.unknown", "![c](fw:picture/00000000-0000-0000-0000-000000000000)"),
+            ("fwmd.ws.unknown", "ws=zzz-unknown"),
+            ("fwmd.syntax.unknown-attribute", "wss=1"),
         };
 
         [Fact]
@@ -57,50 +57,50 @@ namespace SIL.TextEditing.Markdown.Tests
         [Fact]
         public void InTheCellsOfASecondTable()
             => AssertFindings("| h |\n| --- |\n\nb\n\n| x | `x` | [[w:nope]] | [y]{ws=zzz-unknown} |\n| --- | --- | --- | --- |", 6,
-                ("gdr.syntax.unsupported-markup", "`x`"), ("gdr.link.not-found", "[[w:nope]]"), ("gdr.ws.unknown", "ws=zzz-unknown"));
+                ("fwmd.syntax.unsupported-markup", "`x`"), ("fwmd.link.not-found", "[[w:nope]]"), ("fwmd.ws.unknown", "ws=zzz-unknown"));
 
         [Fact]
         public void InABodyRowOfATable()
             => AssertFindings("a\n\n| h | h |\n| --- | --- |\n| `x` | [[w:nope]] |", 5,
-                ("gdr.syntax.unsupported-markup", "`x`"), ("gdr.link.not-found", "[[w:nope]]"));
+                ("fwmd.syntax.unsupported-markup", "`x`"), ("fwmd.link.not-found", "[[w:nope]]"));
 
         // The text form [text]{link=...} is the common way to write a link; its finding sits on the whole [text]{...} span.
         const string TextLink = "[see]{link=w:zzz}";
         const string TextLinkWithUrl = "[see this]{url=\"x\" link=w:zzz}";
 
         [Fact]
-        public void ATextFormLinkInAParagraph() => AssertFindings("a\n\nb " + TextLink + " c", 3, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkInAParagraph() => AssertFindings("a\n\nb " + TextLink + " c", 3, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkWithAUrlInAParagraph() => AssertFindings("a\n\nb " + TextLinkWithUrl + " c", 3, ("gdr.link.not-found", TextLinkWithUrl));
+        public void ATextFormLinkWithAUrlInAParagraph() => AssertFindings("a\n\nb " + TextLinkWithUrl + " c", 3, ("fwmd.link.not-found", TextLinkWithUrl));
 
         [Fact]
-        public void ATextFormLinkOnTheSecondLineOfAParagraph() => AssertFindings("a\n\nfirst line\nsecond " + TextLink + " c", 4, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkOnTheSecondLineOfAParagraph() => AssertFindings("a\n\nfirst line\nsecond " + TextLink + " c", 4, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkOnTheContinuationLineOfAListItem() => AssertFindings("a\n\n- first\n  b " + TextLink, 4, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkOnTheContinuationLineOfAListItem() => AssertFindings("a\n\n- first\n  b " + TextLink, 4, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkInAQuote() => AssertFindings("a\n\n> b " + TextLink, 3, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkInAQuote() => AssertFindings("a\n\n> b " + TextLink, 3, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkInAHeading() => AssertFindings("a\n\n# b " + TextLink, 3, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkInAHeading() => AssertFindings("a\n\n# b " + TextLink, 3, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkInAFenceLine() => AssertFindings("a\n\n::: {style=S}\nb " + TextLink + " c\n:::", 4, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkInAFenceLine() => AssertFindings("a\n\n::: {style=S}\nb " + TextLink + " c\n:::", 4, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkInATableCell() => AssertFindings("a\n\n| h | h |\n| --- | --- |\n| x | b " + TextLink + " c |", 5, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkInATableCell() => AssertFindings("a\n\n| h | h |\n| --- | --- |\n| x | b " + TextLink + " c |", 5, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkInTheHeaderOfASecondTable() => AssertFindings("| h |\n| --- |\n\nb\n\n| x " + TextLink + " | y |\n| --- | --- |", 6, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkInTheHeaderOfASecondTable() => AssertFindings("| h |\n| --- |\n\nb\n\n| x " + TextLink + " | y |\n| --- | --- |", 6, ("fwmd.link.not-found", TextLink));
 
         [Fact]
-        public void ATextFormLinkInACellNextToAnotherSpan() => AssertFindings("a\n\n| [p]{v} | " + TextLink + " |\n| --- | --- |", 3, ("gdr.link.not-found", TextLink));
+        public void ATextFormLinkInACellNextToAnotherSpan() => AssertFindings("a\n\n| [p]{v} | " + TextLink + " |\n| --- | --- |", 3, ("fwmd.link.not-found", TextLink));
 
         [Fact]
         public void ATextFormLinkInALaterRowOfATableAfterAFence()
-            => AssertFindings("::: {style=S}\nq\n:::\n\n| h | h |\n| --- | --- |\n| a | b |\n| c | d " + TextLink + " |", 8, ("gdr.link.not-found", TextLink));
+            => AssertFindings("::: {style=S}\nq\n:::\n\n| h | h |\n| --- | --- |\n| a | b |\n| c | d " + TextLink + " |", 8, ("fwmd.link.not-found", TextLink));
 
         [Fact]
         public void ATextFormLinkWithCrlfLineEnds()
@@ -111,7 +111,7 @@ namespace SIL.TextEditing.Markdown.Tests
         }
 
         [Fact]
-        public void ANestedSpanInsideATextFormLinkDoesNotMoveIt() => AssertFindings("a\n\nb [see [c]{v} d]{link=w:zzz} e", 3, ("gdr.link.not-found", "[see [c]{v} d]{link=w:zzz}"));
+        public void ANestedSpanInsideATextFormLinkDoesNotMoveIt() => AssertFindings("a\n\nb [see [c]{v} d]{link=w:zzz} e", 3, ("fwmd.link.not-found", "[see [c]{v} d]{link=w:zzz}"));
 
         [Fact]
         public void ATextFormLinkTheHostResolvesRaisesNothing()
@@ -130,7 +130,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void UnsupportedMarkupComesWithTheEscapeAsTheFix(string markdown, string fix)
         {
             var result = MarkdownConverter.Parse(markdown, Hosts.Project());
-            Assert.Contains(result.Diagnostics, d => d.Id == "gdr.syntax.unsupported-markup" && d.Replacement == fix);
+            Assert.Contains(result.Diagnostics, d => d.Id == "fwmd.syntax.unsupported-markup" && d.Replacement == fix);
         }
 
         [Fact]
@@ -141,7 +141,7 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Equal("{ws=ceb-x-old}", d.Replacement);
         }
 
-        static MarkdownDiagnostic Unclosed(string markdown, string id = "gdr.syntax.unclosed-mark")
+        static MarkdownDiagnostic Unclosed(string markdown, string id = "fwmd.syntax.unclosed-mark")
             => Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics, d => d.Id == id);
 
         // The spec's own example, in a real file: the block that lacks its } ends at the end of the line, not after the line end.
@@ -182,7 +182,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("{empty style=S\n", "{empty style=S", "{empty style=S}")]
         public void AnUnclosedBlockOfEveryKindEndsBeforeItsLineEnd(string markdown, string observed, string fix)
         {
-            var d = MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics.First(x => x.Id == "gdr.syntax.unclosed-mark");
+            var d = MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics.First(x => x.Id == "fwmd.syntax.unclosed-mark");
             Assert.Equal(observed, d.Observed);
             Assert.Equal(d.Line, d.EndLine);
             Assert.DoesNotContain('\n', d.Observed!);
@@ -201,10 +201,10 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Null(d.Replacement);
         }
 
-        // gdr.table.alignment is about the delimiter cell, one finding per aligned column: replacing the observed text with the
+        // fwmd.table.alignment is about the delimiter cell, one finding per aligned column: replacing the observed text with the
         // replacement is the whole fix.
         static (string observed, int line, int column)[] Alignments(string markdown)
-            => MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics.Where(d => d.Id == "gdr.table.alignment")
+            => MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics.Where(d => d.Id == "fwmd.table.alignment")
                 .Select(d =>
                 {
                     Assert.Equal("---", d.Replacement);
@@ -245,7 +245,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             string text = "| a | b |\n| :---: | ---: |\n| 1 | 2 |\n";
             string fixedText = text;
-            foreach (var d in MarkdownConverter.Parse(text, Hosts.Project()).Diagnostics.Where(d => d.Id == "gdr.table.alignment").OrderByDescending(d => d.Start))
+            foreach (var d in MarkdownConverter.Parse(text, Hosts.Project()).Diagnostics.Where(d => d.Id == "fwmd.table.alignment").OrderByDescending(d => d.Start))
                 fixedText = fixedText.Substring(0, d.Start) + d.Replacement + fixedText.Substring(d.End);
             Assert.Equal("| a | b |\n| --- | --- |\n| 1 | 2 |\n", fixedText);
             Assert.Empty(MarkdownConverter.Parse(fixedText, Hosts.Project()).Diagnostics);
@@ -270,7 +270,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ABrokenBlockHasItsPlaceToo()
         {
             var result = MarkdownConverter.Parse("a\n\n| h | h |\n| --- | --- |\n| [x]{ws=ceb | y |", Hosts.Project());
-            Assert.Contains(result.Diagnostics, d => d.Id == "gdr.syntax.malformed-attribute" && d.Line == 5 && d.Column == 6);
+            Assert.Contains(result.Diagnostics, d => d.Id == "fwmd.syntax.malformed-attribute" && d.Line == 5 && d.Column == 6);
         }
     }
 }

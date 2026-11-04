@@ -84,7 +84,7 @@ namespace SIL.TextEditing.Markdown.Tests
             => Assert.Empty(MarkdownConverter.Parse(markdown).Diagnostics);
 
         // Markdig reads a table in time and depth that grow with rows times (columns + 1); past about 10,200 it gives up, the parser
-        // reports one gdr.syntax.too-deep and keeps the lines as text, and the writer writes the table as fences, which read back.
+        // reports one fwmd.syntax.too-deep and keeps the lines as text, and the writer writes the table as fences, which read back.
         [Trait("Size", "Large")]
         [Fact]
         public void AOneColumnTableJustUnderTheLimitIsWrittenAsATable()

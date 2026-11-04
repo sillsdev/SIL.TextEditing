@@ -145,7 +145,7 @@ namespace SIL.TextEditing.Markdown.Tests
             foreach (var text in new[] { "# heading", "- item", "> quote", "| a |\n| --- |" })
             {
                 var result = MarkdownConverter.ParseInline(text, Hosts.Project());
-                Assert.Contains(result.Diagnostics, d => d.Id == "gdr.abstract.block-syntax");
+                Assert.Contains(result.Diagnostics, d => d.Id == "fwmd.field.block-syntax");
             }
         }
     }

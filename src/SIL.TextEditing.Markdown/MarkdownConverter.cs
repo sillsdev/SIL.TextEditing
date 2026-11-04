@@ -78,7 +78,7 @@ namespace SIL.TextEditing.Markdown
             return MarkdownWriter.WriteInline(runs, options ?? new MarkdownOptions());
         }
 
-        /// <summary>Reads text that may use the inline grammar only; block syntax is reported as <c>gdr.abstract.block-syntax</c>. Run text is
+        /// <summary>Reads text that may use the inline grammar only; block syntax is reported as <c>fwmd.field.block-syntax</c>. Run text is
         /// NFD, as for <see cref="Parse"/>, and <see cref="MarkdownInlineResult.Source"/> is the text as written.</summary>
         public static MarkdownInlineResult ParseInline(string markdown, MarkdownOptions? options = null)
         {

@@ -128,7 +128,7 @@ internal static class MarkdownCheck
     static void Abstract()
     {
         var result = MarkdownConverter.ParseInline("An **abstract** with [mang]{ws=ceb}\\\nand a break\n\n# not allowed");
-        Check(result.Diagnostics.Any(d => d.Id == MarkdownDiagnosticIds.AbstractBlockSyntax) && result.HasErrors, "abstract: block syntax is a finding");
+        Check(result.Diagnostics.Any(d => d.Id == MarkdownDiagnosticIds.FieldBlockSyntax) && result.HasErrors, "abstract: block syntax is a finding");
         Check(result.Runs.Any(r => r.Ws == "ceb"), "abstract: a span");
         string text = MarkdownConverter.ToInlineMarkdown(result.Runs);
         Check(text.Contains("**abstract**"), "abstract: written back inline");

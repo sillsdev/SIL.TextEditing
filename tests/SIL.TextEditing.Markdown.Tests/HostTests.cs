@@ -43,7 +43,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var options = new MarkdownOptions { Styles = new Catalog() };
             var result = MarkdownConverter.Parse("::: {style=Exampel}\nx\n:::\n\n[y]{cs=Stong}\n\n[z]{cs=Strong}\n\n::: {style=Example}\nok\n:::", options);
-            Assert.Equal(new[] { "gdr.style.unknown", "gdr.style.unknown" }, result.Diagnostics.Select(d => d.Id).ToArray());
+            Assert.Equal(new[] { "fwmd.style.unknown", "fwmd.style.unknown" }, result.Diagnostics.Select(d => d.Id).ToArray());
             Assert.Equal(1, result.Diagnostics[0].Line);
         }
 
@@ -154,7 +154,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var result = MarkdownConverter.Parse("a\n\nsee [[w:palit]] here", new MarkdownOptions { Objects = new Refusing() });
             var d = Assert.Single(result.Diagnostics);
-            Assert.Equal("gdr.link.not-found", d.Id);
+            Assert.Equal("fwmd.link.not-found", d.Id);
             Assert.Equal(3, d.Line);
             Assert.Equal(5, d.Column);
             Assert.Equal("[[w:palit]]", d.Observed);

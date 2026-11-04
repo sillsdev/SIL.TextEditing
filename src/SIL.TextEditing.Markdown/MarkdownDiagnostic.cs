@@ -5,7 +5,7 @@ namespace SIL.TextEditing.Markdown
 {
     public enum MarkdownSeverity { Suggestion, Warning, Error }
 
-    /// <summary>A finding the parser makes while reading Markdown: a stable id (the spec's <c>gdr.*</c> ids), a place in the
+    /// <summary>A finding the parser makes while reading Markdown: a stable id (the spec's <c>fwmd.*</c> ids), a place in the
     /// source and, where one exists, the exact fix. The project-aware checker in Motif adds its own findings to these.</summary>
     public sealed class MarkdownDiagnostic
     {
@@ -43,7 +43,7 @@ namespace SIL.TextEditing.Markdown
         /// <summary>The choices, when there is no single safe fix.</summary>
         public IReadOnlyList<string> Choices { get; set; } = Array.Empty<string>();
 
-        /// <summary>The names the finding suggests instead (<c>gdr.link.not-found</c>, <c>gdr.style.unknown</c>, <c>gdr.ws.unknown</c>).</summary>
+        /// <summary>The names the finding suggests instead (<c>fwmd.link.not-found</c>, <c>fwmd.style.unknown</c>, <c>fwmd.ws.unknown</c>).</summary>
         public IReadOnlyList<string> Nearest { get; set; } = Array.Empty<string>();
 
         public override string ToString() => Id + " " + Line + ":" + Column + " " + Message;
@@ -94,28 +94,28 @@ namespace SIL.TextEditing.Markdown
     /// are not in the spec's table.</summary>
     public static class MarkdownDiagnosticIds
     {
-        public const string UnclosedMark = "gdr.syntax.unclosed-mark";
-        public const string UnknownAttribute = "gdr.syntax.unknown-attribute";
-        public const string DuplicateAttribute = "gdr.syntax.duplicate-attribute";
-        public const string UnsupportedMarkup = "gdr.syntax.unsupported-markup";
+        public const string UnclosedMark = "fwmd.syntax.unclosed-mark";
+        public const string UnknownAttribute = "fwmd.syntax.unknown-attribute";
+        public const string DuplicateAttribute = "fwmd.syntax.duplicate-attribute";
+        public const string UnsupportedMarkup = "fwmd.syntax.unsupported-markup";
         /// <summary>Added: an attribute block that breaks the grammar of spec 3.3 (an empty block, a bad character or escape), a value that does not fit its key, or text after the block of a ::: line. A key written as a flag is <see cref="UnknownAttribute"/>, and v with ws is <see cref="DuplicateAttribute"/>; the spec has no id for the rest.</summary>
-        public const string MalformedAttribute = "gdr.syntax.malformed-attribute";
+        public const string MalformedAttribute = "fwmd.syntax.malformed-attribute";
         /// <summary>Added: a block, line or table too deeply nested or too large for the parser (Markdig's limit). Its lines are kept as plain text.</summary>
-        public const string TooDeep = "gdr.syntax.too-deep";
-        public const string WsUnknown = "gdr.ws.unknown";
-        public const string LinkNotFound = "gdr.link.not-found";
+        public const string TooDeep = "fwmd.syntax.too-deep";
+        public const string WsUnknown = "fwmd.ws.unknown";
+        public const string LinkNotFound = "fwmd.link.not-found";
         /// <summary>Reported by hosts (through <see cref="MarkdownProblem"/>): a link name matches more than one target.</summary>
-        public const string LinkAmbiguous = "gdr.link.ambiguous";
+        public const string LinkAmbiguous = "fwmd.link.ambiguous";
         /// <summary>Reported by hosts (through <see cref="MarkdownProblem"/>): the link's target was deleted; a warning.</summary>
-        public const string LinkBroken = "gdr.link.broken";
-        public const string StyleUnknown = "gdr.style.unknown";
-        public const string HeadingTooDeep = "gdr.heading.too-deep";
-        public const string TableRagged = "gdr.table.ragged";
-        public const string TableTabInCell = "gdr.table.tab-in-cell";
-        public const string TableAlignment = "gdr.table.alignment";
-        public const string PictureUnknown = "gdr.picture.unknown";
-        public const string AbstractBlockSyntax = "gdr.abstract.block-syntax";
-        public const string PropUnknownNumber = "gdr.prop.unknown-number";
+        public const string LinkBroken = "fwmd.link.broken";
+        public const string StyleUnknown = "fwmd.style.unknown";
+        public const string HeadingTooDeep = "fwmd.heading.too-deep";
+        public const string TableRagged = "fwmd.table.ragged";
+        public const string TableTabInCell = "fwmd.table.tab-in-cell";
+        public const string TableAlignment = "fwmd.table.alignment";
+        public const string PictureUnknown = "fwmd.picture.unknown";
+        public const string FieldBlockSyntax = "fwmd.field.block-syntax";
+        public const string PropUnknownNumber = "fwmd.prop.unknown-number";
     }
 
     /// <summary>Raised by the writer when a paragraph cannot be written so that it reads back unchanged. It should not happen for

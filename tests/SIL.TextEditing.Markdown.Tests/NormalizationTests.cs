@@ -61,7 +61,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             const string source = "caf\u00E9 \u00F1 [x]{ws=zzz-unknown} \u00E9";
             var result = MarkdownConverter.Parse(source, Hosts.Project());
-            var d = result.Diagnostics.Single(x => x.Id == "gdr.ws.unknown");
+            var d = result.Diagnostics.Single(x => x.Id == "fwmd.ws.unknown");
             Assert.Equal(source, result.Source);
             Assert.Equal("ws=zzz-unknown", d.Observed);
             Assert.Equal(source.IndexOf("ws=zzz-unknown"), d.Start);

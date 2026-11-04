@@ -53,7 +53,7 @@ namespace SIL.TextEditing.Markdown.Tests
             });
             var result = MarkdownConverter.Parse("a\n\nsee [[w:palit]] here", With(host));
             var d = Assert.Single(result.Diagnostics);
-            Assert.Equal("gdr.link.ambiguous", d.Id);
+            Assert.Equal("fwmd.link.ambiguous", d.Id);
             Assert.Equal(MarkdownSeverity.Error, d.Severity);
             Assert.Equal("[[w:palit]] matches 3 entries.", d.Message);
             Assert.Equal(choices, d.Choices);
@@ -77,7 +77,7 @@ namespace SIL.TextEditing.Markdown.Tests
             });
             var result = MarkdownConverter.Parse("a\n\n[[w:palit]]{guid=11111111-2222-3333-4444-555555555555 broken}", With(host));
             var d = Assert.Single(result.Diagnostics);
-            Assert.Equal("gdr.link.broken", d.Id);
+            Assert.Equal("fwmd.link.broken", d.Id);
             Assert.Equal(MarkdownSeverity.Warning, d.Severity);
             Assert.Equal((3, 1), (d.Line, d.Column));
             Assert.Equal("[[w:palit]]{guid=11111111-2222-3333-4444-555555555555 broken}", d.Observed);
@@ -96,7 +96,7 @@ namespace SIL.TextEditing.Markdown.Tests
                 return false;
             });
             var d = Assert.Single(MarkdownConverter.Parse("see [[w:palt]]", With(host)).Diagnostics);
-            Assert.Equal("gdr.link.not-found", d.Id);
+            Assert.Equal("fwmd.link.not-found", d.Id);
             Assert.Equal(MarkdownSeverity.Error, d.Severity);
             Assert.Equal(new[] { "palit", "palito" }, d.Nearest);
             Assert.Empty(d.Choices);
@@ -112,7 +112,7 @@ namespace SIL.TextEditing.Markdown.Tests
                 return false;
             });
             var d = Assert.Single(MarkdownConverter.Parse("![c](fw:picture/99999999-8888-7777-6666-555555555555)", With(host)).Diagnostics);
-            Assert.Equal("gdr.picture.unknown", d.Id);
+            Assert.Equal("fwmd.picture.unknown", d.Id);
         }
 
         [Fact]
@@ -125,7 +125,7 @@ namespace SIL.TextEditing.Markdown.Tests
                 return false;
             });
             var d = Assert.Single(MarkdownConverter.Parse("[t]{link=w:x}", With(host)).Diagnostics);
-            Assert.Equal("gdr.link.not-found", d.Id);
+            Assert.Equal("fwmd.link.not-found", d.Id);
             Assert.Equal(MarkdownSeverity.Error, d.Severity);
         }
 
@@ -298,7 +298,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var options = new MarkdownOptions { WritingSystems = new ListedWritingSystems() };
             var d = Assert.Single(MarkdownConverter.Parse("see [kaon]{ws=cbe}", options).Diagnostics);
-            Assert.Equal("gdr.ws.unknown", d.Id);
+            Assert.Equal("fwmd.ws.unknown", d.Id);
             Assert.Equal(new[] { "en", "ceb", "ceb-x-old", "ar" }, d.Choices);
             Assert.Equal(new[] { "ceb" }, d.Nearest);
             Assert.Null(d.Replacement);
@@ -309,7 +309,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var options = new MarkdownOptions { WritingSystems = new ListedWritingSystems() };
             var d = Assert.Single(MarkdownConverter.Parse("{empty ws=cbe}", options).Diagnostics);
-            Assert.Equal("gdr.ws.unknown", d.Id);
+            Assert.Equal("fwmd.ws.unknown", d.Id);
             Assert.Equal(4, d.Choices.Count);
         }
 
@@ -326,7 +326,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var options = new MarkdownOptions { Styles = new ListedStyles() };
             var paragraph = Assert.Single(MarkdownConverter.Parse("::: {style=Exampel}\nx\n:::", options).Diagnostics);
-            Assert.Equal("gdr.style.unknown", paragraph.Id);
+            Assert.Equal("fwmd.style.unknown", paragraph.Id);
             Assert.Equal(new[] { "Example", "Examples" }, paragraph.Nearest);
             Assert.Contains("Nearest: Example, Examples", paragraph.Message);
             var character = Assert.Single(MarkdownConverter.Parse("[x]{cs=Stong}", options).Diagnostics);
@@ -384,7 +384,7 @@ namespace SIL.TextEditing.Markdown.Tests
             var options = new MarkdownOptions { WritingSystems = new CheckedWritingSystems() };
             var result = MarkdownConverter.Parse("a\n\nsee [kaon]{ws=qaa-zzz} here", options);
             var d = Assert.Single(result.Diagnostics);
-            Assert.Equal("gdr.ws.unknown", d.Id);
+            Assert.Equal("fwmd.ws.unknown", d.Id);
             Assert.Equal(MarkdownSeverity.Error, d.Severity);
             Assert.Equal("qaa-zzz is not in this project. Its systems are en and ceb.", d.Message);
             Assert.Equal(new[] { "en", "ceb" }, d.Choices);
@@ -418,7 +418,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var options = new MarkdownOptions { WritingSystems = new CheckedWritingSystems() };
             var d = Assert.Single(MarkdownConverter.Parse("a\n\n{empty ws=qaa-zzz}", options).Diagnostics);
-            Assert.Equal("gdr.ws.unknown", d.Id);
+            Assert.Equal("fwmd.ws.unknown", d.Id);
             Assert.Equal(new[] { "en", "ceb" }, d.Choices);
             Assert.Equal((3, 8, "ws=qaa-zzz"), (d.Line, d.Column, d.Observed));
             var warned = Assert.Single(MarkdownConverter.Parse("{empty ws=ceb-x-old}", options).Diagnostics);
@@ -430,7 +430,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var options = new MarkdownOptions { WritingSystems = new CheckedWritingSystems() };
             var d = Assert.Single(MarkdownConverter.Parse("[x]{ws=xx}", options).Diagnostics);
-            Assert.Equal("gdr.ws.unknown", d.Id);
+            Assert.Equal("fwmd.ws.unknown", d.Id);
             Assert.Equal("ceb", d.Replacement);
         }
 
@@ -439,7 +439,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var options = new MarkdownOptions { Styles = new CheckedStyles() };
             var paragraph = Assert.Single(MarkdownConverter.Parse("a\n\n::: {style=Exampel}\nx\n:::", options).Diagnostics);
-            Assert.Equal("gdr.style.unknown", paragraph.Id);
+            Assert.Equal("fwmd.style.unknown", paragraph.Id);
             Assert.Equal(new[] { "Example" }, paragraph.Nearest);
             Assert.Contains("paragraph style", paragraph.Message);
             Assert.Equal((3, 6, "style=Exampel"), (paragraph.Line, paragraph.Column, paragraph.Observed));

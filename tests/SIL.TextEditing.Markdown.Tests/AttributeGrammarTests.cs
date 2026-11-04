@@ -21,34 +21,34 @@ namespace SIL.TextEditing.Markdown.Tests
         public void ValuesAreBareOrQuotedWithTheThreeEscapes(string markdown, string expected) => Assert.Equal(expected, Dump(markdown));
 
         [Theory]
-        [InlineData("[x]{}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{ws}", "gdr.syntax.unknown-attribute")]
-        [InlineData("[x]{ws=}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{=a}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{1a=b}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{a-b=c}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{s2=\"a\\q\"}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{s2=\"a\\u12\"}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{s2=\"a\tb\"}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{s2=a,b}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{s2=\"open}", "gdr.syntax.unclosed-mark")]
-        [InlineData("[x]{s2=a", "gdr.syntax.unclosed-mark")]
-        [InlineData("[x]{", "gdr.syntax.unclosed-mark")]
-        [InlineData("[x]{Bold=on}", "gdr.syntax.unknown-attribute")]
-        [InlineData("[x]{bold=on bold=off}", "gdr.syntax.duplicate-attribute")]
-        [InlineData("[x]{v ws=ceb}", "gdr.syntax.duplicate-attribute")]
-        [InlineData("[x]{cs=A cs=B}", "gdr.syntax.duplicate-attribute")]
-        [InlineData("[x]{style=x}", "gdr.syntax.unknown-attribute")]
-        [InlineData("[x]{fontsize=big}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{fontsize=1 fontsizeUnit=furlong}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{forecolor=12345}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{p50=\"1:wide\"}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{p50=\"1:99999999999\"}", "gdr.syntax.malformed-attribute")]
-        [InlineData("[x]{fontsizeUnit=rel}", "gdr.syntax.malformed-attribute")]
+        [InlineData("[x]{}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{ws}", "fwmd.syntax.unknown-attribute")]
+        [InlineData("[x]{ws=}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{=a}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{1a=b}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{a-b=c}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{s2=\"a\\q\"}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{s2=\"a\\u12\"}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{s2=\"a\tb\"}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{s2=a,b}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{s2=\"open}", "fwmd.syntax.unclosed-mark")]
+        [InlineData("[x]{s2=a", "fwmd.syntax.unclosed-mark")]
+        [InlineData("[x]{", "fwmd.syntax.unclosed-mark")]
+        [InlineData("[x]{Bold=on}", "fwmd.syntax.unknown-attribute")]
+        [InlineData("[x]{bold=on bold=off}", "fwmd.syntax.duplicate-attribute")]
+        [InlineData("[x]{v ws=ceb}", "fwmd.syntax.duplicate-attribute")]
+        [InlineData("[x]{cs=A cs=B}", "fwmd.syntax.duplicate-attribute")]
+        [InlineData("[x]{style=x}", "fwmd.syntax.unknown-attribute")]
+        [InlineData("[x]{fontsize=big}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{fontsize=1 fontsizeUnit=furlong}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{forecolor=12345}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{p50=\"1:wide\"}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{p50=\"1:99999999999\"}", "fwmd.syntax.malformed-attribute")]
+        [InlineData("[x]{fontsizeUnit=rel}", "fwmd.syntax.malformed-attribute")]
         public void BadBlocksAreReportedWithTheRightId(string markdown, string id) => Assert.Contains(id, Ids(markdown));
 
         [Fact]
-        public void KeysAreCaseSensitive() => Assert.Contains("gdr.syntax.unknown-attribute", Ids("[x]{FontSize=1}"));
+        public void KeysAreCaseSensitive() => Assert.Contains("fwmd.syntax.unknown-attribute", Ids("[x]{FontSize=1}"));
 
         [Fact]
         public void TheLiblcmSpellingOfMarginTopIsAcceptedAndNeverWritten()
@@ -69,9 +69,9 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AnErrorInOneItemDoesNotHideTheNext()
         {
             var ids = Ids("[x]{wss=ceb bold=maybe ws=zzz-unknown}");
-            Assert.Contains("gdr.syntax.unknown-attribute", ids);
-            Assert.Contains("gdr.syntax.malformed-attribute", ids);
-            Assert.Contains("gdr.ws.unknown", ids);
+            Assert.Contains("fwmd.syntax.unknown-attribute", ids);
+            Assert.Contains("fwmd.syntax.malformed-attribute", ids);
+            Assert.Contains("fwmd.ws.unknown", ids);
         }
 
         [Fact]
@@ -106,7 +106,7 @@ namespace SIL.TextEditing.Markdown.Tests
             }
         }
 
-        // gdr.syntax.malformed-attribute is not in the spec's table. What the table has an id for uses it; the rest keeps the added id.
+        // fwmd.syntax.malformed-attribute is not in the spec's table. What the table has an id for uses it; the rest keeps the added id.
         [Theory]
         [InlineData("[x]{v=1}")]
         [InlineData("[x]{broken=1}")]
@@ -119,7 +119,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AKeyWrittenAsAFlagOrAFlagWrittenWithAValueIsAnUnknownAttribute(string markdown)
         {
             var d = Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics);
-            Assert.Equal("gdr.syntax.unknown-attribute", d.Id);
+            Assert.Equal("fwmd.syntax.unknown-attribute", d.Id);
             Assert.Equal(MarkdownSeverity.Error, d.Severity);
         }
 
@@ -130,7 +130,7 @@ namespace SIL.TextEditing.Markdown.Tests
         public void VAndWsTogetherNameTheWritingSystemTwice(string markdown, string observed)
         {
             var d = Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics);
-            Assert.Equal("gdr.syntax.duplicate-attribute", d.Id);
+            Assert.Equal("fwmd.syntax.duplicate-attribute", d.Id);
             Assert.Equal(observed, d.Observed);
         }
 
@@ -145,7 +145,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("[x]{link=nocolon}")]
         [InlineData("[x]{fontsizeUnit=rel}")]
         public void AGrammarErrorOrAValueThatDoesNotFitItsKeyKeepsTheAddedId(string markdown)
-            => Assert.Contains(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics, d => d.Id == "gdr.syntax.malformed-attribute");
+            => Assert.Contains(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics, d => d.Id == "fwmd.syntax.malformed-attribute");
 
         [Fact]
         public void EveryStringPropertyRoundTripsThroughTheNotation()

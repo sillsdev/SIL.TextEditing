@@ -46,7 +46,7 @@ namespace SIL.TextEditing.Markdown.Tests
                 var first = MarkdownConverter.Parse(text, options);
                 once = MarkdownConverter.ToMarkdown(first.Document, options);
                 var second = MarkdownConverter.Parse(once, options);
-                Assert.DoesNotContain(second.Diagnostics, d => d.Severity == MarkdownSeverity.Error && d.Id != "gdr.ws.unknown" && d.Id != "gdr.link.not-found" && d.Id != "gdr.picture.unknown");
+                Assert.DoesNotContain(second.Diagnostics, d => d.Severity == MarkdownSeverity.Error && d.Id != "fwmd.ws.unknown" && d.Id != "fwmd.link.not-found" && d.Id != "fwmd.picture.unknown");
                 Assert.True(MarkdownConverter.AreEquivalent(first.Document.Paragraphs, second.Document.Paragraphs), "models differ");
                 Assert.Equal(once, MarkdownConverter.ToMarkdown(second.Document, options));
             }

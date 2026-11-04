@@ -54,8 +54,8 @@ namespace SIL.TextEditing.Markdown.Reader
 
         /// <summary>True for the findings that mean the text is not well-formed notation (syntax, table and heading errors).</summary>
         public static bool IsSyntaxFinding(string id)
-            => id.StartsWith("gdr.syntax.", StringComparison.Ordinal) || id.StartsWith("gdr.table.", StringComparison.Ordinal) || id.StartsWith("gdr.heading.", StringComparison.Ordinal)
-               || id == MarkdownDiagnosticIds.AbstractBlockSyntax;
+            => id.StartsWith("fwmd.syntax.", StringComparison.Ordinal) || id.StartsWith("fwmd.table.", StringComparison.Ordinal) || id.StartsWith("fwmd.heading.", StringComparison.Ordinal)
+               || id == MarkdownDiagnosticIds.FieldBlockSyntax;
 
         /// <summary>One inline-only text (the abstract, spec 3.5): runs, with block syntax reported.</summary>
         public static List<Run> ReadInline(string text, MarkdownOptions options, out ReaderContext context)
@@ -236,7 +236,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     runs.AddRange(InlineReader.Read(paragraph.Inline, _context));
                     continue;
                 }
-                _context.Report(MarkdownDiagnosticIds.AbstractBlockSyntax, MarkdownSeverity.Error,
+                _context.Report(MarkdownDiagnosticIds.FieldBlockSyntax, MarkdownSeverity.Error,
                     "The abstract can't hold " + Describe(block) + ". Move it to the body.", block.Span.Start, block.Span.End + 1);
             }
             var p = new Paragraph { Runs = runs };
@@ -602,7 +602,7 @@ namespace SIL.TextEditing.Markdown.Reader
             while (lineEnd < s.Length && s[lineEnd] != '\n' && s[lineEnd] != '\r') lineEnd++;
         }
 
-        /// <summary>A delimiter row with another number of cells than the header is a finding of the table's own (<c>gdr.table.ragged</c>, the
+        /// <summary>A delimiter row with another number of cells than the header is a finding of the table's own (<c>fwmd.table.ragged</c>, the
         /// same fault as a row of another width); Markdig reads such a table by the header's width and says nothing.</summary>
         void ReportDelimiterWidth(Table table, int headerCells)
         {
