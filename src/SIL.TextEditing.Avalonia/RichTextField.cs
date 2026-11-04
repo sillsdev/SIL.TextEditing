@@ -330,8 +330,10 @@ namespace SIL.TextEditing.Avalonia
                         foreach (var r in pl.SelectionRects(s, e))
                             context.DrawRectangle(selectionBrush, null, new Rect(r.X, r.Y + y, r.Width, r.Height));
                     }
-                    foreach (var li in pl.Lines) if (!li.IsEmpty) li.Line.Draw(context, new Point(li.X, y + li.TextY));
+                    foreach (var li in pl.Lines) if (!li.IsEmpty) li.Draw(context, y);
+                    pl.DrawSquiggles(context, y);
                     pl.DrawLabel(context, y);
+                    pl.DrawEllipsis(context, y);
                     if (ObjectAsGlyph)
                     {
                         foreach (var o in pl.ObjectRects())

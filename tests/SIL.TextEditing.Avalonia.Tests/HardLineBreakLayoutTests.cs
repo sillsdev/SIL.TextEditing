@@ -490,10 +490,10 @@ namespace SIL.TextEditing.Avalonia.Tests
         [Fact]
         public void The_visible_end_is_not_an_editable_place_when_a_wrap_falls_on_the_boundary_of_locked_and_hidden_editable_text() => Headless.Run(() =>
         {
-            // 40 locked characters then 40 editable ones at MaxLines 1: from about 326 to 335 px the one line holds exactly the
+            // 40 locked characters then 40 editable ones at MaxLines 1: at some widths the one line holds exactly the
             // locked run, so the visible end is the start of the editable run, whose text is hidden.
             int found = 0;
-            for (int width = 326; width <= 335; width++)
+            for (int width = 200; width <= 700; width++)
             {
                 var p = new Paragraph { DefaultWs = "en" };
                 var locked = new Run { Ws = "en", Text = new string((char)97, 40) };
@@ -520,7 +520,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 field.Press(Key.Tab);
                 Assert.Equal(1, left);   // Tab leaves: the caret is not offered where nothing can be typed
             }
-            Assert.True(found > 0);   // the widths above still wrap on the boundary in the test font
+            Assert.True(found > 0);   // some width wraps on the boundary in the test font
         });
 
         static Paragraph Limit(string text, int maxLines)
@@ -705,14 +705,47 @@ namespace SIL.TextEditing.Avalonia.Tests
             AssertRecoveredByDelete(field, "y", 0);
         });
 
+        /// <summary>The union of the glyph boxes of the first line's text, in paragraph coordinates.</summary>
+        static Rect InkBox(ParagraphLayout pl)
+        {
+            var li = pl.Lines[0];
+            Rect? union = null;
+            foreach (var tb in li.Line.GetTextBounds(li.Start, pl.TextEnd(li) - li.Start))
+            {
+                var r = new Rect(li.X + tb.Rectangle.X, li.TextY + tb.Rectangle.Y, tb.Rectangle.Width, tb.Rectangle.Height);
+                union = union.HasValue ? union.Value.Union(r) : r;
+            }
+            return union!.Value;
+        }
+
         [Fact]
-        public void Selecting_only_a_hard_break_in_a_right_to_left_paragraph_draws_the_block_inside_the_line() => Headless.Run(() =>
+        public void Selecting_only_a_hard_break_in_a_right_to_left_paragraph_ending_in_Latin_draws_the_block_left_of_the_text() => Headless.Run(() =>
         {
             var pl = Field("ab" + Break + "cd", 0, rtl: true).ParagraphLayoutFor(0);
             var block = Assert.Single(pl.SelectionRects(2, 3));
-            var caret = pl.CaretRect(2, true);
+            var ink = InkBox(pl);
             Assert.True(block.X >= 0 && block.Right <= 520.01, "the block is inside the field");
-            Assert.True(block.Right <= caret.X + 0.01, "in a right-to-left paragraph it is left of the caret");
+            Assert.True(block.Right <= ink.X + 0.01, "the break sits at the line's end in the paragraph direction, left of the text, not over the last glyph");
+            Assert.Equal(pl.Lines[0].TextY, block.Y, 3);
+        });
+
+        [Fact]
+        public void Selecting_only_a_hard_break_in_a_right_to_left_paragraph_ending_in_Arabic_draws_the_block_left_of_the_text() => Headless.Run(() =>
+        {
+            var pl = Field("\u0627\u0628" + Break + "\u062c\u062f", 0, rtl: true).ParagraphLayoutFor(0);
+            var block = Assert.Single(pl.SelectionRects(2, 3));
+            Assert.True(block.X >= 0 && block.Right <= 520.01, "the block is inside the field");
+            Assert.True(block.Right <= InkBox(pl).X + 0.01, "left of the text");
+        });
+
+        [Fact]
+        public void Selecting_only_a_hard_break_in_a_left_to_right_paragraph_ending_in_Arabic_draws_the_block_right_of_the_text() => Headless.Run(() =>
+        {
+            var p = Para("en", "ar", "\u0627\u0628" + Break + "\u062c\u062f");
+            var field = Fixtures.Field(Doc(p), 520);
+            var pl = field.ParagraphLayoutFor(0);
+            var block = Assert.Single(pl.SelectionRects(2, 3));
+            Assert.True(block.X >= InkBox(pl).Right - 0.01, "right of the text, where the break is in a left-to-right paragraph");
         });
     }
 }

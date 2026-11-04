@@ -208,8 +208,10 @@ namespace SIL.TextEditing.Playground
                 new Run { Ws = "en", Text = ", " },
                 NamedStyle("en", "Misspelled (a style: red double)", "Misspelled"),
                 new Run { Ws = "en", Text = ", " },
-                Styled("en", "scribble", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSquiggle, 0),
-                new Run { Ws = "en", Text = " (squiggle, not drawn yet)." });
+                Styled("en", "scribble", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSquiggle, 0, TextPropertyNumbers.UnderColor, SampleStyles.Red, 0),
+                new Run { Ws = "en", Text = " (squiggle), and " },
+                Styled("en", "a squiggled run that is long enough to wrap onto a second line", TextPropertyNumbers.Underline, TextPropertyNumbers.UnderlineSquiggle, 0, TextPropertyNumbers.UnderColor, SampleStyles.Red, 0),
+                new Run { Ws = "en", Text = "." });
             var shifts = Runs("en", "",
                 new Run { Ws = "en", Text = "Position: H" },
                 Styled("en", "2", TextPropertyNumbers.Superscript, 2, 0),
@@ -219,11 +221,11 @@ namespace SIL.TextEditing.Playground
                 NamedStyle("en", "super", "Superscript"),
                 new Run { Ws = "en", Text = " and " },
                 NamedStyle("en", "sub", "Subscript"),
-                new Run { Ws = "en", Text = ", raised 4 pt (not drawn yet): " },
+                new Run { Ws = "en", Text = ", raised 4 pt: " },
                 Styled("en", "up", TextPropertyNumbers.Offset, 4000, mp),
-                new Run { Ws = "en", Text = ", lowered (not drawn yet): " },
+                new Run { Ws = "en", Text = ", lowered 4 pt: " },
                 Styled("en", "down", TextPropertyNumbers.Offset, -4000, mp),
-                new Run { Ws = "en", Text = "." });
+                new Run { Ws = "en", Text = " and an ordinary run." });
             var features = Runs("en", "",
                 new Run { Ws = "en", Text = "Features: " },
                 FontFeatures("1234567890 (default)", null),
@@ -273,7 +275,11 @@ namespace SIL.TextEditing.Playground
                 arabic, arabicCentred,
                 ArabicStyled("List Number", "فقرة مرقمة: " + ArabicSentence), ArabicStyled("List Number", "فقرة مرقمة ثانية."),
                 Styled("List Flush", "Numbered with no hanging indent: the text starts after the number. " + Sentence),
-                ArabicStyled("Centered", ArabicSentence + ArabicSentence), ArabicStyled("List Bullet", "نقطة: " + ArabicSentence));
+                ArabicStyled("Centered", ArabicSentence + ArabicSentence), ArabicStyled("List Bullet", "نقطة: " + ArabicSentence),
+                Styled("List Wide Label", "Wonderful words follow a label too wide for a narrow field."), ArabicStyled("List Wide Label", "المعلومات المهمة تأتي بعد عنوان عريض."),
+                Styled("Exact 10", "xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx"),
+                ArabicStyled("Two Lines Only", ArabicSentence + ArabicSentence + ArabicSentence),
+                ArabicStyled("Justified", ArabicSentence + ArabicSentence + ArabicSentence));
         }
 
         static Run Fonts(string family)
