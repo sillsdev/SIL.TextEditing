@@ -52,15 +52,17 @@ one, and can change without superseding anything.
   spaces on every path (as in FieldWorks). Pasting only separators and tabs, however many, over a selection replaces the
   selection with nothing. Because a trailing separator is dropped, pasting
   "a" and a newline at the start of "bcd" gives "abcd": the words fuse. That is the FieldWorks result, not a bug.
-- **Paste removes tab characters in every mode.** FieldWorks strips tabs from pasted text before it looks at
-  paragraphs, so a field that takes paragraphs removes them too; the field used to keep them there (issue #39). It
+- **Paste removes tab characters in every mode.** FieldWorks removes tabs from pasted text whether or not the
+  view holds paragraphs, so a field that takes paragraphs removes them too; the field used to keep them there (issue #39). It
   applies to a pasted fragment (each paragraph of it) and to pasted plain text. Typed text gets it too, as a default
   (the Tab key is navigation and never types a tab, above). Read from FieldWorks' paste behaviour, not an owner decision.
 - **Edits belong on the UI thread.** A change to the document made through `DocumentEditor` from another thread throws an
   `InvalidOperationException` at once, before anything changes (issue #33; `DocumentEditor.AccessCheck`, which
   `RichTextField` sets). The field answers document changes by changing Avalonia state, which only the UI thread may do,
-  and FieldWorks hosts make their edits on the UI thread, so a clear refusal is enough; marshalling the notification
-  would leave the document changing under a layout on another thread. Default, not an owner decision.
+  so a clear refusal is enough; marshalling the notification would leave the document changing under a layout on
+  another thread. FieldWorks marshals off-thread data changes itself, so a host adapter that forwards LCModel
+  `PropChanged` into `ExternalReplaceParagraph` or `Apply` must marshal to the UI thread first. Default, not an owner
+  decision.
 - **Enter at an editable and read-only boundary can leave a paragraph the field cannot join back.** Enter between an
   editable and a read-only run can make a paragraph that is entirely read-only. Backspace into it is refused (ADR 0019),
   so only the host's undo removes it. Delete in an empty editable paragraph beside read-only text is refused for the
