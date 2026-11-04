@@ -110,6 +110,10 @@ namespace SIL.TextEditing.Avalonia
         public Func<string, IImage?>? ObjectImage;
         public bool ObjectAsGlyph;
 
+        /// <summary>Segments looked at by <see cref="GetTextRun"/> since the process started: a test reads it to prove a long
+        /// paragraph costs a few probes per call, not a scan, without depending on how fast the machine is.</summary>
+        internal static long Probes;
+
         public TextRun? GetTextRun(int textSourceIndex)
         {
             if (textSourceIndex >= Text.Length) return null;
@@ -118,6 +122,7 @@ namespace SIL.TextEditing.Avalonia
             int lo = 0, hi = Segments.Count;
             while (lo < hi)
             {
+                Probes++;
                 int mid = (lo + hi) / 2;
                 if (Segments[mid].End > textSourceIndex) hi = mid; else lo = mid + 1;
             }

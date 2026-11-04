@@ -58,16 +58,20 @@ namespace SIL.TextEditing.Avalonia.Tests
         public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_takes_linear_time() => Headless.Run(() =>
         {
             // The joined paragraph has one run per paragraph (the writing system alternates), and the field lays it out as the
-            // caret lands in it, so the layout is part of what the paste costs.
+            // caret lands in it, so the layout is part of what the paste costs. Counted, not timed, so a busy machine cannot
+            // fail it: the layout looks up the run for a character a few times per run (binary search), where a scan from the
+            // first run would make about runs times runs / 2 lookups.
+            const int paragraphsPasted = 8000;
             var paragraphs = new List<Paragraph>();
-            for (int i = 0; i < 32000; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
+            for (int i = 0; i < paragraphsPasted; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
             var field = Fixtures.Field(OneParagraph(string.Empty), 520, f => f.SingleParagraph = true);
-            var clock = System.Diagnostics.Stopwatch.StartNew();
+            long before = ParagraphSource.Probes;
             field.Editor.Paste(paragraphs);
             Fixtures.Layout(field, 520);
-            clock.Stop();
+            long probes = ParagraphSource.Probes - before;
             Assert.Single(field.Editor.Document.Paragraphs);
-            Assert.True(clock.Elapsed < System.TimeSpan.FromSeconds(5), $"took {clock.Elapsed}");
+            Assert.True(probes > 0);   // the layout did go through the lookup
+            Assert.True(probes < 100L * paragraphsPasted, $"{probes} segment probes for {paragraphsPasted} runs");
         });
 
         [Fact]
