@@ -10,6 +10,9 @@
        net48 resolves the libraries' netstandard2.0 builds (Avalonia 11.3.17); net10.0 their net10.0 builds (Avalonia 12).
        The Fluent theme is loaded so buttons and combo boxes have templates, as they do in the hosts. -->
   <ItemGroup>
+    <Compile Include="..\Common\FakeSpelling.cs" Link="FakeSpelling.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">

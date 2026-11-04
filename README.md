@@ -19,6 +19,7 @@ change, and the list under "Known gaps" is the work still to do.
 | `src/SIL.TextEditing.LCModel` | netstandard2.0, net10.0 | The LCModel adapter (ADR 0016). `TsStringConversion` maps `ITsString`, and an IStText-shaped list of paragraphs, to runs and a `Document` and back, carrying every int (with its variation) and string text property by number, ObjData and NamedStyle included. `TsStringClipboard` reads and writes FieldWorks' "TsString" clipboard XML through LCModel's own `TsStringSerializer` and builds the NFC plain text that goes beside it. A multi-paragraph copy joins paragraphs with "; " (a parameter), as FieldWorks' `EditingHelper.CopySelection` does. The host puts the XML on the clipboard in the "TsString" format wrapped as FieldWorks does, with `TsStringWrapper.FromXml` (SimpleRootSite), next to the NFC plain text. The serializer needs no ICU setup (Hangul and composition-exclusion strings tested, net48 and net10.0). The host supplies the writing-system handle mapping (`IWritingSystemHandles`) and the paragraph keys. References `SIL.LCModel.Core`. **Not trimmable or AOT-compatible, and deliberately not in `tests/AotCheck`: it is for FieldWorks' and Motif's LCModel-side host code, not Motif's GUI.** |
 | `tests/SIL.TextEditing.Tests` | net48, net10.0 | Unit tests for the model. |
 | `tests/SIL.TextEditing.Avalonia.Tests` | net48, net10.0 | Avalonia.Headless tests for the surface (Skia, real shaping). |
+| `tests/SIL.TextEditing.SecondDispatcher.Tests` | net10.0 | The tests that make a dispatcher on a second thread (Avalonia 12 allows it). `Dispatcher.UIThread` is process-wide, so they run in a test host of their own and cannot change it for the other tests (issue #72). |
 | `tests/SIL.TextEditing.LCModel.Tests` | net48, net10.0 | Round trips of the adapter against real `TsStrFactory` strings, edits that leave undrawn properties alone, and the clipboard XML. |
 | `samples/SIL.TextEditing.Playground` | netstandard2.0, net10.0 | The shared playground UI: a `RichTextField`, scenario picker, writing-system bar, format and undo buttons, live model inspector and event log. Both hosts and the integration tests use it. |
 | `samples/Playground.Desktop` | net48, net10.0 | Plain Avalonia desktop app showing the playground: Avalonia 11.3.17 on net48, Avalonia 12 on net10.0 (Motif's shape). |
@@ -30,7 +31,8 @@ One source tree serves both Avalonia generations. The netstandard2.0 target comp
 versions are set per target framework in `Directory.Packages.props`. There is currently no `#if` in the source: the spike's one per-version spot (the clipboard API) is not needed,
 because Avalonia 11.3.17 already has the `DataTransfer` API that 12 uses, and `FontFeature` parsing is written
 without `FontFeatureCollection.Parse` (absent in 11.3) for both. Keep any future per-version difference small, behind
-`#if NET10_0_OR_GREATER`, and list it here.
+`#if NET10_0_OR_GREATER`, and list it here. The one difference now: `SpellScanner` asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a
+one-character string on netstandard2.0 (no overload there), which only costs an allocation for a letter outside the basic plane.
 
 Avalonia.Desktop, Avalonia.Themes.Fluent and Avalonia.Win32.Interoperability are used by the samples only; the
 libraries do not reference them. The playground tests load the Fluent theme so the sample's buttons and pickers have
@@ -96,7 +98,39 @@ gives the navigation method and key modifiers, not the source), so it raises the
 decides: switch only if the previously focused window was its own, otherwise leave the keyboard alone. The field's event
 follows changes of writing system, so a click into text of the same writing system gives no event of its own. To restore the
 default keyboard, subscribe to the field's `LostFocus` and switch when focus has moved to a control of your own application
-that is not a field. The field raises nothing when it loses focus.
+that is not a field. The field raises nothing when it loses focus. Avalonia gives the field `LostFocus` when its window is deactivated and `GotFocus` when it is activated again, on both lines (checked in real windows with a second window of the same application; switching to another application was not driven), so a reactivation gives one focus-gain event; the event arguments cannot tell that from any other focus gain, so a host that must uses its window's `Activated`.
+
+## Host hooks (ADR 0021, ADR 0025)
+
+The field owns one text; the window around it belongs to the host. These are the hooks:
+
+- **Find and replace.** The host's dialog builds a `FindOptions` (text, match case, match diacritics, whole word, regular
+  expression, writing system, character style). `Editor.TryFind` searches from the selection (next or previous, optionally
+  wrapping), `Editor.FindAll` lists the matches, `Editor.ReplaceMatch`, `ReplaceCurrent` and `ReplaceAll` replace as
+  single undo steps. `RichTextField.Find` and `SelectMatch` also select the match, mark it as the current match
+  (`CurrentMatch`) and ask the host to scroll; `SetFindHighlight` highlights every match while the dialog is open. Text
+  is compared as NFD, so composed and decomposed forms find each other.
+- **Context menu.** `RichTextField.ContextMenuRequested` fires for a right click, the Menu key and Shift+F10 with a
+  `ContextInfo`: the word and its range, its writing system, the run and its properties, any link or embedded object, the
+  selection and an (empty, for now) list of spelling suggestions. The host builds the menu. Use the event or Avalonia's
+  `ContextMenu` on the field; with both, the event wins.
+- **Paging and scrolling.** PageUp and PageDown (with Shift) move the caret by the field's visible height
+  (`VisibleBounds`, or `PageHeight` when the host sets it); a drag past the edge extends the selection and asks for
+  scrolling. The field never scrolls anything itself: it raises `ScrollRequested` (reason, the part to show, the distance)
+  and a scroll viewer round the field answers when no handler marks it handled.
+
+## Spell checking (ADR 0020, 0026)
+
+The host gives the field its dictionaries: set `RichTextField.SpellChecking` to an `ISpellCheckHost` that returns an
+`ISpellChecker` (`Check`, `Suggest`, `Add`; `ISpellIgnorer` adds `Ignore` when a dictionary has it) for each writing system, says which
+characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. The
+field checks the paragraphs in view when idle and draws red squiggles (misspelled, or a word with an object in it) and blue
+ones (a word that mixes writing systems or has unchecked text inside). The rules are in `SpellScanner` (UI-free): words
+break at characters that are not word-forming, and do-not-check text and text that may not be edited (unless forced) are
+skipped. `SpellingSuggestionsAt`, `ApplySpellingSuggestion`, `AddToDictionary`, `IgnoreWord` and `RestartSpelling` are
+what a host's context menu and dictionary changes call (`ApplySpellingSuggestion` also takes runs, for "insert missing spaces"). A checker
+that throws raises `SpellCheckerFailed` and is left alone; it does not end the application. The playground's "Spell checking" scenario shows it with a
+short English and French word list.
 
 ## Colours and themes
 
@@ -114,7 +148,7 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
   `WinFormsAvaloniaControlHost` Avalonia's UIA subtree was empty in the spike (unexplained).
 - **Input**: real IME and Keyman interaction are untested (the headless tests drive the IME client directly). Missing:
-  scrolling inside long fields, drag and drop, spelling squiggles, find highlights, touch. Selection by mouse (click
+  scrolling inside long fields (the host scrolls; see Host hooks), drag and drop, touch. Selection by mouse (click
   with bidi and soft-wrap affinity, Shift+click, drag across paragraphs, double-click word, triple-click paragraph) and
   keyboard (Shift+arrows, Ctrl+arrows by word, Home/End by visual line, Ctrl+Home/End, Ctrl+A, Up/Down with the
   preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with

@@ -125,6 +125,9 @@ namespace SIL.TextEditing
         public const int LineHeight = 24;
         /// <summary>Paragraph background colour (ktptParaColor; FieldWorks treats it as the back colour).</summary>
         public const int ParaColor = 25;
+        /// <summary>ktptSpellCheck (26): <see cref="SpellCheckNormal"/>, <see cref="SpellCheckDoNot"/> or <see cref="SpellCheckForce"/> (ADR 0020). Absent means normal.</summary>
+        public const int SpellCheck = 26;
+        public const int SpellCheckNormal = 0, SpellCheckDoNot = 1, SpellCheckForce = 2;
         /// <summary>ktptMarginTop: the CSS-style top margin (the gap between paragraphs is the larger of it and the sum of space after and space before).</summary>
         public const int MarginTop = 50;
         public const int PadLeading = 134;

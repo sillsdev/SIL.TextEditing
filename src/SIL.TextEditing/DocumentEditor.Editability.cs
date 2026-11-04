@@ -101,21 +101,30 @@ namespace SIL.TextEditing
             {
                 if (!HasSelection || !CanEdit) return false;
                 Ordered(out var a, out var b);
-                for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
-                {
-                    var p = Document.Paragraphs[pi];
-                    int s = pi == a.Paragraph ? a.Offset : 0;
-                    int e = pi == b.Paragraph ? b.Offset : p.Length;
-                    int pos = 0;
-                    foreach (var r in p.Runs)
-                    {
-                        int rs = pos, re = pos + r.Text.Length;
-                        pos = re;
-                        if (re > s && rs < e && r.Editable != RunEditable.Editable) return false;
-                    }
-                }
-                return true;
+                return AllFullyEditable(a, b);
             }
+        }
+
+        /// <summary>True when the field is not read-only and the range can be edited and every run in it is fully editable: the
+        /// test for formatting and for a find replacement.</summary>
+        internal bool CanFormatRange(TextPosition a, TextPosition b) => !IsReadOnly && CanEditRange(a, b) && AllFullyEditable(a, b);
+
+        bool AllFullyEditable(TextPosition a, TextPosition b)
+        {
+            for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
+            {
+                var p = Document.Paragraphs[pi];
+                int s = pi == a.Paragraph ? a.Offset : 0;
+                int e = pi == b.Paragraph ? b.Offset : p.Length;
+                int pos = 0;
+                foreach (var r in p.Runs)
+                {
+                    int rs = pos, re = pos + r.Text.Length;
+                    pos = re;
+                    if (re > s && rs < e && r.Editable != RunEditable.Editable) return false;
+                }
+            }
+            return true;
         }
 
         bool CanEditSelectionOrCaret()
@@ -207,34 +216,109 @@ namespace SIL.TextEditing
         /// when it already is. A direction (+1 forward, -1 backward) searches that way first, so an arrow key steps over
         /// read-only text instead of bouncing back; with none, the nearer side wins and backward wins a tie. When the
         /// paragraph has no such place, p is kept.</summary>
+        /// <remarks>The search walks outward from the point one run at a time, on both sides at once when no direction is given,
+        /// and stops as soon as the other side cannot be nearer, so a point beside an editable run costs a few runs however many
+        /// the paragraph has; each run looked at counts as one probe.</remarks>
         public TextPosition NearestEditable(TextPosition p, int direction = 0)
         {
             if (IsEditableAt(p)) return p;
-            int len = LimitOf(p.Paragraph);
-            // The nearest editable point on each side comes from the paragraph's editable places (run boundaries), not from asking
-            // every offset: p is not editable, so no place holds it, and the first place that ends after it, or the last that
-            // starts before it, has the answer. The search never goes past the visible end, and a point beyond it looks no
-            // way back (the caret is not there to be moved).
-            var places = PlacesIn(p.Paragraph);
+            int pi = p.Paragraph;
+            var runs = Document.Paragraphs[pi].Runs;
+            int limit = LimitOf(pi);
+
+            // The run that holds the character at p: found by adding up lengths (no probes), not by testing each run.
+            int idx = runs.Count, idxStart = 0;
+            for (int k = 0; k < runs.Count; k++)
+            {
+                int end = idxStart + runs[k].Text.Length;
+                if (end > p.Offset) { idx = k; break; }
+                idxStart = end;
+            }
+
+            // Forward: the start of the first editable run at or after idx (p is not editable, so none touches p from the left).
+            int f = idx, fpos = idxStart;
+            bool fdone = false;
+            // Backward: the end of the nearest editable chain before p, and only when p is within the visible text.
+            int b = idx - 1, bend = idxStart;
+            bool bdone = p.Offset - 1 > limit;
             int fwd = -1, back = -1;
-            foreach (var (s, e) in places)
+
+            void StepForward()
             {
-                if (e >= p.Offset + 1) { fwd = Math.Max(s, p.Offset + 1); break; }
-            }
-            if (p.Offset - 1 <= len)
-            {
-                for (int i = places.Count - 1; i >= 0; i--)
+                if (f >= runs.Count || fpos > limit) { fdone = true; return; }
+                EditableAtProbe?.Invoke();
+                var r = runs[f];
+                int len = r.Text.Length;
+                if (len > 0 && AllowsEditing(r))
                 {
-                    if (places[i].Start <= p.Offset - 1) { back = Math.Min(places[i].End, p.Offset - 1); break; }
+                    if (!IsHiddenFrom(pi, fpos)) fwd = fpos;
+                    fdone = true;
+                    return;
                 }
+                fpos += len;
+                f++;
             }
+
+            void StepBackward()
+            {
+                if (b < 0) { bdone = true; return; }
+                EditableAtProbe?.Invoke();
+                var r = runs[b];
+                int len = r.Text.Length;
+                if (len == 0 || !AllowsEditing(r))
+                {
+                    bend -= len;
+                    b--;
+                    return;
+                }
+                // An editable run: it ends a chain of touching editable runs. The chain is hidden only when it starts at or past the
+                // visible end, which needs its start only when it ends there, so the walk back through the chain is rare.
+                int chainEnd = bend, chainStart = bend - len;
+                int j = b - 1;
+                while (chainEnd >= limit && j >= 0)
+                {
+                    EditableAtProbe?.Invoke();
+                    int jl = runs[j].Text.Length;
+                    if (jl == 0) { j--; continue; }
+                    if (!AllowsEditing(runs[j])) break;
+                    chainStart -= jl;
+                    j--;
+                }
+                if (chainEnd < limit || !IsHiddenFrom(pi, chainStart))
+                {
+                    back = Math.Min(chainEnd, limit);
+                    bdone = true;
+                    return;
+                }
+                // A hidden chain is no place: keep looking further back, past it.
+                bend = chainStart;
+                b = j;
+            }
+
+            while (true)
+            {
+                if (fwd >= 0) fdone = true;
+                if (back >= 0) bdone = true;
+                if (direction > 0 && fwd >= 0) break;
+                if (direction < 0 && back >= 0) break;
+                if (fdone && bdone) break;
+                if (direction == 0)
+                {
+                    // The other side cannot be nearer once the run it is looking at is farther than what was found (a tie goes backward).
+                    if (fwd >= 0 && p.Offset - bend > fwd - p.Offset) break;
+                    if (back >= 0 && fpos - p.Offset >= p.Offset - back) break;
+                }
+                bool stepForward = direction > 0 ? !fdone : direction < 0 ? bdone : !fdone && (bdone || fpos - p.Offset <= p.Offset - bend);
+                if (stepForward) StepForward(); else StepBackward();
+            }
+
             int pick;
             if (fwd < 0) pick = back;
             else if (back < 0) pick = fwd;
             else if (direction > 0) pick = fwd;
             else if (direction < 0) pick = back;
             else pick = p.Offset - back <= fwd - p.Offset ? back : fwd;
-            return pick < 0 ? p : new TextPosition(p.Paragraph, pick);
+            return pick < 0 ? p : new TextPosition(pi, pick);
         }
     }
 

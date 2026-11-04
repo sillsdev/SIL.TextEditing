@@ -14,6 +14,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="SIL.TextEditing.Avalonia.Tests" />
     <InternalsVisibleTo Include="SIL.TextEditing.Playground.Tests" />
+    <InternalsVisibleTo Include="SIL.TextEditing.SecondDispatcher.Tests" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />
