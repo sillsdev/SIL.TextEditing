@@ -113,6 +113,25 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
+        public void A_cloned_run_and_a_cloned_paragraph_hold_their_own_copy_of_the_bag_and_tell_their_paragraph()
+        {
+            var p = Two();
+            p.Runs[0].Props.SetInt(TextPropertyNumbers.Bold, 1);
+            p.Props.SetInt(TextPropertyNumbers.Align, 2);
+            var copy = p.Clone();
+            Assert.NotSame(p.Runs[0].Props, copy.Runs[0].Props);
+            Assert.True(copy.Runs[0].Props.ContentEquals(p.Runs[0].Props));
+            Assert.True(copy.Props.ContentEquals(p.Props));
+            long stamp = p.ChangeStamp;
+            MovesStamp(copy, () => copy.Runs[0].Props.SetInt(TextPropertyNumbers.Bold, 0), "the clone's run bag");
+            MovesStamp(copy, () => copy.Props.SetInt(TextPropertyNumbers.Align, 1), "the clone's paragraph bag");
+            Assert.Equal(stamp, p.ChangeStamp);                     // and not the original's
+            var run = p.Runs[1].Clone();
+            run.Props.SetInt(TextPropertyNumbers.Bold, 1);
+            Assert.False(p.Runs[1].Props.ContentEquals(run.Props));
+        }
+
+        [Fact]
         public void A_bag_shared_by_runs_of_two_paragraphs_moves_both_until_one_lets_go()
         {
             var a = Two();
@@ -129,6 +148,40 @@ namespace SIL.TextEditing.Tests
             shared.SetInt(TextPropertyNumbers.Bold, 0);
             Assert.NotEqual(sa, a.ChangeStamp);
             Assert.Equal(sb, b.ChangeStamp);
+        }
+
+        static void HoldBriefly(PropertyBag shared, int runs)
+        {
+            for (int i = 0; i < runs; i++) new Run { Text = "x" }.Props = shared;
+        }
+
+        [Fact]
+        public void A_bag_assigned_to_very_many_short_lived_runs_does_not_keep_a_growing_list_of_dead_holders()
+        {
+            var shared = new PropertyBag();
+            var keep = new Run();
+            keep.Props = shared;                            // one live holder as the first
+            keep.Props = new PropertyBag();
+            var first = new Run { Text = "first" };
+            first.Props = shared;
+            for (int round = 0; round < 10; round++)
+            {
+                HoldBriefly(shared, 5000);
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+            Assert.True(shared.OwnerCount < 20000, shared.OwnerCount + " holders remembered for 50000 runs that are gone");
+            GC.KeepAlive(first);
+        }
+
+        [Fact]
+        public void The_change_stamp_is_read_and_written_as_one_value()
+        {
+            var p = Two();
+            long a = p.ChangeStamp;
+            p.Runs[0].Text = "zz";
+            long b = p.ChangeStamp;
+            Assert.True(b > a);                              // stamps are issued in order, so a torn read would show as a jump back
         }
 
         [Fact]

@@ -124,11 +124,25 @@ namespace SIL.TextEditing
         // holders does not keep them alive.
         IBagOwner? _owner;
         List<WeakReference<IBagOwner>>? _otherOwners;
+        int _pruneAt = 8;
+
+        /// <summary>For a test: how many holders the bag remembers (the dead ones among the weak ones until they are pruned).</summary>
+        internal int OwnerCount => (_owner == null ? 0 : 1) + (_otherOwners?.Count ?? 0);
 
         internal void Attach(IBagOwner owner)
         {
             if (_owner == null) _owner = owner;
-            else if (!ReferenceEquals(_owner, owner)) (_otherOwners ??= new List<WeakReference<IBagOwner>>()).Add(new WeakReference<IBagOwner>(owner));
+            else if (!ReferenceEquals(_owner, owner))
+            {
+                var others = _otherOwners ??= new List<WeakReference<IBagOwner>>();
+                // A bag given to very many runs that come and go would otherwise remember every one: drop the dead ones when the list has doubled.
+                if (others.Count >= _pruneAt)
+                {
+                    others.RemoveAll(w => !w.TryGetTarget(out _));
+                    _pruneAt = Math.Max(8, others.Count * 2);
+                }
+                others.Add(new WeakReference<IBagOwner>(owner));
+            }
         }
 
         internal void Detach(IBagOwner owner)

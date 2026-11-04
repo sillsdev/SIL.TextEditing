@@ -13,7 +13,15 @@ namespace SIL.TextEditing
 
         public Run()
         {
+            _props = new PropertyBag();
             _props.Attach(this);
+        }
+
+        // A copy takes its bag at once, so no default bag is made, attached and thrown away.
+        Run(PropertyBag props)
+        {
+            _props = props;
+            props.Attach(this);
         }
 
         void IBagOwner.BagChanged() => NotifyOwners(false);
@@ -84,7 +92,7 @@ namespace SIL.TextEditing
         internal int OwnerCount => (_owner == null ? 0 : 1) + (_otherOwners == null ? 0 : _otherOwners.Count);
 
         string _ws = "en";
-        PropertyBag _props = new PropertyBag();
+        PropertyBag _props;
         string? _objData;
 
         /// <summary>The run's writing system. Changing it tells every paragraph that holds the run (<see cref="Paragraph.ChangeStamp"/>).</summary>
@@ -146,7 +154,7 @@ namespace SIL.TextEditing
 
         public Run Clone()
         {
-            return new Run { Text = Text, Ws = Ws, ObjData = ObjData, Props = Props.Clone() };
+            return new Run(Props.Clone()) { Text = Text, Ws = Ws, ObjData = ObjData };
         }
 
         public Run CloneWithText(string text)

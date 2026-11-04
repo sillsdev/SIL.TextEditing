@@ -48,7 +48,7 @@ namespace SIL.TextEditing
         }
         /// <summary>The paragraph's own text properties (an ITsString paragraph's StyleRules), opaque like a run's bag: copied through
         /// every split, join and slice, never interpreted. <see cref="Style"/> and <see cref="Rtl"/> are the two the field reads.</summary>
-        PropertyBag _props = new PropertyBag();
+        PropertyBag _props;
         public PropertyBag Props
         {
             get => _props;
@@ -67,11 +67,15 @@ namespace SIL.TextEditing
 
         RunList _runs;
 
-        public Paragraph()
+        public Paragraph() : this(new PropertyBag()) { }
+
+        // A copy takes its bag at once, so no default bag is made, attached and thrown away.
+        Paragraph(PropertyBag props)
         {
             _runs = new RunList(this);
             _stamp = NextStamp();
-            _props.Attach(this);
+            _props = props;
+            props.Attach(this);
         }
 
         void IBagOwner.BagChanged() => Touch();
@@ -89,7 +93,7 @@ namespace SIL.TextEditing
 
         void Touch()
         {
-            _stamp = NextStamp();
+            System.Threading.Interlocked.Exchange(ref _stamp, NextStamp());
             _watchers?.Invoke(this);
         }
 
@@ -98,7 +102,7 @@ namespace SIL.TextEditing
         /// (<c>PropertyBag.SetInt</c>, a write to its <c>IntProps</c>), the paragraph's style, direction, default writing system or property
         /// bag replaced or changed in place. No two paragraphs ever share one, so a result remembered with it cannot be taken for another
         /// paragraph's. What it does not see: the paragraph list of the document, and a style resolver whose answers changed.</summary>
-        public long ChangeStamp => _stamp;
+        public long ChangeStamp => System.Threading.Interlocked.Read(ref _stamp);
 
         /// <summary>The paragraph's runs. Add, remove or change them directly if you like: the list and each run tell the paragraph,
         /// so <see cref="Length"/> and the run lookups stay right. Assigning a list that no paragraph holds adopts it; any other
@@ -212,7 +216,7 @@ namespace SIL.TextEditing
 #endif
                 var runs = _runs;
                 if (runs.Count == 1) return runs[0].Text;
-                long stamp = _stamp;
+                long stamp = ChangeStamp;
                 var joined = _joined;
                 if (joined != null && joined.Stamp == stamp) return joined.Text;
                 var sb = new StringBuilder();
@@ -225,7 +229,7 @@ namespace SIL.TextEditing
 
         public Paragraph Clone(bool keepKey = true)
         {
-            var p = new Paragraph { Style = Style, Rtl = Rtl, DefaultWs = DefaultWs, Props = Props.Clone() };
+            var p = new Paragraph(Props.Clone()) { Style = Style, Rtl = Rtl, DefaultWs = DefaultWs };
             if (keepKey) p.Key = Key;
             foreach (var r in Runs) p.Runs.Add(r.Clone());
             return p;
