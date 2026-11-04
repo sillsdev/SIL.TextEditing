@@ -6,10 +6,10 @@ namespace SIL.TextEditing.Markdown.Tests
 {
     /// <summary>Random documents that stress the notation: every property number the converter names and some it does not, several
     /// writing systems, objects of each kind, linguistic punctuation, invisible characters, surrogates, fences, tables and empty paragraphs.
-    /// The same seed always gives the same document, so a failure is reproduced by its seed.</summary>
+    /// Text is NFD, as the editor stores it and the parser returns it (ADR 0018). The same seed always gives the same document, so a failure is reproduced by its seed.</summary>
     internal sealed class ModelGenerator
     {
-        static readonly string[] Words = { "mang", "kaon", "palit", "ng", "a", "x", "Hello", "world", "naga", "k\u0301a", "caf\u00E9", "\u0645\u0631\u062D\u0628\u0627", "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35" };
+        static readonly string[] Words = { "mang", "kaon", "palit", "ng", "a", "x", "Hello", "world", "naga", "k\u0301a", "cafe\u0301", "\u0645\u0631\u062D\u0628\u0627", "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35" };
 
         // The strings the spec's stress list names, plus every character the notation treats specially.
         static readonly string[] Specials =

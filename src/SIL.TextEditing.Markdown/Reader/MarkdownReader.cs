@@ -241,6 +241,7 @@ namespace SIL.TextEditing.Markdown.Reader
             }
             var p = new Paragraph { Runs = runs };
             p.Normalize();
+            ToNfd(p.Runs);
             return p.Runs;
         }
 
@@ -690,12 +691,20 @@ namespace SIL.TextEditing.Markdown.Reader
             _context.ReportUnknown(item, known);
         }
 
+        /// <summary>The text of every run as NFD, the form the editor stores (ADR 0018). Done once the runs are merged, so a mark and its base
+        /// that Markdig handed over in two pieces compose as one string. Findings and objects keep the source's offsets: only the runs change.</summary>
+        static void ToNfd(List<Run> runs)
+        {
+            foreach (var run in runs) run.Text = TextNormalizer.Normalize(run.Text, NormalizationForm.FormD);
+        }
+
         Paragraph MakeParagraph(string style, PropertyBag props, List<Run> runs, string? defaultWs)
         {
             var paragraph = new Paragraph { Style = style, Props = props.Clone(), Runs = runs };
             if (style.Length > 0) paragraph.Props.StrProps[TextPropertyNumbers.NamedStyle] = style;
             paragraph.Rtl = paragraph.Props.TryGetInt(128, out int rtl) && rtl != 0;
             paragraph.Normalize();
+            ToNfd(paragraph.Runs);
             paragraph.DefaultWs = paragraph.Runs.Count > 0 ? paragraph.Runs[0].Ws : defaultWs ?? _options.WritingSystems.DefaultAnalysis;
             return paragraph;
         }

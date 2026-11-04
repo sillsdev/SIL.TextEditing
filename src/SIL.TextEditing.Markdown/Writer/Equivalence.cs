@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace SIL.TextEditing.Markdown.Writer
 {
@@ -41,10 +42,15 @@ namespace SIL.TextEditing.Markdown.Writer
             {
                 var r = x.Runs[i];
                 var s = y.Runs[i];
-                if (r.Ws != s.Ws || r.Text != s.Text || r.ObjData != s.ObjData || !r.Props.ContentEquals(s.Props)) return false;
+                if (r.Ws != s.Ws || !SameText(r.Text, s.Text) || r.ObjData != s.ObjData || !r.Props.ContentEquals(s.Props)) return false;
             }
             return true;
         }
+
+        /// <summary>The same text, or the same once both are NFD: the reader gives NFD whatever form the text was written in.</summary>
+        static bool SameText(string a, string b)
+            => string.Equals(a, b, StringComparison.Ordinal)
+               || string.Equals(TextNormalizer.Normalize(a, NormalizationForm.FormD), TextNormalizer.Normalize(b, NormalizationForm.FormD), StringComparison.Ordinal);
 
         public static bool Equal(IReadOnlyList<Run> a, IReadOnlyList<Run> b)
         {

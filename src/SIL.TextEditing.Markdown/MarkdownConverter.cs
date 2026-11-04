@@ -55,7 +55,9 @@ namespace SIL.TextEditing.Markdown
             return MarkdownWriter.Write(paragraphs, options ?? new MarkdownOptions());
         }
 
-        /// <summary>Reads Markdown into a document and the findings the parser makes. Paragraph keys are null.</summary>
+        /// <summary>Reads Markdown into a document and the findings the parser makes. Paragraph keys are null. The text of every run is
+        /// normalised to NFD, the form the editor stores (ADR 0018), whatever form the Markdown was written in; the offsets, lines and columns of
+        /// the findings and objects still refer to the text as written (<see cref="MarkdownParseResult.Source"/>).</summary>
         public static MarkdownParseResult Parse(string markdown, MarkdownOptions? options = null)
         {
             if (markdown == null) throw new ArgumentNullException(nameof(markdown));
@@ -76,7 +78,8 @@ namespace SIL.TextEditing.Markdown
             return MarkdownWriter.WriteInline(runs, options ?? new MarkdownOptions());
         }
 
-        /// <summary>Reads text that may use the inline grammar only; block syntax is reported as <c>gdr.abstract.block-syntax</c>.</summary>
+        /// <summary>Reads text that may use the inline grammar only; block syntax is reported as <c>gdr.abstract.block-syntax</c>. Run text is
+        /// NFD, as for <see cref="Parse"/>, and <see cref="MarkdownInlineResult.Source"/> is the text as written.</summary>
         public static MarkdownInlineResult ParseInline(string markdown, MarkdownOptions? options = null)
         {
             if (markdown == null) throw new ArgumentNullException(nameof(markdown));
