@@ -230,7 +230,59 @@ namespace SIL.TextEditing.Markdown.Tests
         public void AnyOtherWritingSystemIsWs() => Assert.Equal("[kaon]{ws=ceb-x-old}\n", Write(B.R("ceb-x-old", "kaon")));
 
         [Fact]
-        public void BoldOnVernacularWithPlainEdgesHugsTheText() => Assert.Equal("[**mang**]{v}\n", Write(B.BoldRun("ceb", "mang")));
+        public void BoldOnVernacularIsAnAttributeNotStarsInsideTheBrackets() => Assert.Equal("[mang]{v bold=on}\n", Write(B.BoldRun("ceb", "mang")));
+
+        // Only spellings the spec shows: a bracketed run says bold or italic as an attribute, never as stars inside the brackets.
+        [Theory]
+        [InlineData("[x]{v bold=on}\n", "ceb", "x", true, false)]
+        [InlineData("[x]{v italic=on}\n", "ceb", "x", false, true)]
+        [InlineData("[x]{v bold=on italic=on}\n", "ceb", "x", true, true)]
+        [InlineData("[x]{ws=ceb-x-old bold=on}\n", "ceb-x-old", "x", true, false)]
+        public void BoldAndItalicOnAWritingSystemRunAreAttributes(string expected, string ws, string text, bool bold, bool italic)
+            => Assert.Equal(expected, Write(B.R(ws, text, p =>
+            {
+                if (bold) p.SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn, TextPropertyNumbers.VariationEnum);
+                if (italic) p.SetInt(TextPropertyNumbers.Italic, TextPropertyNumbers.ToggleOn, TextPropertyNumbers.VariationEnum);
+            })));
+
+        [Fact]
+        public void BoldOnACharacterStyledRunIsAnAttribute()
+            => Assert.Equal("[x]{cs=Strong bold=on}\n", Write(B.R("en", "x", p => p.SetStr(133, "Strong").SetInt(3, 1, 3))));
+
+        [Fact]
+        public void BoldVernacularBetweenLettersNeedsNoNeighbourContext()
+            => Assert.Equal("a[x]{v bold=on}b\n", Write(B.P("Normal", B.En("a"), B.R("ceb", "x", p => p.SetInt(3, 1, 3)), B.En("b"))));
+
+        [Theory]
+        [InlineData("**[x]{v}**", "[x]{v bold=on}\n")]
+        [InlineData("[**x**]{v}", "[x]{v bold=on}\n")]
+        [InlineData("*[x]{v}*", "[x]{v italic=on}\n")]
+        [InlineData("[*x*]{v}", "[x]{v italic=on}\n")]
+        [InlineData("***[x]{v}***", "[x]{v bold=on italic=on}\n")]
+        [InlineData("[***x***]{v}", "[x]{v bold=on italic=on}\n")]
+        [InlineData("**[x]{v cs=Strong}**", "[x]{v cs=Strong bold=on}\n")]
+        [InlineData("a **[x]{v}** b", "a [x]{v bold=on} b\n")]
+        [InlineData("**[x]{v}** and [**y**]{v}", "[x]{v bold=on} and [y]{v bold=on}\n")]
+        public void TheReaderKeepsAcceptingBothStarSpellingsAndTheWriterUsesTheAttribute(string markdown, string canonical)
+        {
+            Assert.Equal(canonical, MarkdownConverter.Canonicalize(markdown, Hosts.Project(Objects())));
+            Assert.Equal(canonical, MarkdownConverter.Canonicalize(canonical, Hosts.Project(Objects())));
+        }
+
+        [Fact]
+        public void BothStarSpellingsReadAsTheSameBoldVernacularRun()
+        {
+            var options = Hosts.Project(Objects());
+            string outer = ModelDump.Of(MarkdownConverter.Parse("a **[mang]{v}** b", options).Document);
+            string inner = ModelDump.Of(MarkdownConverter.Parse("a [**mang**]{v} b", options).Document);
+            string attribute = ModelDump.Of(MarkdownConverter.Parse("a [mang]{v bold=on} b", options).Document);
+            Assert.Equal(outer, inner);
+            Assert.Equal(outer, attribute);
+        }
+
+        [Fact]
+        public void BoldOnPlainTextStillUsesStarsWhereCommonMarkAcceptsThem()
+            => Assert.Equal("**mang** and *kaon*\n", Write(B.P("Normal", B.BoldRun("en", "mang"), B.En(" and "), B.ItalicRun("en", "kaon"))));
 
         [Fact]
         public void ACharacterStyleIsCs() => Assert.Equal("[mang-]{v cs=\"Emphasized Text\"}\n", Write(B.Styled("ceb", "mang-", "Emphasized Text")));
@@ -336,7 +388,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("a\nb", "a b\n")]
         [InlineData("# A\nB", "# A\n\nB\n")]
         [InlineData("* a\n* b\n\n\n\n1) c", "- a\n- b\n\n1. c\n")]
-        [InlineData("[x]{bold=on  v}", "[**x**]{v}\n")]
+        [InlineData("[x]{bold=on  v}", "[x]{v bold=on}\n")]
         [InlineData("[x]{MarginTop=100 ws=ar}", "[x]{ws=ar MarginTop=100}\n")]
         [InlineData("[x]{marginTop=100}", "[x]{MarginTop=100}\n")]
         [InlineData("[x]{p50=12000}", "[x]{p50=\"12000:default\"}\n")]

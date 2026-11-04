@@ -138,6 +138,14 @@ namespace SIL.TextEditing.Markdown.Writer
             bool strong = star && IsOn(run, TextPropertyNumbers.Bold);
             bool emphasis = star && IsOn(run, TextPropertyNumbers.Italic);
             var items = RunItems(run, strong, emphasis, null, generic: false);
+            if (star && items.Count > 0)
+            {
+                // The run has other attributes, so it is bracketed anyway, and bold or italic is one more attribute inside the braces
+                // ([x]{v bold=on}). Stars inside the brackets would be a spelling the spec does not show, and stars around the brackets
+                // need the neighbours to be spaces or punctuation (a**[x]{v}**b does not read as bold).
+                star = strong = emphasis = false;
+                items = RunItems(run, false, false, null, generic: false);
+            }
             bool bracket = items.Count > 0;
             if (star) UsedStar = true;
             if (bracket) Raw("[");
