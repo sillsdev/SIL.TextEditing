@@ -29,9 +29,7 @@ namespace SIL.TextEditing.Avalonia
             _background = background;
             _baseline = baseline;
             _typeface = typeface;
-            // Avalonia 11 joins neighbouring runs whose properties compare equal into one run, so runs with different offsets (which it is
-            // not given) would lose them. A tiny size difference per offset keeps them apart; it is far below anything that can be drawn.
-            _size = size + offset * 0.00005;
+            _size = size;
             _foreground = foreground;
             _decorations = decorations;
             _culture = culture;
@@ -461,7 +459,7 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>The runs of a line with their baseline offsets, or null when the line has no shifted run (<paramref name="raise"/> and
         /// <paramref name="lower"/> are then 0). Otherwise they are how far the shifted runs reach above the line's top and below its bottom.
-        /// Avalonia 11 hands back its own copy of each run's properties, so a run is matched to its offset by where it is in the text.</summary>
+        /// Avalonia 11.3 hands back its own copy of each run's properties (Avalonia 12 the original), so on both a run is matched to its offset by where it is in the text, not through its properties.</summary>
         internal static List<KeyValuePair<DrawableTextRun, double>>? RunOffsets(TextLine line, OffsetMap? offsets, out double raise, out double lower)
         {
             raise = 0;
