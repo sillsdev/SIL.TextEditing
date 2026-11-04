@@ -906,7 +906,7 @@ namespace SIL.TextEditing.Avalonia
                 double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
                 if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = ExactFraction(line);
                 var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl);
-                if (index + line.Length < source.Text.Length && line.NewLineLength == 0) shown.Move(layout.HangingShift(line, pf.Align, usedWidth));
+                if (index + line.Length < source.Text.Length && line.NewLineLength == 0) shown.Move(layout.HangingShift(shown, pf.Align, usedWidth));
                 layout.Lines.Add(shown);
                 if (pf.Align == 5 && index + line.Length < source.Text.Length) layout.Justify(shown, usedWidth);
                 y += slot;
@@ -944,13 +944,21 @@ namespace SIL.TextEditing.Avalonia
         /// paragraph (and the left edge in a right-to-left one) the text stops a space width short of it, and a line whose text fits but whose spaces
         /// do not is kept against its leading edge, so its text reaches past the other. Both are put right, as FieldWorks leaves the spaces out of the
         /// width it aligns by. A line whose text alone is wider than the area keeps its leading edge.</summary>
-        double HangingShift(TextLine line, int align, double available)
+        double HangingShift(LineInfo shown, int align, double available)
         {
-            double hang = line.WidthIncludingTrailingWhitespace - line.Width;
-            if (hang <= 0) return 0;
-            // Where Avalonia has the text: after the spaces' room at the left edge only when the spaces come first (a right-to-left line).
-            double now = line.Start + (Rtl ? hang : 0);
-            double textWidth = line.Width;
+            // Avalonia's own Width and trailing-space length are wrong for a line of several runs with right-to-left text (they count spaces that are
+            // not trailing), so the text's place is taken from where its characters are drawn, the spaces the line ends with left out.
+            int start = shown.Start, end = shown.End, core = end;
+            while (core > start && EffectiveText[core - 1] == ' ') core--;
+            if (core == end || core == start) return 0;
+            double now = double.MaxValue, right = double.MinValue;
+            foreach (var piece in shown.Pieces(start, core))
+            {
+                now = Math.Min(now, piece.Key.X - shown.X);
+                right = Math.Max(right, piece.Key.Right - shown.X);
+            }
+            if (right <= now) return 0;
+            double textWidth = right - now;
             bool left = align == 1 || (align == 4 && Rtl) || ((align == 0 || align == 5) && !Rtl);
             double target;
             if (textWidth > available) target = Rtl ? available - textWidth : 0;

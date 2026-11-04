@@ -146,6 +146,94 @@ namespace SIL.TextEditing.Avalonia.Tests
                 }
             Assert.True(checkedStops > 1000, "stops checked: " + checkedStops);
         });
+
+        static ParagraphLayout LayoutRuns(string text, bool rtl, int align, double width, int cut)
+        {
+            var p = Para(rtl ? "ar" : "en", rtl ? "ar" : "en", text.Substring(0, cut), rtl ? "ar" : "en", text.Substring(cut));
+            p.Runs[1].Props.SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn);
+            p.Rtl = rtl;
+            p.Props.SetInt(TextPropertyNumbers.Align, align);
+            return Fixtures.Field(Doc(p), width).ParagraphLayoutFor(0);
+        }
+
+        [Theory]
+        [InlineData(false, 3)]
+        [InlineData(false, 4)]
+        [InlineData(true, 1)]
+        [InlineData(true, 4)]
+        public void A_wrapped_line_of_several_runs_with_right_to_left_text_is_aligned_by_its_text_and_never_pushed_past_the_edge(bool rtl, int align) => Headless.Run(() =>
+        {
+            // Avalonia's own width and trailing-space length are wrong for such a line, so the hang is measured from the spaces as drawn.
+            const string mixed = "Wonderful هذه   طويلة   طويلة fox dog   عربية 12 هذه   ab طويلة   cd";
+            int checkedLines = 0;
+            foreach (int spaces in new[] { 1, 3 })
+            {
+                string text = spaces == 1 ? mixed.Replace("   ", " ") : mixed;
+                for (int cut = 3; cut < text.Length - 3; cut += 4)
+                    for (double width = 120; width <= 260; width += 7)
+                    {
+                        var pl = LayoutRuns(text, rtl, align, width, cut);
+                        for (int i = 0; i < pl.Lines.Count - 1; i++)
+                        {
+                            var li = pl.Lines[i];
+                            if (li.Line.Width > pl.ContentWidth * 2) continue;
+                            var (a, b) = Ink(pl, li);
+                            if (b - a > pl.ContentWidth) continue;   // a word wider than the area
+                            string where = "cut " + cut + ", width " + width + ", " + spaces + " spaces, line " + i + ": text " + a + " to " + b;
+                            Assert.True(a >= -0.75 && b <= width + 0.75, where + " is outside the control");
+                            if (rtl) Assert.True(Math.Abs(a - pl.ContentLeft) < 0.75, where);
+                            else Assert.True(Math.Abs(b - (pl.ContentLeft + pl.ContentWidth)) < 0.75, where);
+                            checkedLines++;
+                        }
+                    }
+            }
+            Assert.True(checkedLines > 200, "lines checked: " + checkedLines);
+        });
+
+        [Fact]
+        public void No_wrapped_line_of_random_mixed_runs_is_pushed_past_the_control_edge_or_off_its_aligned_edge() => Headless.Run(() =>
+        {
+            var words = new[] { "fox", "dog", "Wonderful", "عربي", "طويلة", "12", "(جمل)", "ab", "هذه", "ét" };
+            var rnd = new Random(7);
+            int lines = 0;
+            for (int n = 0; n < 2500; n++)
+            {
+                var sb = new System.Text.StringBuilder();
+                for (int j = rnd.Next(4, 16); j > 0; j--)
+                    sb.Append(words[rnd.Next(words.Length)]).Append(new[] { " ", "   ", " ", "  " }[rnd.Next(4)]);
+                string text = sb.ToString();
+                bool rtl = rnd.Next(2) == 0;
+                int align = rtl ? new[] { 1, 4 }[rnd.Next(2)] : new[] { 3, 4 }[rnd.Next(2)];
+                double width = 100 + rnd.Next(320);
+                var p = Para(rtl ? "ar" : "en");
+                for (int pos = 0, runs = rnd.Next(1, 5); pos < text.Length; runs--)
+                {
+                    int len = runs <= 1 ? text.Length - pos : Math.Min(text.Length - pos, rnd.Next(1, text.Length / 2 + 2));
+                    var run = new Run { Ws = rnd.Next(3) == 0 ? "ar" : "en", Text = text.Substring(pos, len) };
+                    if (rnd.Next(2) == 0) run.Props.SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn);
+                    p.Runs.Add(run);
+                    pos += len;
+                }
+                p.Rtl = rtl;
+                p.Props.SetInt(TextPropertyNumbers.Align, align);
+                var pl = Fixtures.Field(Doc(p), width).ParagraphLayoutFor(0);
+                for (int i = 0; i < pl.Lines.Count - 1; i++)
+                {
+                    var li = pl.Lines[i];
+                    if (li.End > li.Start && pl.EffectiveText[li.End - 1] == (char)0x2028) continue;
+                    int core = pl.TextEnd(li);
+                    while (core > li.Start && pl.EffectiveText[core - 1] == ' ') core--;
+                    if (core == li.Start) continue;
+                    var (a, b) = Ink(pl, li);
+                    if (b - a > pl.ContentWidth) continue;
+                    Assert.True(a >= -1 && b <= width + 1, "paragraph " + n + " line " + i + ": text " + a + " to " + b + " in a control " + width + " wide");
+                    double edge = rtl ? pl.ContentLeft : pl.ContentLeft + pl.ContentWidth;
+                    Assert.True(Math.Abs((rtl ? a : b) - edge) < 1, "paragraph " + n + " line " + i + ": text " + a + " to " + b + ", aligned to " + edge);
+                    lines++;
+                }
+            }
+            Assert.True(lines > 3000, "lines checked: " + lines);
+        });
         [Fact]
         public void The_text_of_a_right_aligned_wrapped_line_reaches_the_right_edge_in_the_picture() => Headless.Run(() =>
         {
