@@ -45,11 +45,16 @@ owner decisions.
   character style and the run's own properties, later layers winning, as FieldWorks' drawing engine layers its
   properties. FieldWorks' menu code disagrees: there the character style overrides the run's own value and the
   paragraph style is not read. The field has one answer for marks and menu and follows the first.
-- **Edits made behind the editor's back.** A paragraph keeps a change stamp (`Paragraph.ChangeStamp`) that moves when its runs, a run's text,
-  writing system, object data or property bag (replaced), or its style or property bag (replaced) change, and a result remembers the
-  stamp it was made for, so a direct change to the model is noticed without the host saying so, and the marks of that paragraph are
-  dropped. A property bag changed in place and a changed paragraph list are not seen: the host calls `RefreshFromDocument()`, which
-  restarts checking. A change of `DocumentEditor.IsReadOnly` raises `IsReadOnlyChanged`, which restarts checking whoever changed it.
+- **Edits made behind the editor's back (issue 101).** A paragraph keeps a change stamp (`Paragraph.ChangeStamp`) that moves when its runs, a run's
+  text, writing system, object data or property bag, or its style, direction, default writing system or property bag, change, a bag being changed
+  in place (`SetInt`, `SetStr`, a write to `IntProps` or `StrProps`) as well as replaced: a bag tells the runs and paragraphs that hold it. A result
+  remembers the stamp it was made for, so a direct change to the model is noticed without the host saying so. The field keys the paragraph's
+  format, bullet or number label and layout by it too, so a changed paragraph is laid out again (only that one) and the numbers after it are worked
+  out again; and it listens to its paragraphs (a weak link, so a field that is dropped is not kept alive by the document), so it measures, draws and
+  checks again by itself, on its own thread when the change was made on another. The marks of the paragraph are dropped. This replaces "call
+  `RefreshFromDocument()` after a direct change", which stays for what a paragraph cannot tell: a changed or replaced paragraph in
+  `Document.Paragraphs`, and a style resolver whose answers changed (`InvalidateAllLayouts()`, `RestartSpelling()`). A default, ours (not an owner decision). A change of `DocumentEditor.IsReadOnly` raises `IsReadOnlyChanged`, which restarts
+  checking, ends a composition and tells automation, whoever changed it.
 - **An edit keeps the marks it leaves alone.** A mark outside the edit moves with the text, and only the words around the edit are checked
   again: the stretch the edit touched, widened to whole words and past an apostrophe or joiner next to it (a mark that ends one
   character before the edit stays unless that character joins words). The word being typed has no squiggle until the next idle step; no other

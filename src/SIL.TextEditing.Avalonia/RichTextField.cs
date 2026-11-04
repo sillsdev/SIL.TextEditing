@@ -36,6 +36,11 @@ namespace SIL.TextEditing.Avalonia
             public string? Label;
             /// <summary>What has been checked of the paragraph's spelling (null until looked at), for the paragraph as it was (see <see cref="SpellState"/>).</summary>
             public SpellState? Spell;
+            /// <summary>The <see cref="Paragraph.ChangeStamp"/> the format, label and layout above were made for, or 0 until the first is made. The field
+            /// notices a paragraph that changed behind the editor's back by this (issue 101).</summary>
+            public long Stamp;
+            /// <summary>The paragraph this entry watches for changes (see <c>Watch</c>).</summary>
+            public Paragraph? Watched;
         }
         readonly InputMethodClient _ime;
         IStyleResolver? _styles;
@@ -64,6 +69,7 @@ namespace SIL.TextEditing.Avalonia
         {
             Editor = new DocumentEditor(document) { AccessCheck = RequireUIThread };
             for (int i = 0; i < document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
+            WatchAll();
             Editor.DocumentChanged += OnDocumentChanged;
             Editor.IsReadOnlyChanged += OnEditorReadOnlyChanged;
             Editor.TextEdited += OnTextEdited;
@@ -209,10 +215,9 @@ namespace SIL.TextEditing.Avalonia
             get => Editor.IsReadOnly;
             set
             {
-                if (Editor.IsReadOnly == value) return;
-                Editor.IsReadOnly = value;   // raises IsReadOnlyChanged, which restarts spell checking (ADR 0020)
-                if (value && _preedit != null) SetPreedit(null, null);   // an input method cannot go on composing into read-only text
-                _peer?.RaiseReadOnlyChanged(!value, value);
+                // Raises IsReadOnlyChanged whoever sets it, which restarts spell checking (ADR 0020), ends a composition (an input method cannot go
+                // on composing into read-only text) and tells automation: OnEditorReadOnlyChanged.
+                Editor.IsReadOnly = value;
             }
         }
         /// <summary>Single-paragraph mode (ADR 0012; forwards to <see cref="DocumentEditor.SingleParagraph"/>): Enter does not
@@ -268,9 +273,11 @@ namespace SIL.TextEditing.Avalonia
             {
                 _layouts[start]?.Dispose();
                 _layouts.RemoveAt(start);
+                Unwatch(_info[start]);
                 _info.RemoveAt(start);
             }
             for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
+            for (int i = 0; i < added && start + i < Editor.Document.Paragraphs.Count; i++) Watch(_info[start + i], Editor.Document.Paragraphs[start + i]);
             SpellAfterChange(start, added, spelling);
             ForgetNumbersFrom(start);
             RequestSpellingIdle();
@@ -282,7 +289,30 @@ namespace SIL.TextEditing.Avalonia
         // ------------------------------------------------ layout
 
         /// <summary>The format of a paragraph, resolved once until the paragraph or the styles change.</summary>
-        ParaFormat FormatOf(int index) => _info[index].Format ??= ParagraphLayout.ResolveFormat(Editor.Document.Paragraphs[index], WritingSystems, _styles);
+        ParaFormat FormatOf(int index) => Current(index).Format ??= ParagraphLayout.ResolveFormat(Editor.Document.Paragraphs[index], WritingSystems, _styles);
+
+        /// <summary>What is known of a paragraph's layout, as long as the paragraph is as it was: a paragraph that changed behind the editor's back
+        /// (<see cref="Paragraph.ChangeStamp"/> is not the one its format, label and layout were made for) loses them, and the numbers of the paragraphs
+        /// after it are worked out again. Comparing a number is cheap, so every use asks (issue 101).</summary>
+        ParaInfo Current(int index)
+        {
+            var info = _info[index];
+            var paragraphs = Editor.Document.Paragraphs;
+            if (index >= paragraphs.Count) return info;
+            long stamp = paragraphs[index].ChangeStamp;
+            if (info.Stamp == stamp) return info;
+            bool changed = info.Stamp != 0;
+            info.Stamp = stamp;
+            if (changed)
+            {
+                info.Format = null;
+                info.Label = null;
+                _layouts[index]?.Dispose();
+                _layouts[index] = null;
+                ForgetNumbersFrom(index);
+            }
+            return info;
+        }
 
         void ForgetNumbersFrom(int start)
         {
@@ -321,6 +351,7 @@ namespace SIL.TextEditing.Avalonia
 
         public ParagraphLayout ParagraphLayoutFor(int index)
         {
+            Current(index);
             var existing = _layouts[index];
             string label = LabelOf(index);
             double above = index > 0 ? FormatOf(index - 1).SpaceAfter : 0;
@@ -358,21 +389,24 @@ namespace SIL.TextEditing.Avalonia
             {
                 _layouts[i]?.Dispose();
                 _layouts[i] = null;
-                _info[i] = new ParaInfo();
+                _info[i] = new ParaInfo { Watched = _info[i].Watched };
             }
             InvalidateMeasure();
             InvalidateVisual();
         }
 
-        /// <summary>Call after the host changed the Document directly (not through the editor): drops every layout and
-        /// resizes the layout list to the paragraph count.</summary>
+        /// <summary>Call after the host changed the list of paragraphs of the Document directly (not through the editor): added, removed or replaced
+        /// one. It drops every layout and resizes the layout list to the paragraph count. A change to a paragraph itself, its runs, a run's text or
+        /// properties (set in place too), its style or direction, needs no call: the paragraph tells the field (<see cref="Paragraph.ChangeStamp"/>).</summary>
         public void RefreshFromDocument()
         {
             foreach (var l in _layouts) l?.Dispose();
+            UnwatchAll();
             _layouts.Clear();
             _info.Clear();
             FindDocumentChanged();   // the highlight and the current match were worked out from the old text
             for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
+            WatchAll();
             RestartSpelling();       // the paragraphs may be other text: nothing checked before is trusted, and a failed writing system is tried again
             InvalidateMeasure();
             InvalidateVisual();
@@ -380,6 +414,7 @@ namespace SIL.TextEditing.Avalonia
 
         protected override Size MeasureOverride(Size availableSize)
         {
+            _hostEditNoticed = false;   // a change to a paragraph from here on asks for another measure (see OnParagraphTouched)
             double w = double.IsInfinity(availableSize.Width) ? PreferredWidth : availableSize.Width;
             if (Math.Abs(w - _layoutWidth) > 0.5)
             {

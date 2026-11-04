@@ -7,9 +7,16 @@ namespace SIL.TextEditing
 {
     /// <summary>One run of a string, as an ITsString reports it: text, a writing-system id, an opaque property bag
     /// and, for an object run, the object data. An object run's text is exactly one U+FFFC.</summary>
-    public sealed class Run
+    public sealed class Run : IBagOwner
     {
         public const char ObjectReplacement = '￼';
+
+        public Run()
+        {
+            _props.Attach(this);
+        }
+
+        void IBagOwner.BagChanged() => NotifyOwners(false);
 
         string _text = string.Empty;
         RunList? _owner;
@@ -92,14 +99,21 @@ namespace SIL.TextEditing
             }
         }
 
-        /// <summary>The run's property bag. Replacing it tells every paragraph that holds the run; changing the bag it holds, in place, is
-        /// not seen (call <c>RichTextField.RefreshFromDocument</c> afterwards).</summary>
+        /// <summary>The run's property bag. Replacing it, or changing the bag it holds in place (<see cref="PropertyBag.SetInt"/>, a write to
+        /// its <see cref="PropertyBag.IntProps"/>), tells every paragraph that holds the run (<see cref="Paragraph.ChangeStamp"/>). A bag
+        /// the run has let go of no longer does.</summary>
         public PropertyBag Props
         {
             get => _props;
             set
             {
-                _props = value;
+                if (value == null) throw new ArgumentNullException(nameof(value));
+                if (!ReferenceEquals(_props, value))
+                {
+                    _props.Detach(this);
+                    _props = value;
+                    value.Attach(this);
+                }
                 NotifyOwners(false);
             }
         }

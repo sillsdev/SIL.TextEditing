@@ -73,11 +73,11 @@ namespace SIL.TextEditing.Avalonia
         /// (<see cref="AddToDictionary"/>) or ignored, when the read-only state changes (<c>IsReadOnly</c> of the field or of its editor), when
         /// the host raises <see cref="ISpellCheckHost.DictionariesChanged"/>, and in <see cref="RefreshFromDocument"/>. A writing system that failed is
         /// tried again.
-        /// <para>What a host calls when it changes text itself, not through the editor: the paragraph notices a change to its runs, a run's
-        /// text, writing system or object data, a replaced property bag and a new style (<see cref="Paragraph.ChangeStamp"/>), so the marks of
-        /// that paragraph are dropped at the next draw or query and it is checked again; call <see cref="RefreshFromDocument"/> as well so the
-        /// layout follows the new text (it restarts spelling too). A property bag changed in place, a changed paragraph list, or changed styles
-        /// are not noticed: call <see cref="RefreshFromDocument"/> (or this, when only what is checked changed). Edits made through the editor,
+        /// <para>What a host calls when it changes text itself, not through the editor: nothing. The paragraph notices a change to its runs, a run's
+        /// text, writing system, object data or property bag (replaced or changed in place), its style, direction or property bag
+        /// (<see cref="Paragraph.ChangeStamp"/>), tells the field, and the field lays that paragraph out again, drops its marks and checks it again.
+        /// A changed or replaced entry of <c>Document.Paragraphs</c> is not noticed: call <see cref="RefreshFromDocument"/>; a style resolver whose
+        /// answers changed, <see cref="InvalidateAllLayouts"/> and, when what is checked changed, this. Edits made through the editor,
         /// <see cref="DocumentEditor.Apply"/> and <see cref="DocumentEditor.ExternalReplaceParagraph"/> need no call.</para></summary>
         public void RestartSpelling()
         {
@@ -682,13 +682,6 @@ namespace SIL.TextEditing.Avalonia
         {
             if (_spellListening != null) _spellListening.DictionariesChanged -= OnDictionariesChanged;
             _spellListening = null;
-        }
-
-        /// <summary>The editor's read-only flag changed, on whatever thread changed it: checking starts over on the field's own.</summary>
-        void OnEditorReadOnlyChanged()
-        {
-            if (CheckAccess()) RestartSpelling();
-            else OwnDispatcher.Post(RestartSpelling, global::Avalonia.Threading.DispatcherPriority.Background);
         }
 
         void OnDictionariesChanged(object? sender, EventArgs e)

@@ -6,7 +6,7 @@ namespace SIL.TextEditing
 {
     /// <summary>A paragraph: a host key, paragraph properties and a list of runs. Offsets are UTF-16 indices into
     /// the concatenated run text, equal to ITsString offsets.</summary>
-    public sealed class Paragraph
+    public sealed class Paragraph : IBagOwner
     {
         /// <summary>The host's opaque key for this paragraph (in FieldWorks the StTxtPara GUID); null until the host assigns one.
         /// The field never interprets it: it only moves it by the split and join rules of <see cref="DocumentEditor"/>.</summary>
@@ -22,10 +22,30 @@ namespace SIL.TextEditing
                 Touch();
             }
         }
+        bool _rtl;
         /// <summary>Paragraph direction (ktptRightToLeft).</summary>
-        public bool Rtl { get; set; }
+        public bool Rtl
+        {
+            get => _rtl;
+            set
+            {
+                if (_rtl == value) return;
+                _rtl = value;
+                Touch();
+            }
+        }
+        string _defaultWs = "en";
         /// <summary>The writing system used for typing in an empty paragraph.</summary>
-        public string DefaultWs { get; set; } = "en";
+        public string DefaultWs
+        {
+            get => _defaultWs;
+            set
+            {
+                if (_defaultWs == value) return;
+                _defaultWs = value;
+                Touch();
+            }
+        }
         /// <summary>The paragraph's own text properties (an ITsString paragraph's StyleRules), opaque like a run's bag: copied through
         /// every split, join and slice, never interpreted. <see cref="Style"/> and <see cref="Rtl"/> are the two the field reads.</summary>
         PropertyBag _props = new PropertyBag();
@@ -34,7 +54,13 @@ namespace SIL.TextEditing
             get => _props;
             set
             {
-                _props = value;
+                if (value == null) throw new ArgumentNullException(nameof(value));
+                if (!ReferenceEquals(_props, value))
+                {
+                    _props.Detach(this);
+                    _props = value;
+                    value.Attach(this);
+                }
                 Touch();
             }
         }
@@ -45,20 +71,33 @@ namespace SIL.TextEditing
         {
             _runs = new RunList(this);
             _stamp = NextStamp();
+            _props.Attach(this);
         }
+
+        void IBagOwner.BagChanged() => Touch();
 
         static long s_stamps;
         long _stamp;
 
         static long NextStamp() => System.Threading.Interlocked.Increment(ref s_stamps);
 
-        void Touch() => _stamp = NextStamp();
+        // A field that shows this paragraph hears of every change (RichTextField, issue 101); nothing else listens.
+        Action<Paragraph>? _watchers;
+
+        internal void Watch(Action<Paragraph> watcher) => _watchers += watcher;
+        internal void Unwatch(Action<Paragraph> watcher) => _watchers -= watcher;
+
+        void Touch()
+        {
+            _stamp = NextStamp();
+            _watchers?.Invoke(this);
+        }
 
         /// <summary>A number that is different whenever something the field draws or checks of this paragraph has changed: a run added,
-        /// removed or replaced, a run's text, writing system, object data or property bag replaced, the paragraph's style or property bag
-        /// replaced. No two paragraphs ever share one, so a result remembered with it cannot be taken for another paragraph's. What it does
-        /// not see: a property bag changed in place (<c>PropertyBag.SetInt</c> on a run's or the paragraph's own bag), and the paragraph
-        /// list of the document. A host that does either calls <c>RichTextField.RefreshFromDocument</c>.</summary>
+        /// removed or replaced, a run's text, writing system, object data or property bag replaced or changed in place
+        /// (<c>PropertyBag.SetInt</c>, a write to its <c>IntProps</c>), the paragraph's style, direction, default writing system or property
+        /// bag replaced or changed in place. No two paragraphs ever share one, so a result remembered with it cannot be taken for another
+        /// paragraph's. What it does not see: the paragraph list of the document, and a style resolver whose answers changed.</summary>
         public long ChangeStamp => _stamp;
 
         /// <summary>The paragraph's runs. Add, remove or change them directly if you like: the list and each run tell the paragraph,

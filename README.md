@@ -45,10 +45,11 @@ run tells it when its text changes, so `Paragraph.Length`, `RunBefore`, `RunAfte
 paragraph keeps current (a binary search, not a walk over the runs) however a host changes the runs. A host may edit `Run.Text` or
 the list directly. `RunList` has `Add`, `Insert`, `RemoveAt`, `RemoveRange`, `AddRange`, `Clear`, an indexer and `IEnumerable<Run>`
 (use LINQ for `ConvertAll`, `FindIndex` and the like); assign a `new RunList(runs)` to `Paragraph.Runs` to replace the runs. A
-change to a run's `PropertyBag` in place is not seen (see the spelling section for what to call).
+change to a run's `PropertyBag` in place (`SetInt`, `SetStr`, or a write to `IntProps` or `StrProps`) is seen too: the bag tells the paragraphs that
+hold it, so `ChangeStamp` moves and a field shows the change (see the spelling section for what a host still calls).
 
 `Paragraph.Runs = list` takes a `List<Run>` directly (the paragraph adopts a new `RunList` over the same runs). `Run.Text = null` throws
-`ArgumentNullException` (use an empty string). Looping over `Paragraph.Runs` while the list is added to, removed from or has a run
+`ArgumentNullException` (use an empty string); so do `Run.Props = null` and `Paragraph.Props = null`. Looping over `Paragraph.Runs` while the list is added to, removed from or has a run
 replaced throws `InvalidOperationException`, as it does for a `List<Run>`; changing a run's text or properties meanwhile is fine.
 `Paragraph.Text` is safe to read from any thread while nothing changes the paragraph (the model itself is edited on the UI thread only).
 The work counters tests use (`TextReads`, `ElementReads`) exist in a build that defines `TEXTEDITING_COUNTERS` (every configuration but
@@ -153,11 +154,15 @@ the application. A host that repairs the dictionary raises `DictionariesChanged`
 short English and French word list.
 
 What a host calls (the field restarts checking itself on an edit through the editor, `Apply`, `ExternalReplaceParagraph`, a change of
-`IsReadOnly` on the field or its editor, a word added or ignored, and a `DictionariesChanged` notice): after it changes the document
-directly, `RichTextField.RefreshFromDocument()`, which restarts checking too. A paragraph notices a change to its runs, a run's text, writing
-system or object data, a replaced property bag and a new style (`Paragraph.ChangeStamp`) and its marks go at the next draw, but the layout and a
-property bag changed in place are seen only after `RefreshFromDocument()`. After a style change that alters what is checked,
-`RestartSpelling()`. After repairing a failed dictionary, raise `DictionariesChanged`.
+`IsReadOnly` on the field or its editor, a word added or ignored, and a `DictionariesChanged` notice): nothing, after it changes a paragraph
+directly. A paragraph tells the field when its runs, a run's text, writing system, object data or property bag (replaced, or changed in place with
+`SetInt`, `SetStr` or a write to `IntProps` or `StrProps`), or its style, direction, default writing system or property bag, change
+(`Paragraph.ChangeStamp` moves): the field measures and draws again, lays out that paragraph again (and only that one, keyed by the stamp), numbers
+the list again, drops the marks of that paragraph and checks it again when idle. A change made on another thread is followed on the field's own.
+`RichTextField.RefreshFromDocument()` is for what a paragraph cannot tell: the list of paragraphs (`Document.Paragraphs`) changed, a paragraph
+replaced in it. It restarts checking too. When a style resolver's answers change (not the resolver itself, which the field takes again when it is set), `InvalidateAllLayouts()`, and
+`RestartSpelling()` when what is checked changed. After repairing a failed dictionary, raise `DictionariesChanged`. Setting
+`DocumentEditor.IsReadOnly` directly tells automation as `RichTextField.IsReadOnly` does.
 
 ## Colours and themes
 
