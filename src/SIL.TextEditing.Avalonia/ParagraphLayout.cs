@@ -925,6 +925,51 @@ namespace SIL.TextEditing.Avalonia
         /// </summary>
         public static ParagraphLayout Build(Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph = false, int preeditAt = -1, string? preedit = null, Run? preeditTemplate = null, IStyleResolver? styles = null, string? label = null, double previousSpaceAfter = 0, IBrush? forceText = null)
         {
+            // Avalonia's formatter throws for some sequences of format characters it cannot split a line inside (11.3: "Cannot split: requested length N
+            // consumes entire run", for a zero width joiner after a space before Arabic text). Typed text must not crash the layout, so a paragraph the
+            // formatter refuses is laid out again with the offending characters swapped, one for one, for ones that are drawn the same and break
+            // nowhere (the model and every offset are untouched), and failing that with every format character swapped.
+            for (int swap = 0; ; swap++)
+            {
+                try { return BuildWith(swap, paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, forceText); }
+                catch (FormatterRefused) when (swap < FormatSwaps - 1) { }
+            }
+        }
+
+        /// <summary>How many layouts of a paragraph are tried: as it is, with the joiners swapped, with every format character swapped.</summary>
+        const int FormatSwaps = 3;
+
+        /// <summary>The formatter refused a line (<see cref="InvalidOperationException"/> from Avalonia's text formatter).</summary>
+        sealed class FormatterRefused : Exception
+        {
+            public FormatterRefused(Exception inner) : base(inner.Message, inner) { }
+        }
+
+        static TextLine? FormatLineGuarded(TextFormatter formatter, ITextSource source, int index, double width, TextParagraphProperties properties, TextLineBreak? previous)
+        {
+            try { return formatter.FormatLine(source, index, width, properties, previous); }
+            catch (InvalidOperationException e) { throw new FormatterRefused(e); }
+        }
+
+        /// <summary>The text the formatter is given: at swap 1 every zero width joiner is a word joiner, at swap 2 every zero width joiner and non-joiner and
+        /// every bidirectional format character is. Same length, so every offset stays.</summary>
+        static string SwapFormatCharacters(string text, int swap)
+        {
+            if (swap == 0) return text;
+            char[]? chars = null;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                bool hit = c == '‍' || (swap >= 2 && (c == '‌' || (c >= '‎' && c <= '‏') || (c >= '‪' && c <= '‮') || (c >= '⁦' && c <= '⁩') || c == '؜'));
+                if (!hit) continue;
+                if (chars == null) chars = text.ToCharArray();
+                chars[i] = '⁠';
+            }
+            return chars == null ? text : new string(chars);
+        }
+
+        static ParagraphLayout BuildWith(int swap, Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph, int preeditAt, string? preedit, Run? preeditTemplate, IStyleResolver? styles, string? label, double previousSpaceAfter, IBrush? forceText)
+        {
             var layout = new ParagraphLayout(paragraph, width);
             if (forceText == null) layout._recolour = brush => Build(paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, brush);
             var pf = ResolveFormat(paragraph, writingSystems, styles);
@@ -989,8 +1034,8 @@ namespace SIL.TextEditing.Avalonia
             if (!preeditDone) AddPreedit();
             layout.PreeditAt = hasPreedit ? preeditAt : -1;
             layout.PreeditLength = hasPreedit ? preedit!.Length : 0;
-            source.Text = sb.ToString();
-            layout.EffectiveText = source.Text;
+            layout.EffectiveText = sb.ToString();   // the real text: grapheme boundaries and spaces are read from it
+            source.Text = SwapFormatCharacters(layout.EffectiveText, swap);
             foreach (var seg in source.Segments)
             {
                 if (seg.IsObject || !(seg.Properties is RunTextProperties rp)) continue;
@@ -1065,7 +1110,7 @@ namespace SIL.TextEditing.Avalonia
                 double lineWidth = first ? layout._firstWidth : w;
                 double lineX = first ? layout._firstX : layout.ContentLeft;
                 LinesFormatted++;
-                var line = formatter.FormatLine(source, index, lineWidth, paragraphProperties, previous);
+                var line = FormatLineGuarded(formatter, source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
                 double usedWidth = lineWidth;
                 if (pf.MaxLines > 0 && layout.Lines.Count == pf.MaxLines - 1 && index + line.Length < source.Text.Length)
@@ -1080,7 +1125,7 @@ namespace SIL.TextEditing.Avalonia
                         if (w > 3 * room)
                         {
                             LinesFormatted++;
-                            var narrower = formatter.FormatLine(source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
+                            var narrower = FormatLineGuarded(formatter, source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
                             if (narrower != null && narrower.Length > 0)
                             {
                                 line.Dispose();
