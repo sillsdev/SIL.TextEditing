@@ -51,8 +51,29 @@ namespace SIL.TextEditing
 
         /// <summary>Raised by the host when what its checkers answer has changed: a word added or removed (an add, or the undo of one), a
         /// dictionary installed or changed. Every field using the host checks again. It may be raised on any thread; the field handles it on
-        /// its own. A field listens while it is in the visual tree.</summary>
+        /// its own. A field listens while it is in the visual tree. A field stops checking a writing system whose checker threw
+        /// (<c>RichTextField.SpellCheckerFailed</c>) until it hears this, or is restarted, so a host that repairs such a dictionary raises it.
+        /// <see cref="SpellCheckHostBase"/> raises it for a host that derives from it.</summary>
         event EventHandler? DictionariesChanged;
+    }
+
+    /// <summary>A base for a host: write <see cref="GetChecker"/> and nothing else. The word tests answer with
+    /// <see cref="SpellScanner.DefaultIsWordForming"/> and <see cref="SpellScanner.DefaultJoinsWords"/> (override them when a writing system says
+    /// otherwise), and <see cref="RaiseDictionariesChanged"/> announces a change to every field using the host, from any thread. A host that
+    /// repairs a dictionary the field reported as failed (<c>RichTextField.SpellCheckerFailed</c>) calls it afterwards, so the field tries again.</summary>
+    public abstract class SpellCheckHostBase : ISpellCheckHost
+    {
+        public abstract ISpellChecker? GetChecker(string ws);
+
+        public virtual bool IsWordForming(string ws, int codePoint) => SpellScanner.DefaultIsWordForming(codePoint);
+
+        public virtual bool JoinsWords(string ws, int codePoint) => SpellScanner.DefaultJoinsWords(codePoint);
+
+        public event EventHandler? DictionariesChanged;
+
+        /// <summary>Tells every field using this host that what its checkers answer has changed: a word added or removed, a dictionary
+        /// installed, changed or repaired. Safe to call from any thread.</summary>
+        public void RaiseDictionariesChanged() => DictionariesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>The values of FieldWorks' spell-check text property (ktptSpellCheck, 26).</summary>

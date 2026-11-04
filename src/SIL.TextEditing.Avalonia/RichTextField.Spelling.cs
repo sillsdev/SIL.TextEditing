@@ -42,8 +42,18 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Raised on the field's thread when a checker or the host throws while the field is checking: the writing system, and the
         /// exception. The field then stops checking that writing system (until <see cref="RestartSpelling"/> or a new host) and goes on with the
-        /// others, so a failing dictionary does not end the application. Raised once per writing system until it is checked again.</summary>
+        /// others, so a failing dictionary does not end the application. Raised once per writing system until it is checked again. When
+        /// nothing handles it, the failure is written to <see cref="System.Diagnostics.Trace"/> (once per writing system, as it is raised), so it is not silent.
+        /// A host that repairs the dictionary calls <see cref="ISpellCheckHost.DictionariesChanged"/> (or <see cref="RestartSpelling"/>), which tries the
+        /// writing system again.</summary>
         public event Action<string, Exception>? SpellCheckerFailed;
+
+        /// <summary>For a test: where the trace line of a failure nobody handles goes; null (the default) writes it to
+        /// <see cref="System.Diagnostics.Trace"/>.</summary>
+        internal Action<string>? SpellTraceSink { get; set; }
+
+        /// <summary>For a test: how many checker wrappers the field has made (one per writing system and checker instance until a restart).</summary>
+        internal int SpellWrappersCreated { get; private set; }
 
         /// <summary>For a test: how idle work is asked for. It is given the action to run when the application is idle; null (the default)
         /// posts it to the field's dispatcher at background priority, after input and layout. One request is pending at a time.</summary>
@@ -59,6 +69,7 @@ namespace SIL.TextEditing.Avalonia
         public void RestartSpelling()
         {
             _spellFailed.Clear();
+            (_spellGuard as GuardedHost)?.Forget();
             for (int i = 0; i < _info.Count; i++)
             {
                 _info[i].Marks = null;
@@ -181,8 +192,25 @@ namespace SIL.TextEditing.Avalonia
         void SpellFailure(string ws, Exception error)
         {
             if (!_spellFailed.Add(ws)) return;
-            try { SpellCheckerFailed?.Invoke(ws, error); }
-            catch (Exception) { /* a handler that throws must not take the idle work down with it */ }
+            var handler = SpellCheckerFailed;
+            if (handler == null)
+            {
+                Trace("Spell checking of writing system '" + ws + "' failed and is switched off until it is restarted: " + error);
+                return;
+            }
+            try { handler(ws, error); }
+            catch (Exception thrown)
+            {
+                // A handler that throws must not take the idle work down with it.
+                Trace("The SpellCheckerFailed handler threw for writing system '" + ws + "': " + thrown);
+            }
+        }
+
+        void Trace(string message)
+        {
+            var sink = SpellTraceSink;
+            if (sink != null) sink(message);
+            else System.Diagnostics.Trace.TraceWarning("SIL.TextEditing: " + message);
         }
 
         /// <summary>The host as the scanner sees it: a call that throws is reported and the writing system is left alone from then on.</summary>
@@ -190,6 +218,9 @@ namespace SIL.TextEditing.Avalonia
         {
             readonly RichTextField _field;
             readonly ISpellCheckHost _inner;
+            // One wrapper per writing system for as long as the host keeps answering with the same checker, so a word does not allocate one.
+            // The host is still asked every time, so a checker it swaps for another is noticed.
+            readonly Dictionary<string, (ISpellChecker Inner, ISpellChecker Wrapper)> _wrappers = new Dictionary<string, (ISpellChecker, ISpellChecker)>();
 
             public GuardedHost(RichTextField field, ISpellCheckHost inner)
             {
@@ -203,8 +234,16 @@ namespace SIL.TextEditing.Avalonia
                 try
                 {
                     var checker = _inner.GetChecker(ws);
-                    if (checker == null) return null;
-                    return checker is ISpellIgnorer ? new GuardedIgnoringChecker(_field, ws, checker) : new GuardedChecker(_field, ws, checker);
+                    if (checker == null)
+                    {
+                        _wrappers.Remove(ws);
+                        return null;
+                    }
+                    if (_wrappers.TryGetValue(ws, out var cached) && ReferenceEquals(cached.Inner, checker)) return cached.Wrapper;
+                    ISpellChecker wrapper = checker is ISpellIgnorer ? new GuardedIgnoringChecker(_field, ws, checker) : new GuardedChecker(_field, ws, checker);
+                    _wrappers[ws] = (checker, wrapper);
+                    _field.SpellWrappersCreated++;
+                    return wrapper;
                 }
                 catch (Exception e)
                 {
@@ -212,6 +251,9 @@ namespace SIL.TextEditing.Avalonia
                     return null;
                 }
             }
+
+            /// <summary>Forgets the wrappers: a restart starts from what the host says now.</summary>
+            public void Forget() => _wrappers.Clear();
 
             public bool IsWordForming(string ws, int codePoint)
             {

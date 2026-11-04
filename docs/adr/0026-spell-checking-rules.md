@@ -67,6 +67,9 @@ owner decisions.
   information ADR 0021 describes, and a context request carries it: `ContextInfo.Spelling` is the `SpellingSuggestions` object (the host
   needs it to apply, add or ignore) and `ContextInfo.SpellingSuggestions` its strings. The word the checker judged can differ from
   `ContextInfo.Word`, which uses the double-click rule. Building the menu and its wording are the host's.
+- **A host base class, and one wrapper per checker.** `SpellCheckHostBase` implements the interface from `GetChecker` alone, with the default
+  word rules and a `RaiseDictionariesChanged()` safe from any thread. The field wraps each checker once (it still asks the host every
+  time, and makes a new wrapper only when the host answers with another checker), until a restart.
 - **Ignore is optional.** FieldWorks' dictionaries have no ignore operation and its menu has no "Ignore". A checker that
   can ignore a word also implements `ISpellIgnorer`; `SpellingSuggestions.CanIgnore` says so and the host offers the item
   only then.
@@ -84,8 +87,10 @@ owner decisions.
   applied to it. A word that crosses the limit is checked whole. FieldWorks checks it. A narrower or wider field makes a
   limited paragraph due again.
 - **A failing host does not end the application.** An exception from a checker or from the host's word tests is caught in the
-  idle step; the field stops checking that writing system (until `RestartSpelling` or a new host), takes the failing word as
-  right, and raises `RichTextField.SpellCheckerFailed` once with the writing system and the exception. A failure while a menu is made gives
+  idle step; the field stops checking that writing system (until `RestartSpelling`, a `DictionariesChanged` notice or a new host), takes the failing
+  word as right, and raises `RichTextField.SpellCheckerFailed` once with the writing system and the exception. When nothing handles
+  the event the failure goes to `System.Diagnostics.Trace` instead (once per writing system until a restart), so it is never silent; a
+  handler that throws is traced too. A host that repairs the dictionary raises `DictionariesChanged`. A failure while a menu is made gives
   no suggestions. An exception from `Add` or `Ignore` is the host's to see.
 - **The word of a mixed word is NFC.** `SpellingSuggestions.Word` is NFC for every kind; an embedded word keeps its objects.
 - **A mark does not cover the input method's composing text.** One that starts where composing text is inserted starts after

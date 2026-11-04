@@ -6,7 +6,7 @@ namespace SIL.TextEditing.Playground
 {
     /// <summary>A stand-in for the host's dictionaries: a short word list for English and French, one checker each, and no dictionary
     /// for any other writing system. A host such as FieldWorks puts Hunspell behind <see cref="ISpellChecker"/> instead.</summary>
-    public sealed class SampleSpelling : ISpellCheckHost
+    public sealed class SampleSpelling : SpellCheckHostBase
     {
         static readonly string[] English =
         {
@@ -31,16 +31,9 @@ namespace SIL.TextEditing.Playground
             };
         }
 
-        void Changed() => DictionariesChanged?.Invoke(this, EventArgs.Empty);
+        void Changed() => RaiseDictionariesChanged();
 
-        public ISpellChecker? GetChecker(string ws) => _checkers.TryGetValue(ws, out var c) ? c : null;
-
-        public bool IsWordForming(string ws, int codePoint) => SpellScanner.DefaultIsWordForming(codePoint);
-
-        public bool JoinsWords(string ws, int codePoint) => SpellScanner.DefaultJoinsWords(codePoint);
-
-        /// <summary>Raised when a word is added or ignored: every field using this host checks again.</summary>
-        public event EventHandler? DictionariesChanged;
+        public override ISpellChecker? GetChecker(string ws) => _checkers.TryGetValue(ws, out var c) ? c : null;
 
         /// <summary>What a person can see of the dictionaries: the words added or ignored.</summary>
         public IEnumerable<string> Added => _checkers.Values.SelectMany(c => c.Added);

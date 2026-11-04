@@ -132,13 +132,15 @@ The field owns one text; the window around it belongs to the host. These are the
 
 The host gives the field its dictionaries: set `RichTextField.SpellChecking` to an `ISpellCheckHost` that returns an
 `ISpellChecker` (`Check`, `Suggest`, `Add`; `ISpellIgnorer` adds `Ignore` when a dictionary has it) for each writing system, says which
-characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. The
+characters form words and which join them, and raises `DictionariesChanged` when a dictionary changes. Derive from
+`SpellCheckHostBase` to write only `GetChecker`: it has the default word rules and `RaiseDictionariesChanged()` (any thread). The
 field checks the paragraphs in view when idle and draws red squiggles (misspelled, or a word with an object in it) and blue
 ones (a word that mixes writing systems or has unchecked text inside). The rules are in `SpellScanner` (UI-free): words
 break at characters that are not word-forming, and do-not-check text and text that may not be edited (unless forced) are
 skipped. `SpellingSuggestionsAt`, `ApplySpellingSuggestion`, `AddToDictionary`, `IgnoreWord` and `RestartSpelling` are
 what a host's context menu and dictionary changes call (`ApplySpellingSuggestion` also takes runs, for "insert missing spaces"). A checker
-that throws raises `SpellCheckerFailed` and is left alone; it does not end the application. The playground's "Spell checking" scenario shows it with a
+that throws raises `SpellCheckerFailed` (written to `Trace` once per writing system when nothing handles it) and is left alone; it does not end
+the application. A host that repairs the dictionary raises `DictionariesChanged` (or calls `RestartSpelling`), which tries that writing system again. The playground's "Spell checking" scenario shows it with a
 short English and French word list.
 
 ## Known gaps
