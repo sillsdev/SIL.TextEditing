@@ -118,6 +118,8 @@ namespace SIL.TextEditing.Avalonia.Tests
                 // Three different marks must all give different pictures: two that are not drawn would give the same one (the bare stand-in for the space).
                 var a = Ink(" " + C(mark)); var b = Ink(" " + C(other)); var c = Ink(" " + C(0x20DD == mark ? 0x301 : 0x20DD));
                 Assert.True(Differ(a, b) > 0 && Differ(a, c) > 0 && Differ(b, c) > 0, "width " + width + ": each mark's own ink is drawn");
+                var bare = Ink(" ");     // and none of them is just the bare space
+                Assert.True(Differ(a, bare) > 0 && Differ(b, bare) > 0 && Differ(c, bare) > 0, "width " + width + ": each mark differs from the bare space");
             }
         });
     }

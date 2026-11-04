@@ -72,7 +72,28 @@ namespace SIL.TextEditing.Tests
         {
             var styles = new Styles();
             var p = Styled(styles, "Foreign", new PropertyBag().SetInt(TextPropertyNumbers.WritingSystem, 7));
+            styles.Bags["Home"] = new PropertyBag().SetInt(TextPropertyNumbers.WritingSystem, 3);
+            p.Runs[0].Props.SetStr(TextPropertyNumbers.NamedStyle, "Home");
+            p.Runs[2].Props.SetStr(TextPropertyNumbers.NamedStyle, "Home");   // two styles that both have a writing system, and differ
             Assert.Equal((2, 8), Word(p, 3, styles));
+        }
+
+        [Fact]
+        public void A_style_with_a_writing_system_beside_no_style_does_not_stop_the_word()
+        {
+            var styles = new Styles();
+            var p = Styled(styles, "Foreign", new PropertyBag().SetInt(TextPropertyNumbers.WritingSystem, 7));
+            p.Runs[2].Props.IntProps.Clear();
+            p.Runs[0].Props.SetStr(TextPropertyNumbers.NamedStyle, "Foreign");    // styled, styled, plain: only the pair of styles is compared
+            Assert.Equal((0, 12), Word(p, 0, styles));
+        }
+
+        [Fact]
+        public void A_style_with_no_spell_check_equals_one_that_says_normal()
+        {
+            var styles = new Styles();
+            var p = Styled(styles, "Plain", new PropertyBag().SetInt(TextPropertyNumbers.SpellCheck, TextPropertyNumbers.SpellCheckNormal));
+            Assert.Equal((0, 12), Word(p, 3, styles));        // the middle run's style says normal; its neighbours have no style, which is normal too
         }
 
         [Fact]

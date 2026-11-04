@@ -142,7 +142,7 @@ namespace SIL.TextEditing
         /// <summary>FieldWorks' double-click stops at a change of writing system or spell-check property (or a character style that differs in those), so a word that runs on across
         /// such a change is selected a piece at a time (issue 116). Only the double-click does it: Ctrl+arrows, the whole-word find, the word of a context
         /// request and the spell checker, which has its own answer for a word of several writing systems, take the whole word. Other properties (bold, size,
-        /// colour) do not stop it. The run's own properties are compared, as the host's styles are not known here.</summary>
+        /// colour) do not stop it. The run's own properties are compared, and two different style names through the host's style resolver.</summary>
         static void ClipToFormat(Paragraph paragraph, int charIndex, IStyleResolver? styles, ref int start, ref int end)
         {
             var runs = paragraph.Runs;
@@ -171,9 +171,12 @@ namespace SIL.TextEditing
             // Two different styles stop the word only where they differ in what the double-click cares about: the writing system and the spell-check property.
             var ba = sa.Length == 0 ? null : styles.Resolve(sa, a.Ws);
             var bb = sb.Length == 0 ? null : styles.Resolve(sb, b.Ws);
-            return StyleInt(ba, TextPropertyNumbers.WritingSystem) == StyleInt(bb, TextPropertyNumbers.WritingSystem)
-                && StyleInt(ba, TextPropertyNumbers.SpellCheck) == StyleInt(bb, TextPropertyNumbers.SpellCheck);
+            // The writing system is compared only when both runs have a style, as FieldWorks does; an undefined spell-check is the normal one.
+            if (ba != null && bb != null && StyleInt(ba, TextPropertyNumbers.WritingSystem) != StyleInt(bb, TextPropertyNumbers.WritingSystem)) return false;
+            return StyleSpell(ba) == StyleSpell(bb);
         }
+
+        static int StyleSpell(PropertyBag? bag) => bag != null && bag.TryGetInt(TextPropertyNumbers.SpellCheck, out var v) ? v : TextPropertyNumbers.SpellCheckNormal;
 
         static int StyleInt(PropertyBag? bag, int number) => bag != null && bag.TryGetInt(number, out var v) ? v : -1;
 
