@@ -104,25 +104,35 @@ namespace SIL.TextEditing
 
         /// <summary>The editable places of the document, in order: each is a stretch of insertion points [Start, End] in one
         /// paragraph that can take typing, with no read-only text between them. A paragraph with no read-only text has one
-        /// place; a field-level read-only document has none.</summary>
+        /// place; a field-level read-only document has none. An insertion point takes typing when a run next to it allows
+        /// editing, so each editable run covers the points from its start to its end and touching runs merge: the places come
+        /// from the run boundaries, one pass over the runs, not from asking every offset. Text a line limit hides
+        /// (<see cref="CaretLimit"/>) is not a place.</summary>
         List<(TextPosition Start, TextPosition End)> EditablePlaces()
         {
             var places = new List<(TextPosition, TextPosition)>();
             if (IsReadOnly) return places;
             for (int pi = 0; pi < Document.Paragraphs.Count; pi++)
             {
-                int len = LimitOf(pi);
-                int start = -1;
-                for (int o = 0; o <= len + 1; o++)
+                var para = Document.Paragraphs[pi];
+                int limit = LimitOf(pi);
+                void Add(int s, int e)
                 {
-                    bool ok = o <= len && IsEditableAt(new TextPosition(pi, o));
-                    if (ok && start < 0) start = o;
-                    else if (!ok && start >= 0)
-                    {
-                        places.Add((new TextPosition(pi, start), new TextPosition(pi, o - 1)));
-                        start = -1;
-                    }
+                    if (s <= limit) places.Add((new TextPosition(pi, s), new TextPosition(pi, Math.Min(e, limit))));
                 }
+                if (para.Length == 0) { places.Add((new TextPosition(pi, 0), new TextPosition(pi, 0))); continue; }
+                int start = -1, end = -1, pos = 0;
+                foreach (var r in para.Runs)
+                {
+                    int rs = pos, re = pos + r.Text.Length;
+                    pos = re;
+                    if (re == rs || !AllowsEditing(r)) continue;
+                    if (start >= 0 && rs <= end) { end = re; continue; }
+                    if (start >= 0) Add(start, end);
+                    start = rs;
+                    end = re;
+                }
+                if (start >= 0) Add(start, end);
             }
             return places;
         }

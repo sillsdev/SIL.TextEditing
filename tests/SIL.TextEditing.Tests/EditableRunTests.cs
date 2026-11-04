@@ -210,6 +210,51 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
+        public void Tab_over_a_large_document_finds_the_editable_places_from_run_boundaries_without_scanning_every_offset()
+        {
+            var doc = new Document();
+            for (int i = 0; i < 100; i++)
+            {
+                var p = new Paragraph { DefaultWs = "en" };
+                p.Runs.Add(new Run { Ws = "en", Text = new string('a', 100000) });
+                p.Runs.Add(Marked("LOCK", TextPropertyNumbers.EditableNo));
+                p.Runs.Add(new Run { Ws = "en", Text = "tail" });
+                doc.Paragraphs.Add(p);
+            }
+            var e = new DocumentEditor(doc);
+            e.SetCaret(new TextPosition(0, 0));
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < 10; i++)
+            {
+                Assert.True(e.TryGetEditablePlace(EditablePlace.Next, out var next));
+                Assert.Equal(new TextPosition(0, 100004), next);          // the start of the place after the locked run
+                Assert.True(e.TryGetEditablePlace(EditablePlace.Last, out var last));
+                Assert.Equal(new TextPosition(99, 100008), last);
+            }
+            Assert.True(clock.ElapsedMilliseconds < 500, "ten rounds of Tab took " + clock.ElapsedMilliseconds + " ms");
+        }
+
+        [Fact]
+        public void Editable_places_merge_touching_runs_and_stop_at_every_read_only_run()
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(new Run { Ws = "en", Text = "ab" });
+            p.Runs.Add(Marked("cd", TextPropertyNumbers.EditableSemi));   // semi-editable counts as editable
+            p.Runs.Add(Marked("LOCK", TextPropertyNumbers.EditableNo));
+            p.Runs.Add(Marked("", TextPropertyNumbers.EditableNo));       // an empty run is nothing
+            p.Runs.Add(new Run { Ws = "fr", Text = "e" });
+            p.Runs.Add(new Run { Ws = "en", Text = "f" });
+            p.Runs.Add(Marked("LOCK", TextPropertyNumbers.EditableNo));
+            var e = new DocumentEditor(Doc(Para("en"), p));               // an empty paragraph is a place of its own
+            e.SetCaret(new TextPosition(0, 0));
+            var starts = new List<TextPosition>();
+            while (e.TryGetEditablePlace(EditablePlace.Next, out var next)) { starts.Add(next); e.SetCaret(next); }
+            Assert.Equal(new[] { new TextPosition(1, 0), new TextPosition(1, 8) }, starts);
+            Assert.True(e.TryGetEditablePlace(EditablePlace.Previous, out var back));
+            Assert.Equal(new TextPosition(1, 4), back);                   // the end of the first place in the paragraph
+        }
+
+        [Fact]
         public void Each_paragraph_is_an_editable_place_and_a_read_only_field_has_none()
         {
             var locked = Para("en", "en", "locked");
