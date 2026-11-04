@@ -153,6 +153,7 @@ namespace SIL.TextEditing.Avalonia
         public TextRun? GetTextRun(int textSourceIndex)
         {
             if (textSourceIndex >= Text.Length) return null;
+            { var probe = ParagraphLayout.Probe; if (probe != null) probe.RunsRead++; }
             IReadOnlyList<Segment> segments = SegmentLookup ?? Segments;
             int lo = SegmentAt(segments, textSourceIndex);
             if (lo < segments.Count)
@@ -166,6 +167,35 @@ namespace SIL.TextEditing.Avalonia
                 return new TextCharacters(Text.AsMemory(textSourceIndex, s.End - textSourceIndex), s.Properties);
             }
             return null;
+        }
+    }
+
+    /// <summary>A paragraph's text source that ends at <see cref="End"/>, so the formatter, which keeps and lays out every run it has been offered up to the end of
+    /// the text for each line it makes, is offered a few lines of a paragraph of tens of thousands of runs and not what is left of it (see
+    /// <see cref="ParagraphLayout.FormatWindowed"/>).</summary>
+    sealed class WindowedSource : ITextSource
+    {
+        readonly ParagraphSource _paragraph;
+
+        public WindowedSource(ParagraphSource paragraph)
+        {
+            _paragraph = paragraph;
+            End = paragraph.Text.Length;
+        }
+
+        /// <summary>The length of the whole paragraph's text.</summary>
+        public int Length => _paragraph.Text.Length;
+
+        /// <summary>The index the text ends at, as far as the formatter can tell.</summary>
+        public int End { get; set; }
+
+        public TextRun? GetTextRun(int textSourceIndex)
+        {
+            if (textSourceIndex >= End) return null;
+            var run = _paragraph.GetTextRun(textSourceIndex);
+            if (run is TextCharacters characters && textSourceIndex + characters.Length > End)
+                return new TextCharacters(_paragraph.Text.AsMemory(textSourceIndex, End - textSourceIndex), characters.Properties);
+            return run;
         }
     }
 
@@ -280,6 +310,9 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>How many glyphs (and object runs) were handed to the renderer.</summary>
         public long GlyphsDrawn;
+
+        /// <summary>How many times the formatter asked the paragraph's text source for a run.</summary>
+        public long RunsRead;
 
         public void Dispose() => ParagraphLayout.Probe = _outer;
     }
@@ -976,6 +1009,45 @@ namespace SIL.TextEditing.Avalonia
             public FormatterRefused(Exception inner) : base(inner.Message, inner) { }
         }
 
+        /// <summary>A paragraph with at least this many runs (after runs that format alike are one) is formatted from windows of its text
+        /// (<see cref="FormatWindowed"/>), if nothing in it runs right to left. Settable for a test that compares the two.</summary>
+        internal static int WindowedFormatSegments = 16000;
+
+        /// <summary>Whether a text has anything in it that can change the order or the direction of what is round it: a character of a script written right to left, a
+        /// bidirectional format character, or a surrogate (the right-to-left scripts of the supplementary planes). Avalonia resolves the directions of a paragraph's text once
+        /// for all of it, and a window of it would resolve them again for each line, so a paragraph with any is formatted whole.</summary>
+        internal static bool HasBidiText(string text)
+        {
+            foreach (char c in text)
+                if ((c >= '\u0590' && c <= '\u08FF') || char.IsSurrogate(c) || (c >= '\u200E' && c <= '\u200F') || (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || (c >= '\uFB1D' && c <= '\uFEFF'))
+                    return true;
+            return false;
+        }
+
+        /// <summary>The characters of lookahead a line needs past its end in a window, before it is trusted to be the line the whole paragraph would give.</summary>
+        const int WindowLookahead = 32;
+
+        /// <summary>Formats the line at <paramref name="index"/> from a source that ends a little past the line, and not from all that is left of the
+        /// paragraph. Avalonia's formatter keeps what it has read of the text, up to its end, in the break of every line it makes and goes through it again for the next, which
+        /// for a paragraph of tens of thousands of runs is most of what a layout costs (it grows with the square of the runs). The window is
+        /// about twice as long as the line before; a line that is not at least <see cref="WindowLookahead"/> characters short of the window's end is
+        /// made again from a window twice as long, so a break is always decided with text after it, and with the rest of its own word. Each line is
+        /// formatted on its own, without the previous line's break, which carries only the runs it left over: the window starts at the line.
+        /// With no text that runs right to left (<see cref="HasBidiText"/>) the lines are the lines the whole text gives.</summary>
+        static TextLine? FormatWindowed(TextFormatter formatter, WindowedSource window, int index, double width, TextParagraphProperties properties, int previousLength)
+        {
+            int total = window.Length;
+            int span = Math.Max(2 * WindowLookahead, 2 * previousLength + WindowLookahead);
+            while (true)
+            {
+                window.End = (int)Math.Min((long)total, (long)index + span);
+                var line = FormatLineGuarded(formatter, window, index, width, properties, null);
+                if (line == null || window.End >= total || line.Length + WindowLookahead <= window.End - index) return line;
+                line.Dispose();
+                span *= 2;
+            }
+        }
+
         static TextLine? FormatLineGuarded(TextFormatter formatter, ITextSource source, int index, double width, TextParagraphProperties properties, TextLineBreak? previous)
         {
             try { return formatter.FormatLine(source, index, width, properties, previous); }
@@ -1137,6 +1209,8 @@ namespace SIL.TextEditing.Avalonia
             double y = layout.TopInset + layout._labelLineHeight;
             TextLineBreak? previous = null;
             var formatter = TextFormatter.Current;
+            var window = source.Segments.Count >= WindowedFormatSegments && !paragraph.Rtl && !HasBidiText(source.Text) ? new WindowedSource(source) : null;
+            int lastLineLength = 0;
             while (index < source.Text.Length || layout.Lines.Count == 0)
             {
                 if (pf.MaxLines > 0 && layout.Lines.Count >= pf.MaxLines) { layout.Truncated = true; break; }
@@ -1145,7 +1219,7 @@ namespace SIL.TextEditing.Avalonia
                 double lineWidth = first ? layout._firstWidth : w;
                 double lineX = first ? layout._firstX : layout.ContentLeft;
                 { var p = _probe; if (p != null) p.LinesFormatted++; }
-                var line = FormatLineGuarded(formatter, source, index, lineWidth, paragraphProperties, previous);
+                var line = window != null ? FormatWindowed(formatter, window, index, lineWidth, paragraphProperties, lastLineLength) : FormatLineGuarded(formatter, source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
                 double usedWidth = lineWidth;
                 if (pf.MaxLines > 0 && layout.Lines.Count == pf.MaxLines - 1 && index + line.Length < source.Text.Length)
@@ -1160,7 +1234,7 @@ namespace SIL.TextEditing.Avalonia
                         if (w > 3 * room)
                         {
                             { var p = _probe; if (p != null) p.LinesFormatted++; }
-                            var narrower = FormatLineGuarded(formatter, source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
+                            var narrower = window != null ? FormatWindowed(formatter, window, index, Math.Max(lineWidth - room, 1), paragraphProperties, lastLineLength) : FormatLineGuarded(formatter, source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
                             if (narrower != null && narrower.Length > 0)
                             {
                                 line.Dispose();
@@ -1182,6 +1256,7 @@ namespace SIL.TextEditing.Avalonia
                 layout.Width = Math.Max(layout.Width, line.WidthIncludingTrailingWhitespace);
                 if (line.Length <= 0) break;
                 index += line.Length;
+                lastLineLength = line.Length;
                 previous = line.TextLineBreak;
             }
             if (!layout.Truncated && layout.Lines.Count > 0 && layout.Lines[layout.Lines.Count - 1].End == source.Text.Length && source.Text[source.Text.Length - 1] == HardLineBreak)
