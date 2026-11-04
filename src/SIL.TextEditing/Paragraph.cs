@@ -109,16 +109,34 @@ namespace SIL.TextEditing
         /// <summary>Drops empty runs and merges neighbours of the same format.</summary>
         public void Normalize()
         {
-            for (int i = Runs.Count - 1; i >= 0; i--)
-                if (Runs[i].Text.Length == 0) Runs.RemoveAt(i);
-            for (int i = Runs.Count - 1; i > 0; i--)
+            // One forward pass: drop empty runs and merge neighbours of the same format. A chain of merges is built in a string
+            // builder, so a paragraph of thousands of runs that merge into one stays linear.
+            var result = new List<Run>(Runs.Count);
+            Run? current = null;
+            System.Text.StringBuilder? joined = null;
+            void Finish()
             {
-                if (Runs[i - 1].SameFormat(Runs[i]))
+                if (current == null) return;
+                if (joined != null) { current.Text = joined.ToString(); joined = null; }
+                result.Add(current);
+            }
+            foreach (var run in Runs)
+            {
+                if (run.Text.Length == 0) continue;
+                if (current != null && current.SameFormat(run))
                 {
-                    Runs[i - 1].Text += Runs[i].Text;
-                    Runs.RemoveAt(i);
+                    joined ??= new System.Text.StringBuilder(current.Text);
+                    joined.Append(run.Text);
+                }
+                else
+                {
+                    Finish();
+                    current = run;
                 }
             }
+            Finish();
+            Runs.Clear();
+            Runs.AddRange(result);
         }
 
         public void Insert(int offset, string text, string ws, PropertyBag? props)

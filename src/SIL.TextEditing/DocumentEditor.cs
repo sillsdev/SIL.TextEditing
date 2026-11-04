@@ -152,7 +152,7 @@ namespace SIL.TextEditing
         {
             if (string.IsNullOrEmpty(text)) return;
             text = Normalized(text);
-            if (SingleParagraph) text = OneLine(text, CharBeforeSelection());
+            if (SingleParagraph) text = OneLine(text);
             else text = text.Replace("\r\n", "\n");
             if (text.Length == 0) return;
             var parts = text.Split('\n');
@@ -298,8 +298,7 @@ namespace SIL.TextEditing
             if (SingleParagraph && fragment != null)
             {
                 if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
-                char before = a.Offset > 0 ? Document.Paragraphs[a.Paragraph].Text[a.Offset - 1] : (char)0;
-                foreach (var p in fragment) CollapseSeparators(p, before);
+                foreach (var p in fragment) SeparatorsToSpaces(p);
             }
             // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
             if (fragment != null && Document.Normalization is NormalizationForm form)

@@ -38,18 +38,15 @@ one, and can change without superseding anything.
   paragraph breaks it makes, is one step that neither joins the typing before it nor the typing after it. Each Backspace
   or Delete is a step of its own and ends any typing step (ADR 0023). Default: FieldWorks makes a step per delete
   and per paste, but whether LCModel merges consecutive units was not confirmed (feature inventory, group 4).
-- **Paste in single-paragraph mode turns each separator into one space.** Pasted paragraphs become one, and a paragraph
-  break or a separator inside a run (CR, LF, NEL, U+2029), across run and paragraph boundaries, counts alike: the
-  stretch of white space that holds it, the white space beside it included, becomes one space. A stretch at the end of the
-  pasted text adds nothing, so a trailing newline leaves no trailing space. One at the start leaves one space when the text
-  before the insertion point (before the selection, when one is replaced) does not already end in white space, so pasting
-  a newline and "b" after "X" gives "X b", after "X " gives "X b" (no second space), and at the start of the paragraph
-  gives "b". U+2028 is kept as a hard line break and is not white space for this. Typed text gets the same treatment. Pasting
-  only separators over a selection replaces the selection with nothing. FieldWorks, pasting into a view without paragraphs,
-  also turns a newline into a space and drops a trailing one, so a leading newline gives a space there too, even at the start
-  of the text; it removes tabs and does not collapse the white space beside a separator or a run of newlines (each
-  becomes a space). Collapsing white space and leaving no space at the start of the paragraph are our defaults (the owner
-  asked for both, issue #27); they can change without superseding anything.
+- **Paste in single-paragraph mode turns each separator into one space and removes tabs.** This is FieldWorks' rule for
+  a view that cannot hold paragraphs, and nothing more: each separator (CR, LF, NEL, U+2029; CR LF counts as one)
+  becomes one space, across run and paragraph boundaries, and a pasted paragraph break is one too. A separator that ends
+  the pasted text is dropped. One at the start still gives a space, even at the start of the paragraph. Nothing else is
+  collapsed: pasting "a", two newlines and "b" gives "a" and two spaces and "b", white space beside a separator stays, and
+  a no-break space is kept. Tab characters are removed (FieldWorks does the same; the field used to keep them, issue #35).
+  U+2028 is kept as a hard line break and is not a separator for this. Typed text gets the same treatment. Pasting only
+  one separator over a selection replaces the selection with nothing. Because a trailing separator is dropped, pasting
+  "a" and a newline at the start of "bcd" gives "abcd": the words fuse. That is the FieldWorks result, not a bug.
 - **Enter at an editable and read-only boundary can leave a paragraph the field cannot join back.** Enter between an
   editable and a read-only run can make a paragraph that is entirely read-only. Backspace into it is refused (ADR 0019),
   so only the host's undo removes it. Delete in an empty editable paragraph beside read-only text is refused for the
