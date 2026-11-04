@@ -1019,18 +1019,22 @@ namespace SIL.TextEditing.Avalonia
         }
 
         /// <summary>A paragraph with at least this many runs (after runs that format alike are one) is formatted from windows of its text
-        /// (<see cref="FormatWindowed"/>), if nothing in it runs right to left. Settable for a test that compares the two.</summary>
+        /// (<see cref="FormatWindowed"/>), if it is Latin text. Settable for a test that compares the two.</summary>
         internal static int WindowedFormatSegments = 16000;
 
-        /// <summary>Whether a text has anything in it that can change the order or the direction of what is round it: a character of a script written right to left, a
-        /// bidirectional format character, or a surrogate (the right-to-left scripts of the supplementary planes). Avalonia resolves the directions of a paragraph's text once
-        /// for all of it, and a window of it would resolve them again for each line, so a paragraph with any is formatted whole.</summary>
-        internal static bool HasBidiText(string text)
+        /// <summary>Whether a text is Latin script, its marks and its punctuation and nothing else, so a window of it is shaped as the whole of it is: nothing in it can
+        /// change the order or the direction of what is round it (Avalonia resolves the directions of a paragraph's text once for all of it, and a window would
+        /// resolve them for each line), and nothing in it falls back to another font, which a neutral character at a line start would keep in the whole text and
+        /// lose in a window (CJK, Thai and the rest are formatted whole).</summary>
+        internal static bool IsWindowable(string text)
         {
             foreach (char c in text)
-                if ((c >= '\u0590' && c <= '\u08FF') || char.IsSurrogate(c) || (c >= '\u200E' && c <= '\u200F') || (c >= '\u202A' && c <= '\u202E') || (c >= '\u2066' && c <= '\u2069') || (c >= '\uFB1D' && c <= '\uFEFF'))
-                    return true;
-            return false;
+            {
+                if (c <= 'ɏ' || (c >= '̀' && c <= 'ͯ') || (c >= '₠' && c <= '⃏')) continue;
+                if (c >= ' ' && c <= '⁯' && !(c >= '‎' && c <= '‏') && !(c >= '‪' && c <= '‮') && !(c >= '⁦' && c <= '⁩')) continue;
+                return false;
+            }
+            return true;
         }
 
         /// <summary>The characters of lookahead a line needs past its end in a window, before it is trusted to be the line the whole paragraph would give.</summary>
@@ -1042,7 +1046,7 @@ namespace SIL.TextEditing.Avalonia
         /// about twice as long as the line before; a line that is not at least <see cref="WindowLookahead"/> characters short of the window's end is
         /// made again from a window twice as long, so a break is always decided with text after it, and with the rest of its own word. Each line is
         /// formatted on its own, without the previous line's break, which carries only the runs it left over: the window starts at the line.
-        /// With no text that runs right to left (<see cref="HasBidiText"/>) the lines are the lines the whole text gives.</summary>
+        /// For Latin text (<see cref="IsWindowable"/>) the lines are those the whole text gives, to the kerning of a pair across a line start (a fraction of a pixel).</summary>
         static TextLine? FormatWindowed(TextFormatter formatter, WindowedSource window, int index, double width, TextParagraphProperties properties, int previousLength)
         {
             int total = window.Length;
@@ -1257,7 +1261,7 @@ namespace SIL.TextEditing.Avalonia
             double y = layout.TopInset + layout._labelLineHeight;
             TextLineBreak? previous = null;
             var formatter = TextFormatter.Current;
-            var window = source.Segments.Count >= WindowedFormatSegments && !paragraph.Rtl && !HasBidiText(source.Text) ? new WindowedSource(source) : null;
+            var window = source.Segments.Count >= WindowedFormatSegments && !paragraph.Rtl && IsWindowable(source.Text) ? new WindowedSource(source) : null;
             int lastLineLength = 0;
             while (index < source.Text.Length || layout.Lines.Count == 0)
             {

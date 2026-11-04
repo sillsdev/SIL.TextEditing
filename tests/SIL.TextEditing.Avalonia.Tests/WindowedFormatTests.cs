@@ -100,5 +100,45 @@ namespace SIL.TextEditing.Avalonia.Tests
             Shape(p, 400, ParagraphLayout.WindowedFormatSegments, out long reads);
             Assert.True(reads <= 600 + 2, "runs read: " + reads);
         });
+
+        [Theory]
+        [InlineData(0x4E2D)]   // a CJK ideograph
+        [InlineData(0x0E01)]   // a Thai consonant
+        [InlineData(0x3042)]   // hiragana
+        public void A_paragraph_with_text_of_a_script_that_falls_back_to_another_font_is_formatted_whole(int codePoint) => Headless.Run(() =>
+        {
+            var rng = new Random(5);
+            var paragraph = Make(rng, 300, 0, 0);
+            paragraph.Runs[150].Text += char.ConvertFromUtf32(codePoint) + (char)0x9 + "x ";   // fallback text, then a neutral character at what may be a line start
+            Shape(paragraph, 200, 8, out long reads);
+            Assert.True(reads <= 300 + 2, "runs read: " + reads + " for a paragraph of 300 runs at most");   // each run once: the whole text is given to the formatter
+        });
+
+        [Fact]
+        public void Kerning_across_a_line_start_moves_a_width_by_a_fraction_of_a_pixel_and_the_lines_are_the_same_in_a_windowed_paragraph() => Headless.Run(() =>
+        {
+            var p = Para("en");
+            for (int i = 0; i < 300; i++) p.Runs.Add(new Run { Ws = "en", Text = (i % 2 == 0 ? "WAVE AV VE " : "To Ty Va ") });
+            for (int i = 0; i < p.Runs.Count; i += 2) p.Runs[i].Props.SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn);
+            int was = ParagraphLayout.WindowedFormatSegments;
+            try
+            {
+                for (double width = 60; width <= 300; width += 13)
+                {
+                    ParagraphLayout.WindowedFormatSegments = int.MaxValue;
+                    var whole = Fixtures.Field(Doc(p.Clone()), width).ParagraphLayoutFor(0).Lines;
+                    var wholeLines = whole.Select(l => (l.Start, l.End, l.Line.WidthIncludingTrailingWhitespace)).ToList();
+                    ParagraphLayout.WindowedFormatSegments = 8;
+                    var windowed = Fixtures.Field(Doc(p.Clone()), width).ParagraphLayoutFor(0).Lines;
+                    Assert.Equal(wholeLines.Count, windowed.Count);
+                    for (int i = 0; i < windowed.Count; i++)
+                    {
+                        Assert.Equal((wholeLines[i].Start, wholeLines[i].End), (windowed[i].Start, windowed[i].End));
+                        Assert.InRange(windowed[i].Line.WidthIncludingTrailingWhitespace - wholeLines[i].Item3, -1.0, 1.0);   // kerning, a fraction of a pixel
+                    }
+                }
+            }
+            finally { ParagraphLayout.WindowedFormatSegments = was; }
+        });
     }
 }

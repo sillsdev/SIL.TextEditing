@@ -236,8 +236,8 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   gives the End caret.
 - **Very long paragraphs**: runs that look alike are one stretch of text to Avalonia's formatter, and a paragraph's ranges are found by halving, so a layout grows with the runs. Avalonia's
   formatter itself (about nine tenths of a layout's time, on both versions) carries what is left of the text from each line to the next, so a paragraph of tens of thousands of runs
-  costs more than its length: 64,000 runs lay out in about 2.0 s on 11.3 and 1.6 s on 12. From 16,000 runs (after runs that look alike are one) a paragraph with nothing in it that runs right to left
-  is formatted line by line from a window of its text instead (`ParagraphLayout.FormatWindowed`), which gives the same lines and carets in about 1.1 s on 11.3 and 0.46 s on 12 for those 64,000 runs; a paragraph with right-to-left text is formatted whole, as the directions of its text are resolved for all of it at once.
+  costs more than its length: 64,000 runs lay out in about 2.0 s on 11.3 and 1.6 s on 12. From 16,000 runs (after runs that look alike are one) a paragraph of Latin text (letters, their marks, punctuation) that is not right to left
+  is formatted line by line from a window of its text instead (`ParagraphLayout.FormatWindowed`), which gives the same lines and carets, but for the kerning of a pair across a line start (widths move by a fraction of a pixel), in about 1.1 s on 11.3 and 0.46 s on 12 for those 64,000 runs; a paragraph with any other script is formatted whole, as the directions of right-to-left text are resolved for all of it at once and a neutral character at a line start keeps the fallback font of the text before it (CJK, Thai).
 - **Graphemes**: `GraphemeClusters` is `StringInfo` plus Indic conjuncts (GB9c, six scripts; .NET 10 lacks it). The
   netstandard2.0 build also fuses Extend, SpacingMark, emoji ZWJ sequences and flags per UAX #29, with approximated
   property tables; caret stops in the field come from the shaper, except on a right-to-left paragraph's line of several runs
