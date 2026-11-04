@@ -55,6 +55,56 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_takes_linear_time() => Headless.Run(() =>
+        {
+            // The joined paragraph has one run per paragraph (the writing system alternates), and the field lays it out as the
+            // caret lands in it, so the layout is part of what the paste costs. Counted, not timed, so a busy machine cannot
+            // fail it: the layout looks up the run for a character a few times per run (binary search), where a scan from the
+            // first run would make about runs times runs / 2 lookups.
+            const int paragraphsPasted = 8000;
+            var paragraphs = new List<Paragraph>();
+            for (int i = 0; i < paragraphsPasted; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
+            var field = Fixtures.Field(OneParagraph(string.Empty), 520, f => f.SingleParagraph = true);
+            long before = ParagraphSource.Probes;
+            field.Editor.Paste(paragraphs);
+            Fixtures.Layout(field, 520);
+            long probes = ParagraphSource.Probes - before;
+            Assert.Single(field.Editor.Document.Paragraphs);
+            Assert.True(probes > 0);   // the layout did go through the lookup
+            Assert.True(probes < 100L * paragraphsPasted, $"{probes} segment probes for {paragraphsPasted} runs");
+        });
+
+        [Fact]
+        public void Editing_from_a_background_thread_throws_a_clear_exception_before_anything_changes() => Headless.Run(async () =>
+        {
+            var field = Fixtures.Field(OneParagraph("ab"));
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            var raised = 0;
+            field.Editor.Committed += d => raised++;
+            var edits = new (string Name, System.Action Edit)[]
+            {
+                ("TypeText", () => field.Editor.TypeText("x")),
+                ("PasteText", () => field.Editor.PasteText("x")),
+                ("Paste", () => field.Editor.Paste(new List<Paragraph> { Para("en", "en", "x") })),
+                ("Backspace", () => field.Editor.Backspace()),
+                ("Enter", () => field.Editor.Enter()),
+                ("InsertLineBreak", () => field.Editor.InsertLineBreak()),
+                ("Apply", () => field.Editor.Apply(new EditDelta { Start = 0, Before = { Para("en", "en", "ab") }, After = { Para("en", "en", "x") } })),
+                ("ExternalReplaceParagraph", () => field.Editor.ExternalReplaceParagraph(0, Para("en", "en", "x"), 0, 2, 1)),
+            };
+            foreach (var (name, edit) in edits)
+            {
+                var ex = await System.Threading.Tasks.Task.Run(() => Record.Exception(edit));
+                var invalid = Assert.IsType<System.InvalidOperationException>(ex);
+                Assert.Contains("UI thread", invalid.Message);
+                Assert.Equal("ab", field.Editor.Document.Paragraphs[0].Text);   // it failed before it touched the document
+            }
+            Assert.Equal(0, raised);
+            field.Editor.TypeText("c");   // the UI thread is unaffected
+            Assert.Equal("abc", field.Editor.Document.Paragraphs[0].Text);
+        });
+
+        [Fact]
         public void Plain_Enter_still_splits_a_paragraph_or_goes_to_the_host() => Headless.Run(() =>
         {
             var field = Fixtures.Field(OneParagraph("abcd"));
@@ -97,6 +147,46 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.False(field.Editor.HasOpenUndoGroup);
             window.Close();
         });
+
+        [Fact]
+        public void A_pause_timer_restart_from_another_thread_is_handed_to_the_UI_thread_which_decides_whether_the_field_is_on_screen() => Headless.Run(async () =>
+        {
+            var restart = typeof(RichTextField).GetMethod("RestartPauseTimer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var (window, field) = Fixtures.InWindow(OneParagraph("ab"));
+            field.Editor.TypingPause = System.TimeSpan.FromSeconds(30);   // typing here starts a timer that never fires in the test
+            field.Editor.SetCaret(new TextPosition(0, 2));
+            field.Type("x");
+            Assert.True(field.Editor.HasOpenUndoGroup);
+            field.Editor.TypingPause = System.TimeSpan.FromMilliseconds(40);
+            await System.Threading.Tasks.Task.Run(() => restart.Invoke(field, null));   // the edit came from another thread
+            Headless.Pump();
+            await Wait(300);
+            Assert.False(field.Editor.HasOpenUndoGroup);   // the timer started on the UI thread and closed the step
+
+            field.Type("y");
+            field.Editor.TypingPause = System.TimeSpan.FromMilliseconds(40);
+            await System.Threading.Tasks.Task.Run(() => restart.Invoke(field, null));
+            window.Content = null;                          // the field leaves the screen before the posted callback runs
+            Headless.Pump();
+            await Wait(300);
+            Assert.False(field.Editor.HasOpenUndoGroup);   // leaving closed the step; the callback saw an off-screen field and started no timer
+            Assert.False(PauseTimerRunning(field));
+
+            // The step is open again while the field is off screen, so only the on-screen check keeps the callback from starting a timer.
+            field.Type("z");
+            Assert.True(field.Editor.HasOpenUndoGroup);
+            field.Editor.TypingPause = System.TimeSpan.FromSeconds(30);
+            await System.Threading.Tasks.Task.Run(() => restart.Invoke(field, null));
+            Headless.Pump();
+            Assert.False(PauseTimerRunning(field));
+            window.Close();
+        });
+
+        static bool PauseTimerRunning(RichTextField field)
+        {
+            var timer = typeof(RichTextField).GetField("_pauseTimer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(field) as global::Avalonia.Threading.DispatcherTimer;
+            return timer != null && timer.IsEnabled;
+        }
 
         [Fact]
         public void Cut_on_text_that_may_not_be_edited_does_nothing_but_Copy_still_works() => Headless.Run(async () =>

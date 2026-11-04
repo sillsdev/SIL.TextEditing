@@ -17,73 +17,97 @@ namespace SIL.TextEditing
         /// paragraph, so a single paragraph keeps it.</summary>
         internal static bool IsParagraphSeparator(char c) => c == (char)13 || c == (char)10 || c == (char)0x85 || c == (char)0x2029;
 
-        /// <summary>Text with every run of paragraph separators turned into one space, and none at the start or the end.</summary>
+        /// <summary>Text for a single paragraph: tabs removed, each separator (CR LF counts as one) turned into one space, and a
+        /// run of separators that ends the text dropped. Nothing else is collapsed, so "a", two newlines, "b" gives "a" and two spaces
+        /// and "b", a leading newline gives a space even at the start of the text, and a no-break space is kept.</summary>
         internal static string OneLine(string text)
         {
             var sb = new System.Text.StringBuilder(text.Length);
-            bool pending = false;
-            foreach (var c in text)
+            int end = text.Length;   // separators (and tabs) after the last other character end the text and are dropped
+            while (end > 0 && (text[end - 1] == '\t' || IsParagraphSeparator(text[end - 1]))) end--;
+            for (int i = 0; i < text.Length; i++)
             {
-                if (IsParagraphSeparator(c)) { pending = true; continue; }
-                if (pending && sb.Length > 0) sb.Append(' ');
-                pending = false;
-                sb.Append(c);
+                char c = text[i];
+                if (c == '\t') continue;
+                if (!IsParagraphSeparator(c)) { sb.Append(c); continue; }
+                int j = i + 1;
+                if (c == (char)13 && j < text.Length && text[j] == (char)10) j++;
+                if (i < end) sb.Append(' ');
+                i = j - 1;
             }
             return sb.ToString();
         }
 
-        /// <summary>The fragment as one paragraph: the first paragraph's style and properties, the runs of every non-empty
-        /// paragraph in order, and one plain space (in the writing system of the text before it) between paragraphs unless
-        /// whitespace is already there. Empty paragraphs add nothing, so a trailing newline leaves no trailing space. A
-        /// separator inside a run becomes a space.</summary>
+        /// <summary>The fragment as one paragraph: the first paragraph's style and properties and the runs of every paragraph in
+        /// order, a separator between neighbours that <see cref="SeparatorsToSpaces"/> then turns into one space (in the writing
+        /// system of the text before it). Empty paragraphs are separators too, so each is a space, except at the very end.</summary>
         static List<Paragraph> JoinIntoOne(List<Paragraph> fragment)
         {
             var joined = fragment[0].Clone(false);
             joined.Runs = new List<Run>();
-            string tail = string.Empty;   // the text so far, to see whether it ends in whitespace
             for (int i = 0; i < fragment.Count; i++)
             {
-                if (fragment[i].Length == 0) continue;
-                var text = fragment[i].Text;
-                if (joined.Runs.Count > 0 && !char.IsWhiteSpace(tail[tail.Length - 1]) && !char.IsWhiteSpace(text[0]))
-                    joined.Runs.Add(new Run { Text = " ", Ws = joined.Runs[joined.Runs.Count - 1].Ws });
+                if (i > 0) joined.Runs.Add(new Run { Text = "\n", Ws = joined.Runs.Count > 0 ? joined.Runs[joined.Runs.Count - 1].Ws : fragment[i].DefaultWs });
                 joined.Runs.AddRange(fragment[i].Runs.Select(r => r.Clone()));
-                tail = text;
             }
-            joined.Normalize();
             return new List<Paragraph> { joined };
         }
 
-        /// <summary>Turns every run of separators inside the paragraph's runs, across run boundaries, into one space, and drops
-        /// those at the start and the end, so a pasted run "foo, newline, bar, newline" gives "foo bar". Object runs count as content.</summary>
+        /// <summary>Removes the tab characters from the paragraph's text runs (the multi-paragraph paste rule; a single paragraph
+        /// does it in <see cref="SeparatorsToSpaces"/>, which must see them to pair CR LF as FieldWorks does).</summary>
+        static void RemoveTabs(Paragraph paragraph)
+        {
+            bool any = false;
+            foreach (var r in paragraph.Runs)
+                if (!r.IsObject && r.Text.IndexOf('\t') >= 0) { r.Text = r.Text.Replace("\t", ""); any = true; }
+            if (any) paragraph.Normalize();
+        }
+
+        /// <summary>Removes tabs and turns every separator (CR LF counts as one), across run boundaries, into one space, and drops
+        /// every separator that ends the paragraph. Nothing else is collapsed, and a separator at the start leaves a space. The hard
+        /// line break and object runs count as content. The space takes the writing system of the text before it, else of the
+        /// separator's own run. Output runs are built with a string builder so a long run stays linear.</summary>
         static void SeparatorsToSpaces(Paragraph paragraph)
         {
-            if (!paragraph.Runs.Any(r => !r.IsObject && r.Text.Any(IsParagraphSeparator))) return;
-            var runs = new List<Run>();
-            bool started = false, pending = false;   // started: some content so far; pending: a separator since the last content
+            if (!paragraph.Runs.Any(r => !r.IsObject && r.Text.Any(c => c == '\t' || IsParagraphSeparator(c)))) return;
+            var chars = new List<char>();
+            var owners = new List<Run>();
+            var afterTab = new List<bool>();   // a tab stood just before this character, so a CR before it is not paired with it
+            bool tab = false;
             foreach (var r in paragraph.Runs)
-            {
-                if (r.IsObject)
-                {
-                    if (pending) runs.Add(new Run { Text = " ", Ws = runs.Count > 0 ? runs[runs.Count - 1].Ws : r.Ws });
-                    pending = false;
-                    started = true;
-                    runs.Add(r);
-                    continue;
-                }
-                var sb = new System.Text.StringBuilder(r.Text.Length);
                 foreach (var c in r.Text)
                 {
-                    if (IsParagraphSeparator(c)) { if (started) pending = true; continue; }
-                    if (pending) sb.Append(' ');
-                    pending = false;
-                    started = true;
-                    sb.Append(c);
+                    if (c == '\t') { tab = true; continue; }
+                    chars.Add(c); owners.Add(r); afterTab.Add(tab); tab = false;
                 }
-                if (sb.Length == 0) continue;
-                r.Text = sb.ToString();
-                runs.Add(r);
+            var runs = new List<Run>();
+            var sb = new System.Text.StringBuilder();
+            Run? owner = null;        // the source run the pending text copies, null for a synthesised space
+            string spaceWs = "";
+            void Flush()
+            {
+                if (sb.Length == 0) return;
+                runs.Add(owner != null ? owner.CloneWithText(sb.ToString()) : new Run { Text = sb.ToString(), Ws = spaceWs });
+                sb.Clear();
             }
+            void Emit(char c, Run source, bool plain)
+            {
+                bool same = sb.Length > 0 && (plain ? owner == null && spaceWs == source.Ws : ReferenceEquals(owner, source));
+                if (!same) { Flush(); owner = plain ? null : source; spaceWs = source.Ws; }
+                sb.Append(c);
+            }
+            int i = 0, n = chars.Count;
+            int end = n;              // separators after the last other character end the text and are dropped
+            while (end > 0 && IsParagraphSeparator(chars[end - 1])) end--;
+            while (i < n)
+            {
+                if (!IsParagraphSeparator(chars[i])) { Emit(chars[i], owners[i], false); i++; continue; }
+                int j = i + 1;
+                if (chars[i] == (char)13 && j < n && chars[j] == (char)10 && !afterTab[j]) j++;
+                if (i < end) Emit(' ', i > 0 ? owners[i - 1] : owners[i], true);
+                i = j;
+            }
+            Flush();
             paragraph.Runs = runs;
             paragraph.Normalize();
         }

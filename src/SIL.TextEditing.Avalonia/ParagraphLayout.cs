@@ -122,12 +122,26 @@ namespace SIL.TextEditing.Avalonia
         public Func<string, IImage?>? ObjectImage;
         public bool ObjectAsGlyph;
 
+        /// <summary>Segments looked at by <see cref="GetTextRun"/> since the process started: a test reads it to prove a long
+        /// paragraph costs a few probes per call, not a scan, without depending on how fast the machine is.</summary>
+        internal static long Probes;
+
         public TextRun? GetTextRun(int textSourceIndex)
         {
             if (textSourceIndex >= Text.Length) return null;
-            foreach (var s in Segments)
+            // Segments are contiguous and in order, so the first one that ends after the index is the one that holds it. The
+            // formatter asks once per segment, so a scan from the start would make a paragraph of many runs quadratic.
+            int lo = 0, hi = Segments.Count;
+            while (lo < hi)
             {
-                if (textSourceIndex < s.Start || textSourceIndex >= s.End) continue;
+                Probes++;
+                int mid = (lo + hi) / 2;
+                if (Segments[mid].End > textSourceIndex) hi = mid; else lo = mid + 1;
+            }
+            if (lo < Segments.Count)
+            {
+                var s = Segments[lo];
+                if (textSourceIndex < s.Start) return null;
                 if (s.IsObject && ObjectAsGlyph)
                     return new TextCharacters(Text.AsMemory(textSourceIndex, 1), new RunTextProperties(s.Properties.Typeface, 28, s.Properties.ForegroundBrush ?? Brushes.Black, null, s.Properties.CultureInfo ?? CultureInfo.InvariantCulture, null));
                 if (s.IsObject)

@@ -360,6 +360,116 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Single(mid.SelectionRects(2, 3));
         });
 
+        static RichTextField LockedThenEditable(string locked, string editable, int maxLines)
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            var first = new Run { Ws = "en", Text = locked };
+            first.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+            p.Runs.Add(first);
+            p.Runs.Add(new Run { Ws = "en", Text = editable });
+            p.Props.SetInt(TextPropertyNumbers.MaxLines, maxLines);
+            return Fixtures.Field(Doc(p), 520);
+        }
+
+        [Theory]
+        [InlineData("|", "y", 1)]
+        [InlineData("ab|", "cd", 1)]
+        [InlineData("a|b|", "cd", 2)]
+        public void A_caret_set_where_the_only_editable_place_is_hidden_settles_at_the_visible_end(string locked, string editable, int maxLines) => Headless.Run(() =>
+        {
+            var field = LockedThenEditable(locked.Replace("|", Break), editable, maxLines);
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.True(pl.Truncated);
+            int visibleEnd = pl.VisibleEnd;
+            Assert.True(visibleEnd < Text(field).Length);
+            for (int o = 0; o <= Text(field).Length; o++)
+            {
+                field.Editor.SetCaret(new TextPosition(0, o));   // used to recurse until the stack overflowed
+                Assert.Equal(new TextPosition(0, System.Math.Min(o, visibleEnd)), field.Editor.Caret);
+            }
+            field.Editor.SetCaret(new TextPosition(0, 0));
+            field.Press(Key.End);
+            field.Press(Key.Right);
+            field.Press(Key.Down);
+            Assert.True(field.Editor.Caret.Offset <= visibleEnd);
+        });
+
+        [Fact]
+        public void A_field_whose_only_editable_place_is_hidden_has_no_place_to_edit_and_Tab_leaves() => Headless.Run(() =>
+        {
+            var field = LockedThenEditable(Break, "y", 1);
+            string original = Text(field);
+            field.Editor.SetCaret(new TextPosition(0, 0));
+            field.Type("x");
+            field.Press(Key.Delete);   // the break is not editable, so Delete cannot remove it
+            Assert.Equal(original, Text(field));
+            Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Next, out _));
+            Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Last, out _));
+            int left = 0;
+            field.LeaveRequested += (s, e) => { left++; e.Handled = true; };
+            field.Press(Key.Tab);
+            Assert.Equal(1, left);   // Tab is not trapped by a place nobody can reach
+        });
+
+        [Theory]
+        [InlineData("|", "y", 1)]
+        [InlineData("ab|", "cd", 1)]
+        [InlineData("a|b|", "cd", 2)]
+        public void A_non_editable_break_counts_toward_the_line_limit_and_the_editable_text_behind_it_stays_hidden(string locked, string editable, int maxLines) => Headless.Run(() =>
+        {
+            // The limit counts lines whatever their editability (as in FieldWorks), so host data that puts the only editable text
+            // behind a locked break at the limit is hidden and cannot be edited from the keyboard (ADR 0024).
+            string text = locked.Replace("|", Break) + editable;
+            var field = LockedThenEditable(locked.Replace("|", Break), editable, maxLines);
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.True(pl.Truncated);
+            Assert.Equal(maxLines, pl.Lines.Count);
+            Assert.True(pl.VisibleEnd <= locked.Length);
+            for (int o = 0; o <= text.Length; o++)
+                foreach (var act in new System.Action<RichTextField>[] { f => f.Type("x"), f => f.Press(Key.Delete), f => f.Press(Key.Back) })
+                {
+                    field.Editor.SetCaret(new TextPosition(0, o));
+                    act(field);
+                    Assert.Equal(text, Text(field));
+                }
+        });
+
+        [Fact]
+        public void The_visible_end_is_not_an_editable_place_when_a_wrap_falls_on_the_boundary_of_locked_and_hidden_editable_text() => Headless.Run(() =>
+        {
+            // 40 locked characters then 40 editable ones at MaxLines 1: from about 326 to 335 px the one line holds exactly the
+            // locked run, so the visible end is the start of the editable run, whose text is hidden.
+            int found = 0;
+            for (int width = 326; width <= 335; width++)
+            {
+                var p = new Paragraph { DefaultWs = "en" };
+                var locked = new Run { Ws = "en", Text = new string((char)97, 40) };
+                locked.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableNo);
+                p.Runs.Add(locked);
+                p.Runs.Add(new Run { Ws = "en", Text = new string((char)98, 40) });
+                p.Props.SetInt(TextPropertyNumbers.MaxLines, 1);
+                var field = Fixtures.Field(Doc(p), width);
+                var pl = field.ParagraphLayoutFor(0);
+                if (!pl.Truncated || pl.VisibleEnd != 40) continue;   // the wrap is somewhere else at this width
+                found++;
+                var visibleEnd = new TextPosition(0, 40);
+                Assert.False(field.Editor.IsEditableAt(visibleEnd), $"width {width}");
+                Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Next, out _), $"width {width}");
+                Assert.False(field.Editor.TryGetEditablePlace(EditablePlace.Last, out _), $"width {width}");
+                field.Editor.SetCaret(new TextPosition(0, 0));
+                Assert.Equal(new TextPosition(0, 0), field.Editor.Caret);   // no editable place to move to
+                field.Editor.SetCaret(visibleEnd);
+                Assert.False(field.Editor.CanEdit);
+                field.Type("x");
+                Assert.Equal(80, field.Editor.Document.Paragraphs[0].Length);
+                int left = 0;
+                field.LeaveRequested += (s, e) => { left++; e.Handled = true; };
+                field.Press(Key.Tab);
+                Assert.Equal(1, left);   // Tab leaves: the caret is not offered where nothing can be typed
+            }
+            Assert.True(found > 0);   // the widths above still wrap on the boundary in the test font
+        });
+
         static Paragraph Limit(string text, int maxLines)
         {
             var p = Para("en", "en", text);
@@ -382,6 +492,90 @@ namespace SIL.TextEditing.Avalonia.Tests
             forward.Press(Key.Right, KeyModifiers.Shift);
             forward.Press(Key.Enter, KeyModifiers.Shift);
             Assert.Equal(new[] { "", "ab" }, Texts(forward));
+        });
+
+        const double NarrowWidth = 150;
+        const string WrappingText = "aaaaaaaaa bbb ccccccc ddddd eeeeeeeeeee ff gggggggg hhhh iiiiiiiii jjj kkkkkkk lllll mmmmmmmmmmm nn oooooooo pppp";
+
+        static RichTextField NarrowLimited(int maxLines, int caret)
+        {
+            var field = Fixtures.Field(Doc(Limit(WrappingText, maxLines)), NarrowWidth);
+            field.Editor.SetCaret(new TextPosition(0, caret));
+            return field;
+        }
+
+        [Fact]
+        public void Shift_Enter_in_wrapped_text_is_judged_by_the_lines_the_result_lays_out_to_at_every_offset() => Headless.Run(() =>
+        {
+            int now = Fixtures.Field(OneParagraph(WrappingText), NarrowWidth).ParagraphLayoutFor(0).Lines.Count;
+            Assert.True(now >= 4, "the sample wraps onto several lines: " + now);
+            int allowedAtLimit = 0, refusedAtLimit = 0;
+            for (int o = 0; o <= WrappingText.Length; o++)
+            {
+                string broken = WrappingText.Substring(0, o) + Break + WrappingText.Substring(o);
+                int after = Fixtures.Field(OneParagraph(broken), NarrowWidth).ParagraphLayoutFor(0).Lines.Count;   // what the break leaves
+                foreach (int max in new[] { now, now + 1 })
+                {
+                    var field = NarrowLimited(max, o);
+                    field.Press(Key.Enter, KeyModifiers.Shift);
+                    bool allowed = Text(field) == broken;
+                    Assert.True(allowed == after <= max, "break at " + o + ", limit " + max + ": the result needs " + after + " lines");
+                    if (allowed)
+                    {
+                        var laid = field.ParagraphLayoutFor(0);
+                        Assert.False(laid.Truncated || laid.HiddenTrailingBreak, "a break at " + o + " hid text");
+                    }
+                    else Assert.Equal(WrappingText, Text(field));
+                    if (max == now) { if (allowed) allowedAtLimit++; else refusedAtLimit++; }
+                }
+            }
+            // At the limit a break that reflows the text into the same number of lines is fine; one that needs another line is not.
+            Assert.True(allowedAtLimit > 0 && refusedAtLimit > 0, allowedAtLimit + " allowed, " + refusedAtLimit + " refused at the limit");
+        });
+
+        [Fact]
+        public void Shift_Enter_over_a_selection_spanning_paragraphs_is_allowed_when_the_laid_out_result_fits_the_limit() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(Doc(Limit("ab", 2), Limit("cd", 2)), 520);
+            field.Editor.Anchor = new TextPosition(0, 2);
+            field.Editor.SetCaret(new TextPosition(1, 1), true);
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "ab" + Break + "d" }, Texts(field));   // two lines under a two-line limit
+        });
+
+        [Fact]
+        public void Shift_Enter_over_a_selection_spanning_paragraphs_is_refused_when_the_laid_out_result_wraps_past_the_limit() => Headless.Run(() =>
+        {
+            var field = Fixtures.Field(Doc(Limit("ab", 2), Limit(WrappingText, 2)), NarrowWidth);
+            field.Editor.Anchor = new TextPosition(0, 2);
+            field.Editor.SetCaret(new TextPosition(1, 0), true);
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "ab", WrappingText }, Texts(field));
+        });
+
+        static RichTextField BoundarySelected(Paragraph first, Paragraph second)
+        {
+            var field = Fixtures.Field(Doc(first, second), 520);
+            field.Editor.SetCaret(new TextPosition(1, 0));
+            field.Press(Key.Left, KeyModifiers.Shift);   // the selection is the paragraph boundary
+            Assert.True(field.Editor.HasSelection);
+            return field;
+        }
+
+        [Fact]
+        public void Shift_Enter_across_an_empty_unlimited_paragraph_and_a_one_line_one_is_refused_because_the_one_line_paragraph_survives() => Headless.Run(() =>
+        {
+            var field = BoundarySelected(Para("en", "en", ""), Limit("ab", 1));
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { "", "ab" }, Texts(field));   // the result, a break then ab, would hide "ab" in the surviving one-line paragraph
+        });
+
+        [Fact]
+        public void Shift_Enter_across_an_empty_one_line_paragraph_and_an_unlimited_one_is_allowed_because_the_unlimited_paragraph_survives() => Headless.Run(() =>
+        {
+            var field = BoundarySelected(Limit("", 1), Para("en", "en", "ab"));
+            field.Press(Key.Enter, KeyModifiers.Shift);
+            Assert.Equal(new[] { Break + "ab" }, Texts(field));
         });
 
         [Fact]

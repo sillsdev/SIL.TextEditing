@@ -35,6 +35,16 @@ namespace SIL.TextEditing
         /// <summary>Raised on any change to the document: start paragraph, removed paragraphs, added paragraphs.</summary>
         public event Action<int, int, int>? DocumentChanged;
 
+        /// <summary>Called first by everything that changes the document (typing, paste, deletion, Enter, line breaks, and the
+        /// host's <see cref="Apply"/> and <see cref="ExternalReplaceParagraph"/>), before it touches anything. A host that has a
+        /// thread rule sets it to throw when the caller breaks the rule. <c>RichTextField</c> sets it to require the UI thread:
+        /// a document edit raises events its control answers by changing Avalonia state, which only the UI thread may do, and
+        /// FieldWorks makes its edits there too, so an edit from another thread throws an <see cref="InvalidOperationException"/>
+        /// at once and leaves the document as it was. Null (the default) allows any thread.</summary>
+        public Action? AccessCheck { get; set; }
+
+        void CheckAccess() => AccessCheck?.Invoke();
+
         public bool HasSelection => !Caret.Equals(Anchor);
 
         public void Ordered(out TextPosition start, out TextPosition end)
@@ -85,7 +95,7 @@ namespace SIL.TextEditing
         public void SetCaret(TextPosition p, bool extend = false, int direction = 0)
         {
             p.Paragraph = Math.Max(0, Math.Min(Document.Paragraphs.Count - 1, p.Paragraph));
-            p.Offset = Math.Max(0, Math.Min(Document.Paragraphs[p.Paragraph].Length, p.Offset));
+            p.Offset = Math.Max(0, Math.Min(LimitOf(p.Paragraph), p.Offset));
             if (!extend && !IsReadOnly) p = NearestEditable(p, direction);
             if (!p.Equals(Caret) || (!extend && !p.Equals(Anchor))) CloseUndoGroup();   // a caret move ends a typing step (ADR 0023)
             Caret = p;
@@ -150,10 +160,11 @@ namespace SIL.TextEditing
 
         public void TypeText(string text)
         {
+            CheckAccess();
             if (string.IsNullOrEmpty(text)) return;
             text = Normalized(text);
             if (SingleParagraph) text = OneLine(text);
-            else text = text.Replace("\r\n", "\n");
+            else text = text.Replace("\t", "").Replace("\r\n", "\n");
             if (text.Length == 0) return;
             var parts = text.Split('\n');
             for (int i = 0; i < parts.Length; i++)
@@ -168,6 +179,7 @@ namespace SIL.TextEditing
         /// joins the typing before it nor the typing after it.</summary>
         public void PasteText(string text)
         {
+            CheckAccess();
             if (string.IsNullOrEmpty(text) || !CanEditSelectionOrCaret()) return;
             // Text that is only separators adds nothing in single-paragraph mode, but a paste still replaces the selection.
             if (SingleParagraph && HasSelection && OneLine(Normalized(text)).Length == 0) { InOneUndoStep(() => DeleteSelection("type")); return; }
@@ -183,8 +195,27 @@ namespace SIL.TextEditing
         /// that does not accept Return). It is one undo step of its own.</summary>
         public void InsertLineBreak()
         {
+            CheckAccess();
             if (!CanEditSelectionOrCaret()) return;
             InOneUndoStep(() => InsertOne(LineSeparator.ToString()));
+        }
+
+        /// <summary>The paragraph <see cref="InsertLineBreak"/> would leave in place of the selection (or the caret), without
+        /// changing the document, so a field can lay it out and refuse a break whose result a line limit would hide. Null when
+        /// the break would change nothing. <paramref name="kept"/> is the index of the paragraph that keeps its identity
+        /// (<see cref="KeptParagraph"/>).</summary>
+        public Paragraph? PreviewLineBreak(out int kept)
+        {
+            kept = -1;
+            if (!CanEditSelectionOrCaret()) return null;
+            Ordered(out var a, out var b);
+            kept = KeptParagraph(a, b);
+            var scratch = new Document { Normalization = Document.Normalization };
+            for (int i = a.Paragraph; i <= b.Paragraph; i++) scratch.Paragraphs.Add(Document.Paragraphs[i].Clone());
+            var trial = new DocumentEditor(scratch) { Anchor = new TextPosition(0, a.Offset), Caret = new TextPosition(b.Paragraph - a.Paragraph, b.Offset) };
+            trial.SetActiveWs(ActiveWs);
+            trial.InsertLineBreak();
+            return scratch.Paragraphs[0];
         }
 
         void InsertOne(string text)
@@ -247,6 +278,12 @@ namespace SIL.TextEditing
             ReplaceRange(Caret, new TextPosition(Caret.Paragraph, GraphemeClusters.DeleteTarget(p.Text, Caret.Offset)), null, "delete");
         }
 
+        /// <summary>The index of the paragraph that keeps its identity, style and properties when [a, b) is replaced: the last one
+        /// when the range spans paragraphs, starts at the very start of the first and leaves text in the last (the non-empty side
+        /// wins), otherwise the first.</summary>
+        public int KeptParagraph(TextPosition a, TextPosition b) =>
+            a.Paragraph != b.Paragraph && a.Offset == 0 && b.Offset < Document.Paragraphs[b.Paragraph].Length ? b.Paragraph : a.Paragraph;
+
         /// <summary>
         /// Replaces [a, b) with a fragment (null for nothing). When the range spans paragraphs, the surviving
         /// paragraph keeps its identity, style and direction: the non-empty side wins, and the first (left)
@@ -254,20 +291,32 @@ namespace SIL.TextEditing
         /// </summary>
         public void ReplaceRange(TextPosition a, TextPosition b, List<Paragraph>? fragment, string label)
         {
+            CheckAccess();
             if (IsReadOnly || !CanEditRange(a, b)) return;
             if (fragment != null)
             {
                 // Pasted text takes the editability of where it lands: a copied read-only run must not become text the user
-                // cannot remove from an editable field.
+                // cannot remove from an editable field, and text landing in a semi-editable run is semi-editable too, as typed
+                // text is (the run before the insertion point when it allows editing, else the one after).
+                var landing = Document.Paragraphs[a.Paragraph].RunBefore(a.Offset, out _);
+                if (landing == null || !AllowsEditing(landing)) landing = Document.Paragraphs[b.Paragraph].RunAfter(b.Offset, out _);
+                bool semi = landing != null && landing.Editable == RunEditable.SemiEditable;
                 fragment = fragment.Select(p => p.Clone()).ToList();
                 foreach (var p in fragment)
                     foreach (var r in p.Runs)
+                    {
                         r.Props.IntProps.Remove(TextPropertyNumbers.Editable);
+                        if (semi) r.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableSemi);
+                    }
             }
             if (SingleParagraph && fragment != null)
             {
                 if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
                 foreach (var p in fragment) SeparatorsToSpaces(p);
+            }
+            else if (fragment != null)
+            {
+                foreach (var p in fragment) RemoveTabs(p);
             }
             // Every insertion passes through here or TypeText, so the host's normalisation form always applies.
             if (fragment != null && Document.Normalization is NormalizationForm form)
@@ -284,8 +333,7 @@ namespace SIL.TextEditing
             head.Delete(a.Offset, head.Length - a.Offset);
             var tail = last.Clone();
             tail.Delete(0, b.Offset);
-            bool headEmpty = head.Length == 0, tailEmpty = tail.Length == 0;
-            var survivor = (a.Paragraph != b.Paragraph && headEmpty && !tailEmpty) ? last : first;
+            var survivor = Document.Paragraphs[KeptParagraph(a, b)];
             var merged = survivor.Clone();
             merged.Runs = new List<Run>();
             foreach (var r in head.Runs) merged.Runs.Add(r.Clone());
@@ -338,6 +386,7 @@ namespace SIL.TextEditing
         /// stays on the right; anywhere else the left keeps the identity and the right is new.</summary>
         public void Enter()
         {
+            CheckAccess();
             if (SingleParagraph || !CanEditSelectionOrCaret()) return;
             if (HasSelection) DeleteSelection("enter-del");
             var d = Begin(Caret.Paragraph, Caret.Paragraph, "enter");
@@ -392,6 +441,7 @@ namespace SIL.TextEditing
         /// <summary>Applies a delta, for undo and redo driven by the host.</summary>
         public void Apply(EditDelta d)
         {
+            CheckAccess();
             Document.Paragraphs.RemoveRange(d.Start, d.Before.Count);
             Document.Paragraphs.InsertRange(d.Start, d.After.Select(p => p.Clone()));
             var c = d.CaretAfter;
@@ -409,6 +459,7 @@ namespace SIL.TextEditing
         /// the text: changeStart, removedLength and insertedLength describe the text difference.</summary>
         public void ExternalReplaceParagraph(int paragraphIndex, Paragraph replacement, int changeStart, int removedLength, int insertedLength)
         {
+            CheckAccess();
             Document.Paragraphs[paragraphIndex] = replacement;
             TextPosition Map(TextPosition p)
             {
