@@ -617,15 +617,21 @@ namespace SIL.TextEditing.Playground.Tests
         const int WideLabel = 30, ArabicWideLabel = 31;
 
         [Fact]
-        public void A_label_too_wide_to_leave_room_for_the_first_word_takes_the_first_line_and_the_text_starts_on_the_next_in_both_directions() => Headless.Run(() =>
+        public void A_label_wider_than_the_line_takes_the_first_line_and_the_text_starts_on_the_next_in_both_directions() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Paragraphs, 240, 6000))
             {
+                // A label much longer than the style's, wider than the line.
+                foreach (int q in new[] { WideLabel, ArabicWideLabel })
+                    s.Editor.Document.Paragraphs[q].Props.SetStr(TextPropertyNumbers.BulNumTxtBefore, "Chapter number and then some more words ");
+                s.Field.RefreshFromDocument();
+                Headless.Pump();
                 var shot = new Shot(s);
                 foreach (int p in new[] { WideLabel, ArabicWideLabel })
                 {
                     var pl = s.Field.ParagraphLayoutFor(p);
                     var label = pl.LabelRect;
+                    Assert.True(label.Width - 24 > pl.ContentWidth, "the label (less its hang) " + label.Width + " is wider than the line " + pl.ContentWidth);
                     var first = pl.Lines[0];
                     Assert.True(label.Bottom <= first.TextY + 0.01, "paragraph " + p + " (content " + pl.ContentWidth + "): the label " + label + " is above the first line of text, at " + first.TextY);
                     Assert.True(first.Y >= label.Bottom - 0.01, "the text's first line starts below the label's line");
@@ -648,11 +654,12 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
-        public void A_label_that_leaves_room_for_the_first_word_stays_on_the_first_line() => Headless.Run(() =>
+        public void A_label_that_fits_the_line_stays_on_the_first_line_even_when_the_first_word_does_not_fit_beside_it() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Paragraphs, 1100, 6000))
+            using (var s = new Session(Scenarios.Paragraphs, 240, 6000))
             {
                 var pl = s.Field.ParagraphLayoutFor(WideLabel);
+                Assert.True(pl.LabelRect.Width - 24 < pl.ContentWidth, "the label (less its hang) " + pl.LabelRect.Width + " fits the line " + pl.ContentWidth);
                 Assert.Equal(pl.Lines[0].TextY, pl.LabelRect.Y, 3);
             }
         });

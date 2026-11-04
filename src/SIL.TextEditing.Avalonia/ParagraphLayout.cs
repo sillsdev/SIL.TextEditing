@@ -688,7 +688,7 @@ namespace SIL.TextEditing.Avalonia
             var paragraphProperties = new ParagraphProperties(paragraph.Rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, defaultProperties, Alignment(pf.Align));
             double w = Math.Max(layout.ContentWidth, 10);
             double firstIndent = pf.FirstIndent;
-            layout.PlaceFirstLine(w, firstIndent, source, paragraphProperties);
+            layout.PlaceFirstLine(w, firstIndent, source);
             double lineHeightRule = pf.LineHeight;
             if (source.Text.Length == 0)
             {
@@ -939,13 +939,13 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>Works out where the first line's text starts and how wide it may be. The first indent moves it in (or, hanging,
         /// out). A bullet or number sits at the first indent; if the hanging indent is wider than the label and its gap the first
-        /// line's text starts where the other lines' do, otherwise it starts after the label, as in FieldWorks. When the label leaves no
-        /// room for the first word of the text beside it (or for its first letter, if the word is wider than any line), the label takes
-        /// a line of its own and the text starts on the next, on the full text width.</summary>
+        /// line's text starts where the other lines' do, otherwise it starts after the label, as in FieldWorks. When the label (with its
+        /// indent) is wider than the line, it takes a line of its own and the text starts on the next, on the full text width. However little
+        /// room a narrower label leaves, the text stays beside it and wraps there.</summary>
         // Provenance: this rule follows FieldWorks' observable list layout (a 3 pt gap after the label unless it ends in a space; the label
-        // goes in the hanging indent when it fits there, else the text starts after it; a label with no room beside the text is on its own
-        // line). The code is ours.
-        void PlaceFirstLine(double w, double firstIndent, ParagraphSource source, ParagraphProperties properties)
+        // goes in the hanging indent when it fits there, else the text starts after it; a label wider than the line is on its own line).
+        // The code is ours.
+        void PlaceFirstLine(double w, double firstIndent, ParagraphSource source)
         {
             _labelWidth = 0;
             _labelLineHeight = 0;
@@ -958,7 +958,7 @@ namespace SIL.TextEditing.Avalonia
                 return;
             }
             double taken = firstIndent + _labelWidth;
-            if (label != null && source.Text.Length > 0 && w - taken < WidthNeededBesideLabel(source, properties, w))
+            if (label != null && source.Text.Length > 0 && taken > w)
             {
                 _labelLineHeight = SlotHeight(label.Height);
                 _firstWidth = w;
@@ -967,28 +967,6 @@ namespace SIL.TextEditing.Avalonia
             }
             _firstWidth = Math.Max(w - taken, 1);
             _firstX = ContentLeft + (Rtl ? 0 : taken);
-        }
-
-        /// <summary>How much room the first line of text needs beside the label: the first word, or its first letter when the word is wider
-        /// than a whole line (it breaks wherever it is put).</summary>
-        static double WidthNeededBesideLabel(ParagraphSource source, ParagraphProperties properties, double lineWidth)
-        {
-            string text = source.Text;
-            int word = 0;
-            while (word < text.Length && !char.IsWhiteSpace(text[word]) && text[word] != HardLineBreak) word++;
-            if (word == 0) return 0;
-            using (var line = TextFormatter.Current.FormatLine(source, 0, 100000, properties, null))
-            {
-                if (line == null) return 0;
-                double Measure(int length)
-                {
-                    double sum = 0;
-                    foreach (var tb in line.GetTextBounds(0, length)) sum += tb.Rectangle.Width;
-                    return sum;
-                }
-                double whole = Measure(word);
-                return whole <= lineWidth ? whole : Measure(Math.Min(GraphemeClusters.Next(text, 0), word));
-            }
         }
 
         /// <summary>The height of the line a too-wide bullet or number takes alone above the text, or 0 when it sits beside the first line.</summary>
