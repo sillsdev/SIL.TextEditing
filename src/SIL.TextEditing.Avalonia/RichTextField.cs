@@ -511,8 +511,8 @@ namespace SIL.TextEditing.Avalonia
         bool _onScreen;
         IPlatformSettings? _platformSettings;
 
-        void OnPlatformColoursChanged(object? sender, PlatformColorValues values) =>
-            global::Avalonia.Threading.Dispatcher.UIThread.Post(RefreshSystemColours);
+        internal void OnPlatformColoursChanged(object? sender, PlatformColorValues values) =>
+            OwnDispatcher.Post(RefreshSystemColours);
 
 
         protected override void OnAttachedToVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)

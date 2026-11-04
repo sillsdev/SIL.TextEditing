@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Avalonia.Threading;
 using SIL.TextEditing.Avalonia;
@@ -102,6 +103,52 @@ namespace SIL.TextEditing.SecondDispatcher.Tests
             }
             if (failure != null) throw new Exception("on the second dispatcher: " + failure.Message, failure);
             Assert.Equal(new[] { secondThread }, scheduledOn);     // scheduled once, on the field's thread
+        }
+
+        [Fact]
+        public void A_change_of_the_system_colours_is_handled_on_the_dispatcher_of_the_field_not_the_main_one()
+        {
+            // The platform raises ColorValuesChanged on any thread; the field's colours may only be touched on its own.
+            var ranOn = new List<int>();
+            var isOn = SystemColours.IsHighContrast;
+            SystemColours.IsHighContrast = () => { lock (ranOn) ranOn.Add(Environment.CurrentManagedThreadId); return false; };
+            RichTextField? field = null;
+            using var ready = new ManualResetEventSlim();
+            using var raised = new ManualResetEventSlim();
+            int secondThread = 0;
+            Exception? failure = null;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    var d = Dispatcher.CurrentDispatcher;
+                    secondThread = Environment.CurrentManagedThreadId;
+                    field = new RichTextField(OneParagraph("ab"));
+                    ready.Set();
+                    if (!raised.Wait(TimeSpan.FromSeconds(30))) throw new TimeoutException("the main thread never raised the change");
+                    d.RunJobs();   // the hand-off, if it was made to this dispatcher, runs here
+                }
+                catch (Exception e) { failure = e; ready.Set(); }
+            });
+            thread.IsBackground = true;
+            thread.Start();
+            try
+            {
+                Assert.True(ready.Wait(TimeSpan.FromSeconds(30)));
+                if (failure == null)
+                {
+                    Headless.Run(() => field!.OnPlatformColoursChanged(new object(), null!));
+                    Headless.Run(() => global::Avalonia.Threading.Dispatcher.UIThread.RunJobs());
+                }
+            }
+            finally
+            {
+                raised.Set();
+                Assert.True(thread.Join(TimeSpan.FromSeconds(30)));
+                SystemColours.IsHighContrast = isOn;
+            }
+            if (failure != null) throw new Exception("on the second dispatcher: " + failure.Message, failure);
+            lock (ranOn) Assert.Equal(new[] { secondThread }, ranOn.Distinct().ToArray());
         }
 
         sealed class NoPause : IDisposable { public void Dispose() { } }
