@@ -111,7 +111,7 @@ that is not a field. The field raises nothing when it loses focus.
   word breaking. Left/Right and Ctrl+Left/Right are logical. Home/End in a right-to-left paragraph are the logical line start and end.
 - **Avalonia faults, pinned by tests**: hit testing in a right-to-left paragraph is wrong on 11.3.17 (fixed in 12.1.2), and on
   both 11.3.17 and 12.1.2 the caret, hit testing and selection of a left-to-right run are wrong on a right-to-left paragraph's line
-  of two or more runs; an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by
+  of two or more runs, and likewise on a left-to-right paragraph's line of two or more runs with a right-to-left run in it (on 12 some of its ranges throw); an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by
   reading such a line from its runs as they are drawn (`LineInfo.UsesRuns`: caret x, hit testing, visual stops and selection boxes
   from each run's glyphs). It is not behind `#if`, because 12 has the second fault too (ADR 0015 expected a layer for 11.3 only).
   `RichTextField.ObjectAsGlyph` is the workaround for the third.
