@@ -424,11 +424,7 @@ namespace SIL.TextEditing.Markdown.Reader
 
         void ReadTable(Table table)
         {
-            for (int c = 0; c < table.ColumnDefinitions.Count; c++)
-            {
-                if (table.ColumnDefinitions[c].Alignment != null)
-                    _context.Report(MarkdownDiagnosticIds.TableAlignment, MarkdownSeverity.Error, "A column alignment can't be stored. Use ---.", table.Span.Start, table.Span.End + 1, replacement: "---");
-            }
+            ReportAlignments(table);
             int headerCells = -1;
             int rowNumber = 0;
             foreach (var child in table)
@@ -466,6 +462,40 @@ namespace SIL.TextEditing.Markdown.Reader
                 }
                 _paragraphs.Add(MakeParagraph(isHeader ? Names.TableHeader : Names.TableRow, new PropertyBag(), joined, null));
             }
+        }
+
+        /// <summary>A column alignment (<c>:---</c>, <c>---:</c>, <c>:---:</c>) has nowhere to be stored (spec 3.1). Each aligned cell of the
+        /// delimiter row, the second line of the table, is a finding of its own, and replacing it with <c>---</c> is the fix.</summary>
+        void ReportAlignments(Table table)
+        {
+            bool aligned = false;
+            foreach (var column in table.ColumnDefinitions) if (column.Alignment != null) aligned = true;
+            if (!aligned) return;
+            const string message = "A column alignment can't be stored. Use ---.";
+            string s = _source;
+            int headerEnd = table.Span.Start;
+            while (headerEnd < s.Length && s[headerEnd] != '\n' && s[headerEnd] != '\r') headerEnd++;
+            int lineStart = headerEnd < s.Length ? headerEnd + (s[headerEnd] == '\r' && headerEnd + 1 < s.Length && s[headerEnd + 1] == '\n' ? 2 : 1) : headerEnd;
+            int lineEnd = lineStart;
+            while (lineEnd < s.Length && s[lineEnd] != '\n' && s[lineEnd] != '\r') lineEnd++;
+            bool any = false;
+            int i = lineStart;
+            while (i < lineEnd)
+            {
+                int cellEnd = i;
+                while (cellEnd < lineEnd && s[cellEnd] != '|') cellEnd++;
+                int a = i, b = cellEnd;
+                while (a < b && (s[a] == ' ' || s[a] == '\t')) a++;
+                while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t')) b--;
+                if (a < b && (s[a] == ':' || s[b - 1] == ':'))
+                {
+                    any = true;
+                    _context.Report(MarkdownDiagnosticIds.TableAlignment, MarkdownSeverity.Error, message, a, b, replacement: "---");
+                }
+                i = cellEnd + 1;
+            }
+            // Markdig saw an alignment this scan did not find: report the delimiter row as a whole.
+            if (!any) _context.Report(MarkdownDiagnosticIds.TableAlignment, MarkdownSeverity.Error, message, lineStart, lineEnd);
         }
 
         /// <summary>Markdig pads short rows with empty cells that have no source.</summary>

@@ -201,6 +201,56 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Null(d.Replacement);
         }
 
+        // gdr.table.alignment is about the delimiter cell, one finding per aligned column: replacing the observed text with the
+        // replacement is the whole fix.
+        static (string observed, int line, int column)[] Alignments(string markdown)
+            => MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics.Where(d => d.Id == "gdr.table.alignment")
+                .Select(d =>
+                {
+                    Assert.Equal("---", d.Replacement);
+                    Assert.Equal(d.Line, d.EndLine);
+                    Assert.Equal(d.Column + d.Observed!.Length, d.EndColumn);
+                    return (d.Observed!, d.Line, d.Column);
+                }).ToArray();
+
+        [Fact]
+        public void AnAlignedColumnIsReportedAtItsDelimiterCell()
+            => Assert.Equal(new[] { (":---:", 2, 3) }, Alignments("| a | b |\n| :---: | --- |\n| 1 | 2 |\n"));
+
+        [Fact]
+        public void EveryAlignedColumnHasAFindingOfItsOwn()
+            => Assert.Equal(new[] { (":---", 2, 3), (":---:", 2, 10), ("---:", 2, 24) }, Alignments("| a | b | c | d |\n| :--- | :---: | --- | ---: |\n| 1 | 2 |"));
+
+        [Theory]
+        [InlineData("a | b\n:--- | ---:\n1 | 2", 2, 1)]
+        [InlineData("  | a | b |\n  | :--- | --- |\n  | 1 | 2 |", 2, 5)]
+        [InlineData("x\n\n| a | b |\n| --- | :-: |\n| 1 | 2 |", 4, 9)]
+        public void ADelimiterRowWithoutOuterPipesOrIndentedIsPlacedExactly(string markdown, int line, int column)
+        {
+            var found = Alignments(markdown);
+            Assert.Equal(line, found[0].line);
+            Assert.Equal(column, found[0].column);
+        }
+
+        [Fact]
+        public void TheAlignmentOfASecondTableIsPlacedOnItsOwnLine()
+            => Assert.Equal(new[] { (":---:", 7, 3) }, Alignments("| h |\n| --- |\n\nb\n\n| a | b |\n| :---: | --- |\n| 1 | 2 |"));
+
+        [Fact]
+        public void TheAlignmentFindingWorksWithCrlf()
+            => Assert.Equal(new[] { ("--:", 2, 9) }, Alignments("| a | b |\r\n| --- | --: |\r\n| 1 | 2 |\r\n"));
+
+        [Fact]
+        public void ApplyingTheAlignmentFixLeavesNoFinding()
+        {
+            string text = "| a | b |\n| :---: | ---: |\n| 1 | 2 |\n";
+            string fixedText = text;
+            foreach (var d in MarkdownConverter.Parse(text, Hosts.Project()).Diagnostics.Where(d => d.Id == "gdr.table.alignment").OrderByDescending(d => d.Start))
+                fixedText = fixedText.Substring(0, d.Start) + d.Replacement + fixedText.Substring(d.End);
+            Assert.Equal("| a | b |\n| --- | --- |\n| 1 | 2 |\n", fixedText);
+            Assert.Empty(MarkdownConverter.Parse(fixedText, Hosts.Project()).Diagnostics);
+        }
+
         [Fact]
         public void FindingsAreInSourceOrder()
         {
