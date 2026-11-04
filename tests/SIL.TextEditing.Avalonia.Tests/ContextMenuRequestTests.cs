@@ -64,6 +64,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             field.SetFindHighlight(new FindOptions { Pattern = "(a+)+$", UseRegularExpression = true, RegexTimeout = System.TimeSpan.FromMilliseconds(20) });
             Fixtures.Render(field);
             Assert.True(field.FindHighlightTimedOut);
+            Assert.False(field.Editor.FindTimedOut);   // the paint has its own flag and leaves the host's search result alone
             Fixtures.Render(field);   // no second attempt: the flag stays until the options change
             Assert.True(field.FindHighlightTimedOut);
             field.SetFindHighlight(new FindOptions { Pattern = "a" });

@@ -12,6 +12,7 @@ namespace SIL.TextEditing.Avalonia
         bool _highlightAll;
         TextRange? _currentMatch;
         bool _highlightTimedOut;
+        static readonly System.TimeSpan HighlightBudget = System.TimeSpan.FromMilliseconds(50);
         Dictionary<int, IReadOnlyList<TextRange>>? _highlightCache;
 
         /// <summary>The fill of every match when all matches are highlighted (<see cref="SetFindHighlight"/>).</summary>
@@ -58,6 +59,8 @@ namespace SIL.TextEditing.Avalonia
         public void SetFindHighlight(FindOptions? options, bool all = true)
         {
             _highlightOptions = options?.Clone();
+            // The paint gets a short budget (50 ms at most), so typing a slow pattern into a find box stalls it briefly; an explicit Find keeps the options' own.
+            if (_highlightOptions != null && _highlightOptions.RegexTimeout > HighlightBudget) _highlightOptions.RegexTimeout = HighlightBudget;
             _highlightAll = all && options != null;
             _highlightCache = null;
             _highlightTimedOut = false;
@@ -90,8 +93,8 @@ namespace SIL.TextEditing.Avalonia
                 _highlightCache ??= new Dictionary<int, IReadOnlyList<TextRange>>();
                 if (!_highlightCache.TryGetValue(index, out var matches))
                 {
-                    _highlightCache[index] = matches = Editor.FindAllIn(index, _highlightOptions);
-                    if (Editor.FindTimedOut) { _highlightTimedOut = true; _highlightCache = null; return; }
+                    _highlightCache[index] = matches = Editor.FindAllIn(index, _highlightOptions, out bool timedOut);
+                    if (timedOut) { _highlightTimedOut = true; _highlightCache = null; return; }
                 }
                 foreach (var m in matches) FillRange(context, layout, m, y, FindHighlightBrush);
             }

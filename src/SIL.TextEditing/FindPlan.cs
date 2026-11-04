@@ -58,6 +58,9 @@ namespace SIL.TextEditing
         /// <summary>True once a regular-expression search ran out of time: the plan then matches nothing more.</summary>
         public bool TimedOut { get; private set; }
 
+        /// <summary>A conjoining vowel or final-consonant jamo: it continues a syllable that a lead jamo began.</summary>
+        static bool IsJamoContinuation(char c) => (c >= (char)0x1160 && c <= (char)0x11FF) || (c >= (char)0xD7B0 && c <= (char)0xD7FF);
+
         static int CodePointLength(string s, int i) => char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]) ? 2 : 1;
 
         /// <summary>Combining marks: general category Mn, Mc or Me. The rule FieldWorks uses is the Unicode diacritic and extender
@@ -160,6 +163,10 @@ namespace SIL.TextEditing
             string? stripped = null;
             bool Accept(int ns, int ne, string? expansion)
             {
+                // Matching is over decomposed text, so a match must not split a Hangul syllable (a lead jamo alone, or a lead and vowel
+                // without the final consonant that follows): it would select the whole syllable when stored composed and only part of it
+                // when stored decomposed. Refused in both.
+                if ((ns > 0 && IsJamoContinuation(map.Nfd[ns])) || (ne < map.Nfd.Length && IsJamoContinuation(map.Nfd[ne]))) return false;
                 int os = map.Start[ns];
                 if (os < 0) return false;
                 int oe = map.End[ne];

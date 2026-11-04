@@ -432,5 +432,40 @@ namespace SIL.TextEditing.Tests
             Assert.NotEmpty(e.FindAll(Opt("a")));
             Assert.False(e.FindTimedOut);   // the next search starts afresh
         }
+
+        [Fact]
+        public void A_timeout_anywhere_makes_every_search_return_nothing_and_Replace_All_change_nothing()
+        {
+            var e = new DocumentEditor(Doc(Para("en", "en", "x"), Para("en", "en", "x"), Para("en", "en", new string('a', 40) + "!"), Para("en", "en", "x")));
+            var slow = new FindOptions { Pattern = "x|(a+)+$", UseRegularExpression = true, RegexTimeout = System.TimeSpan.FromMilliseconds(20) };
+            Assert.Equal(0, e.ReplaceAll(slow, "Y"));
+            Assert.True(e.FindTimedOut);
+            Assert.Equal("x", Text(e, 0));
+            Assert.Equal("x", Text(e, 1));
+            Assert.Equal("x", Text(e, 3));
+            Assert.Empty(e.FindAll(slow));
+            Assert.Empty(e.FindAllIn(2, slow));
+            e.SetCaret(new TextPosition(1, 1));   // the search reaches the slow paragraph before the match in the last one
+            Assert.False(e.TryFind(slow, true, true, out _, out _));
+        }
+
+        [Fact]
+        public void A_pattern_that_would_split_a_Hangul_syllable_matches_nothing_in_either_stored_form_and_a_whole_syllable_matches_in_both()
+        {
+            string syllable = ((char)0xD55C).ToString();                       // one precomposed syllable
+            string jamo = new string(new[] { (char)0x1112, (char)0x1161, (char)0x11AB });   // the same syllable decomposed
+            foreach (var stored in new[] { syllable, jamo })
+            {
+                var e = One("a" + stored + "b");
+                foreach (var pattern in new[] { ((char)0x1112).ToString(), ((char)0x1161).ToString(), new string(new[] { (char)0x1112, (char)0x1161 }) })
+                {
+                    Assert.Empty(e.FindAll(Opt(pattern)));
+                    Assert.Empty(e.FindAll(new FindOptions { Pattern = pattern, UseRegularExpression = true }));
+                    Assert.Empty(e.FindAll(new FindOptions { Pattern = pattern, MatchDiacritics = false }));
+                }
+                Assert.Equal(new[] { new TextRange(0, 1, 1 + stored.Length) }, e.FindAll(Opt(jamo)));
+                Assert.Equal(new[] { new TextRange(0, 1, 1 + stored.Length) }, e.FindAll(Opt(syllable)));
+            }
+        }
     }
 }

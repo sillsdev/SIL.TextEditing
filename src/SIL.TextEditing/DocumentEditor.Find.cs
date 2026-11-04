@@ -36,9 +36,16 @@ namespace SIL.TextEditing
         /// (<see cref="FindOptions.IsValid"/>).</summary>
         public bool TryFind(FindOptions options, bool forward, bool wrap, out TextRange match, out bool wrapped)
         {
+            var plan = NewPlan(options);
+            bool found = TryFind(plan, forward, wrap, out match, out wrapped);
+            if (plan.TimedOut) { match = default; wrapped = false; return false; }   // a search that timed out anywhere finds nothing
+            return found;
+        }
+
+        bool TryFind(FindPlan plan, bool forward, bool wrap, out TextRange match, out bool wrapped)
+        {
             match = default;
             wrapped = false;
-            var plan = NewPlan(options);
             if (!plan.Valid) return false;
             Ordered(out var a, out var b);
             int count = Document.Paragraphs.Count;
@@ -90,16 +97,29 @@ namespace SIL.TextEditing
             if (!plan.Valid) return result;
             for (int pi = 0; pi < Document.Paragraphs.Count; pi++)
                 foreach (var h in HitsIn(pi, plan, false)) result.Add(new TextRange(pi, h.Start, h.End));
+            if (plan.TimedOut) result.Clear();   // a search that timed out anywhere finds nothing
             return result;
         }
 
         /// <summary>The matches in one paragraph, in order and without overlaps.</summary>
         public IReadOnlyList<TextRange> FindAllIn(int paragraph, FindOptions options)
         {
+            var result = FindAllIn(paragraph, options, out bool timedOut);
+            FindTimedOut = timedOut;
+            return result;
+        }
+
+        /// <summary>As <see cref="FindAllIn(int, FindOptions)"/>, saying whether the search timed out instead of setting <see cref="FindTimedOut"/>, so the
+        /// highlight the field draws never disturbs what the host's own searches reported.</summary>
+        public IReadOnlyList<TextRange> FindAllIn(int paragraph, FindOptions options, out bool timedOut)
+        {
             var result = new List<TextRange>();
-            var plan = NewPlan(options);
+            var plan = FindPlan.Create(options);
+            timedOut = false;
             if (!plan.Valid) return result;
-            foreach (var h in HitsIn(paragraph, plan, false)) result.Add(new TextRange(paragraph, h.Start, h.End));
+            foreach (var h in plan.Matches(Document.Paragraphs[paragraph], false)) if (h.End <= LimitOf(paragraph)) result.Add(new TextRange(paragraph, h.Start, h.End));
+            timedOut = plan.TimedOut;
+            if (timedOut) result.Clear();
             return result;
         }
 
@@ -177,7 +197,7 @@ namespace SIL.TextEditing
             for (int pi = 0; pi < Document.Paragraphs.Count; pi++)
                 foreach (var h in HitsIn(pi, plan, false, replacement))
                     if (CanReplace(new TextRange(pi, h.Start, h.End))) todo.Add((pi, h));
-            if (todo.Count == 0) return 0;
+            if (plan.TimedOut || todo.Count == 0) return 0;   // a search that timed out anywhere replaces nothing
             var anchor = Anchor;
             var caret = Caret;
             var deltas = new int[todo.Count];
