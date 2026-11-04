@@ -63,7 +63,7 @@ The host builds the menu; the field reports what it was asked about. `RichTextFi
 
 - **One request, one event.** The field rides on Avalonia's own context request, which both lines raise for a right click
   (on release, as FieldWorks opens its menu on right-button up) and for the Menu key. Neither line raises it for Shift+F10, so the
-  field raises that itself. A host builds its menu from the event or sets Avalonia's `ContextMenu` on the field, not both. If
+  field raises that itself. A host builds its menu from the event or sets Avalonia's `ContextMenu` on the field; when it does both the event wins, because the field marks the request handled and the `ContextMenu` does not open (a test pins this). If
   Avalonia ever raises one for Shift+F10 too, a host would see two events for that key; a default to revisit then.
 - **Right click inside a selection keeps it; outside it moves the caret there first.** "Inside" means the pointer is over a
   selected character, so a click on the character just after the selection moves the caret. FieldWorks' rule for a click at the

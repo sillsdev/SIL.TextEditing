@@ -112,7 +112,7 @@ The field owns one text; the window around it belongs to the host. These are the
 - **Context menu.** `RichTextField.ContextMenuRequested` fires for a right click, the Menu key and Shift+F10 with a
   `ContextInfo`: the word and its range, its writing system, the run and its properties, any link or embedded object, the
   selection and an (empty, for now) list of spelling suggestions. The host builds the menu. Use the event or Avalonia's
-  `ContextMenu` on the field, not both.
+  `ContextMenu` on the field; with both, the event wins.
 - **Paging and scrolling.** PageUp and PageDown (with Shift) move the caret by the field's visible height
   (`VisibleBounds`, or `PageHeight` when the host sets it); a drag past the edge extends the selection and asks for
   scrolling. The field never scrolls anything itself: it raises `ScrollRequested` (reason, the part to show, the distance)
