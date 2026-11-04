@@ -298,10 +298,10 @@ namespace SIL.TextEditing.Markdown.Writer
             if (path == null && paths != null) path = paths.PathOf(guid);
             string? derivedTool = paths?.ToolOf(guid) ?? (path != null ? PathTools.ToolOf(path) : null);
             var form = _options.LinkForm;
-            if (link.Project != null) form = MarkdownLinkForm.RootPath == form || form == MarkdownLinkForm.FileRelative || form == MarkdownLinkForm.ObjectAlias ? MarkdownLinkForm.SilfwUrl : form;
-            if ((form == MarkdownLinkForm.RootPath || form == MarkdownLinkForm.FileRelative || form == MarkdownLinkForm.MotifUrl) && path == null) form = MarkdownLinkForm.ObjectAlias;
+            // A form that needs something the caller or the project has not given falls back: no file location, A; no project name, A; no path, E.
             if (form == MarkdownLinkForm.FileRelative && _options.LinkBase == null) form = MarkdownLinkForm.RootPath;
-            if (form == MarkdownLinkForm.MotifUrl && _options.ProjectName == null) form = MarkdownLinkForm.RootPath;
+            if (form == MarkdownLinkForm.MotifUrl && _options.ProjectName == null && link.Project == null) form = MarkdownLinkForm.RootPath;
+            if ((form == MarkdownLinkForm.RootPath || form == MarkdownLinkForm.FileRelative) && path == null) form = MarkdownLinkForm.ObjectAlias;
             if (path != null && (link.Field != null) && path.Field == null) path = new ProjectPath(path.Segments, link.Field, link.FieldWritingSystem);
 
             string dest;
@@ -315,7 +315,7 @@ namespace SIL.TextEditing.Markdown.Writer
                     urlAttr = false;
                     break;
                 case MarkdownLinkForm.MotifUrl:
-                    dest = "motif://projects/" + EncodeProject(link.Project ?? _options.ProjectName!) + path!.ToString() + "?guid=" + guid.ToString("D");
+                    dest = "motif://projects/" + EncodeProject(link.Project ?? _options.ProjectName!) + (path ?? ProjectPath.ForObject(guid)).ToString() + "?guid=" + guid.ToString("D");
                     guidAttr = false;
                     break;
                 case MarkdownLinkForm.FileRelative:
@@ -692,7 +692,7 @@ namespace SIL.TextEditing.Markdown.Writer
                         break;
                     }
                     case '$': escape[i] = dollars >= 2; break;
-                    case '^': escape[i] = carets >= 2 || NextChar(i) == '['; break;
+                    case '^': escape[i] = carets >= 2 || NextChar(i) == '[' || PrevChar(i) == '['; break; // [^ starts a footnote reference
                     case '~': escape[i] = tildes >= 2; break;
                     case '@':
                     {

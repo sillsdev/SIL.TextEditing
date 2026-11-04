@@ -287,6 +287,8 @@ namespace SIL.TextEditing.Markdown.Writer
             var header = entries[start];
             if (!CellEligible(header)) return null;
             var headerCells = SplitCells(header.Paragraph);
+            // Pandoc reads a header row whose cells are all empty as no header at all, so such a header cannot be a pipe table.
+            if (headerCells.All(cell => cell.Count == 0)) return null;
             int width = headerCells.Count;
             var expected = new List<Paragraph> { header.Paragraph };
             var cellsOf = new List<List<List<Run>>> { headerCells };

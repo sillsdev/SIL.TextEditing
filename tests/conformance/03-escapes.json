@@ -50,6 +50,11 @@
     "canonical": "\\[a\\](b) \\[c\\][d] \\[e\\]{f} [g] \\]h\\[\n"
   },
   {
+    "name": "a caret right after a bracket is escaped, so that it is not a footnote reference",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "^x", "ws": "ceb" } ] } ],
+    "canonical": "[\\^x]{.v}\n"
+  },
+  {
     "name": "an exclamation mark before a bracket is escaped",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "a ![b](c) wow!", "ws": "en" } ] } ],
     "canonical": "a \\!\\[b\\](c) wow!\n"

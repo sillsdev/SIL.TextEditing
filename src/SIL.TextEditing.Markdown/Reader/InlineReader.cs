@@ -350,6 +350,7 @@ namespace SIL.TextEditing.Markdown.Reader
             }
             else if (noStyleItem != null) { fmt.Cs = CsState.None; fmt.CsName = null; fmt.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle); }
             if (urlItem != null) { form.Url = urlItem.Value; form.UrlGiven = true; }
+            if (s6Item != null && form.S6 == null) form.S6 = s6Item.Value;
             form.Name = nameItem != null;
             form.Example = exampleItem != null;
             form.Broken = brokenItem != null;

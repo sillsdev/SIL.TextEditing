@@ -66,6 +66,16 @@
     "canonical": "[x]{fontFamily=\"\\\"a\\\" A\"}\n"
   },
   {
+    "name": "a quoted value that starts with white space has that character written as a reference, which Pandoc needs to read it as quoted",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en", "props": { "fontFamily": " a b " } }, { "text": "y", "ws": "en", "props": { "s133": " c" } } ] } ],
+    "canonical": "[x]{fontFamily=\"&#x20;a b \"}[y]{custom-style=\"&#xA0;c\"}\n"
+  },
+  {
+    "name": "a control character in a value that is not a string property is written as a reference",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "y", "ws": "en", "props": { "s133": "a\tb" } } ] } ],
+    "canonical": "[y]{custom-style=\"a&#x9;b\"}\n"
+  },
+  {
     "name": "single quotes and extra spaces are read, and written canonically",
     "markdown": "[x]{  .v   fontFamily='Charis SIL' }\n",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "ceb", "props": { "fontFamily": "Charis SIL" } } ] } ],

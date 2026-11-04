@@ -71,28 +71,34 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             else RunWrite(c, options);
         }
 
+        /// <summary>A multi-string field (spec 5.1): inline grammar only, one paragraph's runs, no front matter. The paragraph of the fixture holds the runs.</summary>
+        static void RunInline(ConformanceCase c, MarkdownOptions options)
+        {
+            var result = MarkdownConverter.ParseInline(c.Markdown!, options);
+            AssertFindings(c, result.Diagnostics);
+            if (c.Paragraphs != null)
+            {
+                var read = new Paragraph { Style = c.Paragraphs[0].Style };
+                foreach (var run in result.Runs) read.Runs.Add(run.Clone());
+                read.DefaultWs = read.Runs.Count > 0 ? read.Runs[0].Ws : c.Paragraphs[0].DefaultWs;
+                var expected = c.Paragraphs[0].Clone();
+                expected.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
+                read.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
+                AssertParagraphs(new[] { c.Paragraphs[0] }, new[] { read }, "ParseInline");
+            }
+            if (c.CanonicalSpecified && !result.HasErrors)
+            {
+                string written = MarkdownConverter.ToInlineMarkdown(result.Runs, options);
+                Assert.Equal(c.Canonical ?? c.Markdown!, written);
+            }
+        }
+
         static void RunRead(ConformanceCase c, MarkdownOptions options)
         {
+            if (c.Inline) { RunInline(c, options); return; }
             string full = c.FullMarkdown(c.Markdown!);
             var result = MarkdownConverter.Parse(full, options);
-            int shift = c.ExplicitFrontMatter ? 0 : ConformanceCase.StandardFrontMatterLines;
-            var actual = result.Diagnostics.Select(d => new ExpectedFinding
-            {
-                Id = d.Id,
-                Severity = d.Severity == MarkdownSeverity.Error ? "error" : d.Severity == MarkdownSeverity.Warning ? "warning" : "suggestion",
-                Line = d.Line - shift, Column = d.Column, EndLine = d.EndLine - shift, EndColumn = d.EndColumn,
-            }).ToList();
-            var expectedText = c.Findings.Select(f => f.ToString()).ToList();
-            var actualText = actual.Select(f => f.ToString()).ToList();
-            Assert.True(expectedText.SequenceEqual(actualText), "Findings differ.\nExpected:\n" + string.Join("\n", expectedText) + "\nActual:\n" + string.Join("\n", result.Diagnostics.Select(d => d.ToString() + " [" + d.Severity + "] " + d.Message)));
-            for (int i = 0; i < c.Findings.Count; i++)
-            {
-                var e = c.Findings[i];
-                var d = result.Diagnostics[i];
-                if (e.HasFix) Assert.Equal(e.Fix, d.Replacement);
-                if (e.Choices != null) Assert.Equal(e.Choices, d.Choices.ToList());
-                if (e.Nearest != null) Assert.Equal(e.Nearest, d.Nearest.ToList());
-            }
+            AssertFindings(c, result.Diagnostics);
             if (c.Paragraphs != null) AssertParagraphs(c.Paragraphs, result.Document.Paragraphs, "Parse");
             if (c.CanonicalSpecified && !result.HasErrors)
             {
@@ -102,6 +108,28 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 // Canonical is idempotent: writing what was written changes nothing.
                 var again = MarkdownConverter.Parse(c.FullMarkdown(written), options);
                 Assert.Equal(written, MarkdownConverter.ToMarkdown(again.Document, options));
+            }
+        }
+
+        static void AssertFindings(ConformanceCase c, IReadOnlyList<MarkdownDiagnostic> diagnostics)
+        {
+            int shift = c.ExplicitFrontMatter ? 0 : ConformanceCase.StandardFrontMatterLines;
+            var actual = diagnostics.Select(d => new ExpectedFinding
+            {
+                Id = d.Id,
+                Severity = d.Severity == MarkdownSeverity.Error ? "error" : d.Severity == MarkdownSeverity.Warning ? "warning" : "suggestion",
+                Line = d.Line - shift, Column = d.Column, EndLine = d.EndLine - shift, EndColumn = d.EndColumn,
+            }).ToList();
+            var expectedText = c.Findings.Select(f => f.ToString()).ToList();
+            var actualText = actual.Select(f => f.ToString()).ToList();
+            Assert.True(expectedText.SequenceEqual(actualText), "Findings differ.\nExpected:\n" + string.Join("\n", expectedText) + "\nActual:\n" + string.Join("\n", actualText) + "\nMessages:\n" + string.Join("\n", diagnostics.Select(d => d.Id + " [" + d.Severity + "] " + d.Message)));
+            for (int i = 0; i < c.Findings.Count; i++)
+            {
+                var e = c.Findings[i];
+                var d = diagnostics[i];
+                if (e.HasFix) Assert.Equal(e.Fix, d.Replacement);
+                if (e.Choices != null) Assert.Equal(e.Choices, d.Choices.ToList());
+                if (e.Nearest != null) Assert.Equal(e.Nearest, d.Nearest.ToList());
             }
         }
 

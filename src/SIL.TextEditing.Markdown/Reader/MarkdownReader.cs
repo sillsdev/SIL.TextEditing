@@ -489,7 +489,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     ReadTable(table);
                     break;
                 case LinkReferenceDefinitionGroup group:
-                    UnsupportedBlock(group, "A link reference definition is not supported. Escape the [ as \\[.");
+                    UnsupportedBlock(group.Count > 0 ? group[0] : (Block)group, "A link reference definition is not supported. Escape the [ as \\[.");
                     break;
                 case ThematicBreakBlock rule:
                     UnsupportedBlock(rule, "A thematic break is not supported. Escape the first character.");
@@ -671,7 +671,7 @@ namespace SIL.TextEditing.Markdown.Reader
             int cells = 1;
             for (int i = a; i < b; i++) if (_source[i] == '|') cells++;
             if (cells == headerCells) return;
-            string replacement = "|" + string.Concat(Enumerable.Repeat(" --- |", headerCells));
+            string replacement = "|" + string.Concat(Enumerable.Repeat("---|", headerCells));
             _context.Report(MarkdownDiagnosticIds.TableRagged, MarkdownSeverity.Error,
                 "The delimiter row has " + cells + (cells == 1 ? " cell" : " cells") + ", the header has " + headerCells + ". Write one --- for each column of the header.",
                 lineStart, lineEnd, replacement);

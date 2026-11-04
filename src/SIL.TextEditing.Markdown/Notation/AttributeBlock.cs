@@ -253,6 +253,9 @@ namespace SIL.TextEditing.Markdown.Notation
                 else if (c == '\\') sb.Append("\\\\");
                 else if (escapePipe && c == '|') sb.Append("\\|");
                 else if (c == '&' && ReadsAsReference(value, i)) sb.Append("&amp;");
+                // Pandoc does not read a quoted value that starts with white space as quoted (it takes the quote as part of a bare value), so a leading space is
+                // written as a character reference, which it decodes; so is any control character, which a value cannot hold as it is.
+                else if ((i == 0 && char.IsWhiteSpace(c)) || c < ' ' || (c >= '\x7F' && c <= '\x9F')) sb.Append("&#x").Append(((int)c).ToString("X", CultureInfo.InvariantCulture)).Append(';');
                 else sb.Append(c);
             }
             sb.Append('"');

@@ -92,6 +92,9 @@ namespace SIL.TextEditing.Markdown.Reader
                     Report(MarkdownDiagnosticIds.LinkUrlRebuilt, MarkdownSeverity.Suggestion, "guid= names another object than url= does, so the stored URL was rebuilt from the GUID.");
                 }
             }
+            // A stored URL that names another project makes this a cross-project link too, however it is spelled here.
+            if (link.Project == null && link.Url != null && SilfwUrl.TryParse(link.Url, out var storedUrl) && storedUrl.Database != null
+                && storedUrl.Database != SilfwUrl.CurrentProject && storedUrl.Database != _options.SilfwDatabase) link.Project = storedUrl.Database;
             if (broken) Report(MarkdownDiagnosticIds.LinkBroken, MarkdownSeverity.Warning, "This link's target was deleted. The text and the last path are kept.");
 
             if (link.Project != null) return link; // a link into another project: no path here, never rebound, never broken

@@ -51,3 +51,32 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         }
     }
 }
+namespace SIL.TextEditing.Markdown.Tests.Conformance
+{
+    /// <summary>The documents the round-trip tests generate (every property number, several writing systems, object runs, NFD, surrogates, NUL, and the linguistic stress
+    /// characters of spec 6.5) are read by Pandoc too: what it reads must be the model that was written. The number of seeds is
+    /// <c>TEXTEDITING_PANDOC_SEEDS</c> (default 150; every seed starts a Pandoc process).</summary>
+    public class PandocGeneratedDocumentTests
+    {
+        public static IEnumerable<object[]> Seeds()
+        {
+            int count = int.TryParse(Environment.GetEnvironmentVariable("TEXTEDITING_PANDOC_SEEDS"), out int configured) ? configured : 150;
+            for (int seed = 1; seed <= count; seed++) yield return new object[] { seed };
+        }
+
+        [PandocTheory]
+        [MemberData(nameof(Seeds))]
+        public void PandocReadsAGeneratedDocumentAsWeWroteIt(int seed)
+        {
+            Assert.True(PandocRunner.Available, "Pandoc is not on the PATH, and this run says it must be (CI)");
+            var objects = new TestObjects();
+            var model = new ModelGenerator(seed, objects).NextDocument();
+            var options = Hosts.Project(objects);
+            string markdown = MarkdownConverter.ToMarkdown(model, options);
+            List<Paragraph> actual;
+            try { actual = PandocModel.Convert(PandocRunner.ToJson(markdown), options); }
+            catch (PandocMismatch e) { throw new Xunit.Sdk.XunitException("seed " + seed + ": Pandoc reads the text as something the profile has no meaning for: " + e.Message + "\n" + markdown); }
+            ConformanceTests.AssertParagraphs(model.Paragraphs, actual, "seed " + seed + ", Pandoc reading:\n" + markdown);
+        }
+    }
+}

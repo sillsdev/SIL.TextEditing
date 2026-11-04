@@ -29,6 +29,8 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         public bool CanonicalSpecified;
         public string? Canonical;
         public bool ExplicitFrontMatter;
+        /// <summary>"inline" for the multi-string field grammar (<c>ParseInline</c>, <c>ToInlineMarkdown</c>): one paragraph of inline text, no front matter, no blocks.</summary>
+        public bool Inline;
         public bool Pandoc = true;
         public string? PandocReason;
         public Dictionary<string, object?>? Project;
@@ -58,6 +60,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             var cases = new List<ConformanceCase>();
             foreach (string path in System.IO.Directory.GetFiles(Directory, "*.json").OrderBy(p => p, StringComparer.Ordinal))
             {
+                if (Path.GetFileName(path) == "projects.json") continue;
                 var list = Json.Arr(Json.Parse(File.ReadAllText(path)));
                 foreach (var item in list) cases.Add(Load(Path.GetFileName(path), Json.Obj(item)));
             }
@@ -73,6 +76,8 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             var c = new ConformanceCase { File = file, Name = Json.Str(o["name"]) };
             c.Markdown = Json.OptStr(o, "markdown");
             c.ExplicitFrontMatter = Json.OptStr(o, "frontMatter") == "explicit";
+            c.Inline = Json.OptStr(o, "mode") == "inline";
+            if (c.Inline) c.ExplicitFrontMatter = true;
             if (o.TryGetValue("paragraphs", out var ps) && ps != null) c.Paragraphs = Json.Arr(ps).Select(p => Paragraph(Json.Obj(p))).ToList();
             if (o.TryGetValue("findings", out var fs) && fs != null)
             {
@@ -100,9 +105,29 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 if (pd is bool b) c.Pandoc = b;
                 else if (pd is string reason) { c.Pandoc = false; c.PandocReason = reason; }
             }
-            if (o.TryGetValue("project", out var pr) && pr != null) c.Project = Json.Obj(pr);
+            if (o.TryGetValue("project", out var pr) && pr != null) c.Project = pr is string name ? Json.Obj(Projects()[name]) : Json.Obj(pr);
             if (o.TryGetValue("options", out var op) && op != null) c.Options = Json.Obj(op);
             return c;
+        }
+
+        static Dictionary<string, object?>? _projects;
+
+        /// <summary>The named projects of <c>projects.json</c>, which a case names in its <c>project</c> field instead of repeating.</summary>
+        static Dictionary<string, object?> Projects()
+            => _projects ?? (_projects = Json.Obj(Json.Parse(File.ReadAllText(Path.Combine(Directory, "projects.json")))));
+
+        /// <summary>A run's object data: spelled out (<c>objData</c>), or as <c>link</c> (a project link: the <c>silfw://</c> URL FieldWorks stores, built from the GUID,
+        /// tool and optional tag, or given whole as <c>url</c>), or as <c>picture</c> (the GUID of a picture the project holds).</summary>
+        static string? ObjData(Dictionary<string, object?> run)
+        {
+            if (run.TryGetValue("link", out var l) && l != null)
+            {
+                var link = Json.Obj(l);
+                string url = Json.OptStr(link, "url") ?? SilfwUrl.Build(Guid.Parse(Json.Str(link["guid"])), Json.OptStr(link, "tool"), Json.OptStr(link, "tag"), Json.OptStr(link, "database"));
+                return DefaultObjectMapper.ExternalPathNameType + url;
+            }
+            if (run.TryGetValue("picture", out var p) && p != null) return FixtureHost.PictureData(Guid.Parse(Json.Str(p)));
+            return Json.OptStr(run, "objData");
         }
 
         // ---------------------------------------------------------------- the model
@@ -122,7 +147,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
 
         static Run Run(Dictionary<string, object?> o)
         {
-            var run = new Run { Text = Json.Str(o["text"]), Ws = Json.Str(o["ws"]), ObjData = Json.OptStr(o, "objData") };
+            var run = new Run { Text = Json.Str(o["text"]), Ws = Json.Str(o["ws"]), ObjData = ObjData(o) };
             if (o.TryGetValue("props", out var props) && props != null) Props(Json.Obj(props), run.Props);
             return run;
         }

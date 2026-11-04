@@ -168,8 +168,16 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 {
                     string? ws = null;
                     if (attr.Classes.Contains("v")) ws = _vernacular;
-                    foreach (var kv in attr.Pairs) if (kv.Key == "ws") ws = kv.Value;
-                    return Make(style, props ?? new PropertyBag(), new List<Run>(), ws);
+                    var markerProps = props == null ? new PropertyBag() : props.Clone();
+                    var items = new List<AttrItem>();
+                    foreach (var kv in attr.Pairs)
+                    {
+                        if (kv.Key == "ws") ws = kv.Value;
+                        else if (kv.Key == "custom-style") style = kv.Value;
+                        else items.Add(new AttrItem(kv.Key, kv.Value, false, 0, 0));
+                    }
+                    PropertyKeys.Apply(items, markerProps, _context, item => throw new PandocMismatch("an attribute " + item.Key));
+                    return Make(style, markerProps, new List<Run>(), ws);
                 }
             }
             var runs = new List<Run>();
@@ -334,7 +342,9 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             }
             else
             {
-                string pandocDest = dest.Replace("%20", " ");
+                // Pandoc percent-encodes the characters a URL cannot hold as they are; the destination as written is what the format means.
+                string pandocDest = dest;
+                foreach (var pair in new[] { "%20| ", "%7C||", "%22|\"", "%3C|<", "%3E|>", "%5C|\\", "%5E|^", "%60|`", "%7B|{", "%7D|}", "%5B|[", "%5D|]" }) pandocDest = pandocDest.Replace(pair.Substring(0, 3), pair.Substring(4));
                 target = objects.BuildLink(pandocDest, form.Guid, form.Url, form.UrlGiven, form.Tool, form.Name, form.Example, form.Broken);
             }
             if (target == null) throw new PandocMismatch("a link the library cannot build: " + dest);
