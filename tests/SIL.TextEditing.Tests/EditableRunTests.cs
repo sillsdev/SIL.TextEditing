@@ -251,6 +251,60 @@ namespace SIL.TextEditing.Tests
             Assert.Equal("edLOCKEDit", Text(e));
         }
 
+        static DocumentEditor SemiThen(string semi, string after = "")
+        {
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(Marked(semi, TextPropertyNumbers.EditableSemi));
+            if (after.Length > 0) p.Runs.Add(new Run { Ws = "en", Text = after });
+            return new DocumentEditor(Doc(p));
+        }
+
+        [Fact]
+        public void Text_pasted_into_a_semi_editable_run_is_semi_editable_and_leaves_the_run_whole()
+        {
+            var e = SemiThen("semi");
+            e.SetCaret(new TextPosition(0, 2));
+            e.Paste(new List<Paragraph> { Para("en", "en", "Q") });
+            Assert.Equal("seQmi", Text(e));
+            var run = Assert.Single(e.Document.Paragraphs[0].Runs);   // typing there also leaves one run
+            Assert.Equal(RunEditable.SemiEditable, run.Editable);
+            e.Anchor = new TextPosition(0, 0);
+            e.SetCaret(new TextPosition(0, 5), true);
+            Assert.False(e.CanFormatSelection);                       // the pasted letter is refused formatting like the rest
+        }
+
+        [Fact]
+        public void Pasted_text_at_the_edge_of_a_semi_editable_run_takes_the_semi_run_it_follows_or_precedes()
+        {
+            var after = SemiThen("semi", "tail");
+            after.SetCaret(new TextPosition(0, 4));
+            after.Paste(new List<Paragraph> { Para("en", "en", "Q") });
+            Assert.Equal(new[] { RunEditable.SemiEditable, RunEditable.Editable }, after.Document.Paragraphs[0].Runs.ConvertAll(r => r.Editable).ToArray());
+            Assert.Equal("semiQ", after.Document.Paragraphs[0].Runs[0].Text);
+
+            var p = new Paragraph { DefaultWs = "en" };
+            p.Runs.Add(new Run { Ws = "en", Text = "head" });
+            p.Runs.Add(Marked("semi", TextPropertyNumbers.EditableSemi));
+            var before = new DocumentEditor(Doc(p));
+            before.SetCaret(new TextPosition(0, 4));   // between the editable and the semi run: typing goes in the editable one
+            before.Paste(new List<Paragraph> { Para("en", "en", "Q") });
+            Assert.Equal("headQ", before.Document.Paragraphs[0].Runs[0].Text);
+            Assert.Equal(RunEditable.Editable, before.Document.Paragraphs[0].Runs[0].Editable);
+        }
+
+        [Fact]
+        public void Paste_over_a_selection_and_across_paragraphs_in_a_semi_editable_run_stays_semi_editable()
+        {
+            var e = SemiThen("semi");
+            e.Anchor = new TextPosition(0, 1);
+            e.SetCaret(new TextPosition(0, 3), true);
+            e.Paste(new List<Paragraph> { Para("en", "en", "AB"), Para("en", "en", "CD") });
+            Assert.Equal(2, e.Document.Paragraphs.Count);
+            Assert.Equal("sAB", e.Document.Paragraphs[0].Text);
+            Assert.Equal("CDi", e.Document.Paragraphs[1].Text);
+            Assert.All(e.Document.Paragraphs, p => Assert.All(p.Runs, r => Assert.Equal(RunEditable.SemiEditable, r.Editable)));
+        }
+
         [Fact]
         public void The_host_can_still_apply_changes_to_a_read_only_field()
         {

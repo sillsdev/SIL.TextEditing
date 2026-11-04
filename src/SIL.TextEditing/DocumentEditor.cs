@@ -282,11 +282,18 @@ namespace SIL.TextEditing
             if (fragment != null)
             {
                 // Pasted text takes the editability of where it lands: a copied read-only run must not become text the user
-                // cannot remove from an editable field.
+                // cannot remove from an editable field, and text landing in a semi-editable run is semi-editable too, as typed
+                // text is (the run before the insertion point when it allows editing, else the one after).
+                var landing = Document.Paragraphs[a.Paragraph].RunBefore(a.Offset, out _);
+                if (landing == null || !AllowsEditing(landing)) landing = Document.Paragraphs[b.Paragraph].RunAfter(b.Offset, out _);
+                bool semi = landing != null && landing.Editable == RunEditable.SemiEditable;
                 fragment = fragment.Select(p => p.Clone()).ToList();
                 foreach (var p in fragment)
                     foreach (var r in p.Runs)
+                    {
                         r.Props.IntProps.Remove(TextPropertyNumbers.Editable);
+                        if (semi) r.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableSemi);
+                    }
             }
             if (SingleParagraph && fragment != null)
             {

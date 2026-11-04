@@ -31,7 +31,9 @@ one, and can change without superseding anything.
   the host (DataTree today) must tell the two apart.
 - **Semi-editable text takes typing, deletion and paste; it cannot be formatted.** The field treats a semi-editable
   run as editable for everything except formatting (ADR 0019). `CanFormatSelection` is true only when every run in the
-  selection is fully editable. Matches FieldWorks, which uses semi-editable for type-ahead boxes.
+  selection is fully editable. Matches FieldWorks, which uses semi-editable for type-ahead boxes. Pasted text takes the
+  editable value of the run it lands in when that run is semi-editable (the run before the insertion point, else the one
+  after), as typed text does, so a paste into the middle of a semi-editable run leaves it whole; anywhere else it is editable.
 - **Paste is one undo step; consecutive deletes are not grouped.** A paste, with the selection it replaces and any
   paragraph breaks it makes, is one step that neither joins the typing before it nor the typing after it. Each Backspace
   or Delete is a step of its own and ends any typing step (ADR 0023). Default: FieldWorks makes a step per delete
