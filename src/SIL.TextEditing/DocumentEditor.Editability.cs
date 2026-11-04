@@ -137,27 +137,34 @@ namespace SIL.TextEditing
             var places = new List<(TextPosition, TextPosition)>();
             if (IsReadOnly) return places;
             for (int pi = 0; pi < Document.Paragraphs.Count; pi++)
+                foreach (var (s, e) in PlacesIn(pi)) places.Add((new TextPosition(pi, s), new TextPosition(pi, e)));
+            return places;
+        }
+
+        /// <summary>The editable places of one paragraph as offset ranges [Start, End], in order, from its run boundaries (see
+        /// <see cref="EditablePlaces"/>); the field-wide read-only flag is not asked.</summary>
+        List<(int Start, int End)> PlacesIn(int pi)
+        {
+            var places = new List<(int, int)>();
+            var para = Document.Paragraphs[pi];
+            int limit = LimitOf(pi);
+            void Add(int s, int e)
             {
-                var para = Document.Paragraphs[pi];
-                int limit = LimitOf(pi);
-                void Add(int s, int e)
-                {
-                    if (!IsHiddenFrom(pi, s)) places.Add((new TextPosition(pi, s), new TextPosition(pi, Math.Min(e, limit))));
-                }
-                if (para.Length == 0) { places.Add((new TextPosition(pi, 0), new TextPosition(pi, 0))); continue; }
-                int start = -1, end = -1, pos = 0;
-                foreach (var r in para.Runs)
-                {
-                    int rs = pos, re = pos + r.Text.Length;
-                    pos = re;
-                    if (re == rs || !AllowsEditing(r)) continue;
-                    if (start >= 0 && rs <= end) { end = re; continue; }
-                    if (start >= 0) Add(start, end);
-                    start = rs;
-                    end = re;
-                }
-                if (start >= 0) Add(start, end);
+                if (!IsHiddenFrom(pi, s)) places.Add((s, Math.Min(e, limit)));
             }
+            if (para.Length == 0) { places.Add((0, 0)); return places; }
+            int start = -1, end = -1, pos = 0;
+            foreach (var r in para.Runs)
+            {
+                int rs = pos, re = pos + r.Text.Length;
+                pos = re;
+                if (re == rs || !AllowsEditing(r)) continue;
+                if (start >= 0 && rs <= end) { end = re; continue; }
+                if (start >= 0) Add(start, end);
+                start = rs;
+                end = re;
+            }
+            if (start >= 0) Add(start, end);
             return places;
         }
 
@@ -204,13 +211,23 @@ namespace SIL.TextEditing
         {
             if (IsEditableAt(p)) return p;
             int len = LimitOf(p.Paragraph);
-            int Find(int from, int step)
+            // The nearest editable point on each side comes from the paragraph's editable places (run boundaries), not from asking
+            // every offset: p is not editable, so no place holds it, and the first place that ends after it, or the last that
+            // starts before it, has the answer. The search never goes past the visible end, and a point beyond it looks no
+            // way back (the caret is not there to be moved).
+            var places = PlacesIn(p.Paragraph);
+            int fwd = -1, back = -1;
+            foreach (var (s, e) in places)
             {
-                for (int o = from; o >= 0 && o <= len; o += step)
-                    if (IsEditableAt(new TextPosition(p.Paragraph, o))) return o;
-                return -1;
+                if (e >= p.Offset + 1) { fwd = Math.Max(s, p.Offset + 1); break; }
             }
-            int fwd = Find(p.Offset + 1, 1), back = Find(p.Offset - 1, -1);
+            if (p.Offset - 1 <= len)
+            {
+                for (int i = places.Count - 1; i >= 0; i--)
+                {
+                    if (places[i].Start <= p.Offset - 1) { back = Math.Min(places[i].End, p.Offset - 1); break; }
+                }
+            }
             int pick;
             if (fwd < 0) pick = back;
             else if (back < 0) pick = fwd;

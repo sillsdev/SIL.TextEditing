@@ -47,10 +47,37 @@ namespace SIL.TextEditing.Avalonia.Tests
                 Assert.False(field.IsFocused);
                 Assert.Equal(new[] { "fr>fr" }, seen);
                 field.Editor.SetCaret(new TextPosition(0, 2));
-                Assert.Equal(new[] { "fr>fr", "fr>en" }, seen);   // a change while it has no focus is still reported, once
+                Assert.Equal(new[] { "fr>fr" }, seen);   // a change while it has no focus is not reported (#59)
                 field.Focus();
                 Headless.Pump();
-                Assert.Equal(new[] { "fr>fr", "fr>en", "en>en" }, seen);
+                Assert.Equal(new[] { "fr>fr", "en>en" }, seen);
+            }
+            finally { window.Close(); }
+        });
+
+        [Fact]
+        public void An_unfocused_field_announces_nothing_however_its_writing_system_changes_and_focus_gain_announces_where_it_ended() => Headless.Run(() =>
+        {
+            var (window, field, other) = WithOther();
+            try
+            {
+                other.Focus();
+                Headless.Pump();
+                Assert.False(field.IsFocused);
+                var seen = new List<string>();
+                field.ActiveWsChanged += (o, n) => seen.Add(o + ">" + n);
+                field.Editor.SetCaret(new TextPosition(0, 9));      // caret into fr
+                field.Editor.SetCaret(new TextPosition(0, 2), true); // selection whose first ws changes
+                field.Editor.SetActiveWs("fr");                     // the toolbar
+                field.Editor.SetCaret(new TextPosition(0, 9));
+                Assert.Empty(seen);
+                Assert.Equal("fr", field.Editor.ActiveWs);
+
+                field.Focus();
+                Headless.Pump();
+                Assert.Equal(new[] { "fr>fr" }, seen);   // one announcement, of where the field ended up
+                field.Editor.SetCaret(new TextPosition(0, 2));
+                Assert.Equal(new[] { "fr>fr", "fr>en" }, seen);   // focused again: changes are reported
             }
             finally { window.Close(); }
         });
