@@ -1,0 +1,87 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace SIL.TextEditing.Playground
+{
+    /// <summary>A stand-in for the host's dictionaries: a short word list for English and French, one checker each, and no dictionary
+    /// for any other writing system. A host such as FieldWorks puts Hunspell behind <see cref="ISpellChecker"/> instead.</summary>
+    public sealed class SampleSpelling : ISpellCheckHost
+    {
+        static readonly string[] English =
+        {
+            "the", "quick", "brown", "fox", "jumped", "over", "lazy", "dog", "and", "cat", "sat", "don't", "panic", "well", "known", "words",
+            "like", "are", "checked", "as", "dictionary", "decides", "a", "word", "in", "glued", "not", "locked", "wrong", "forced", "read",
+            "only", "only", "here", "is", "this", "text", "with", "an", "object", "inside", "type", "something", "to", "see", "squiggles",
+            "but", "blue", "more", "come", "go", "of", "french", "unknown", "jumper", "jumps", "ten", "than", "them", "then", "tea", "seat", "sit", "set", "mat",
+        };
+
+        static readonly string[] French = { "voici", "un", "exemple", "français", "mots", "le", "chat", "est", "sur", "tapis" };
+
+        readonly Dictionary<string, SampleChecker> _checkers;
+        readonly Action<string> _log;
+
+        public SampleSpelling(Action<string>? log = null)
+        {
+            _log = log ?? (_ => { });
+            _checkers = new Dictionary<string, SampleChecker>
+            {
+                ["en"] = new SampleChecker("en", English, _log),
+                ["fr"] = new SampleChecker("fr", French, _log),
+            };
+        }
+
+        public ISpellChecker? GetChecker(string ws) => _checkers.TryGetValue(ws, out var c) ? c : null;
+
+        public bool IsWordForming(string ws, int codePoint) => SpellScanner.DefaultIsWordForming(codePoint);
+
+        /// <summary>What a person can see of the dictionaries: the words added or ignored.</summary>
+        public IEnumerable<string> Added => _checkers.Values.SelectMany(c => c.Added);
+
+        sealed class SampleChecker : ISpellChecker
+        {
+            readonly string _ws;
+            readonly HashSet<string> _words;
+            readonly Action<string> _log;
+
+            public SampleChecker(string ws, IEnumerable<string> words, Action<string> log)
+            {
+                _ws = ws;
+                _words = new HashSet<string>(words, StringComparer.OrdinalIgnoreCase);
+                _log = log;
+            }
+
+            public List<string> Added { get; } = new List<string>();
+
+            public bool Check(string word) => _words.Contains(word);
+
+            // The words within two edits, the nearest first: enough to show a menu of several suggestions.
+            public IReadOnlyList<string> Suggest(string word) =>
+                _words.Select(w => (Word: w, Distance: Distance(w.ToLowerInvariant(), word.ToLowerInvariant()))).Where(x => x.Distance <= 2).OrderBy(x => x.Distance).ThenBy(x => x.Word, StringComparer.Ordinal).Select(x => x.Word).ToList();
+
+            public void Add(string word)
+            {
+                _words.Add(word);
+                Added.Add(word);
+                _log("dictionary " + _ws + ": added '" + word + "' (the host records an undo)");
+            }
+
+            public void Ignore(string word)
+            {
+                _words.Add(word);
+                _log("dictionary " + _ws + ": ignoring '" + word + "'");
+            }
+
+            static int Distance(string a, string b)
+            {
+                var d = new int[a.Length + 1, b.Length + 1];
+                for (int i = 0; i <= a.Length; i++) d[i, 0] = i;
+                for (int j = 0; j <= b.Length; j++) d[0, j] = j;
+                for (int i = 1; i <= a.Length; i++)
+                    for (int j = 1; j <= b.Length; j++)
+                        d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+                return d[a.Length, b.Length];
+            }
+        }
+    }
+}
