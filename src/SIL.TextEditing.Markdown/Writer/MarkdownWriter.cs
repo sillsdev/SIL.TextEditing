@@ -234,6 +234,8 @@ namespace SIL.TextEditing.Markdown.Writer
         static string Delimiter(int width) => "|" + string.Concat(Enumerable.Repeat(" --- |", width));
 
 
+        static string PlaceholderHeader(int width) => "|" + string.Concat(Enumerable.Repeat(" x |", width));
+
         static string SyntheticRow(int width) => "|" + string.Concat(Enumerable.Repeat(" [x]{v} |", width));
 
         static bool CellEligible(Entry e)
@@ -259,8 +261,9 @@ namespace SIL.TextEditing.Markdown.Writer
             return cells;
         }
 
-        /// <summary>Writes a header and the rows after it that fit. Every row is checked inside the whole table written so far: an
-        /// open bracket in one cell can otherwise pair with a closing one in another row, which no single row shows.</summary>
+        /// <summary>Writes a header and the rows after it that fit. A bracket one cell leaves open can pair with a closing bracket in
+        /// another row, which no single row shows, so every row is checked with a row of closing brackets after it: a bracket left open
+        /// is caught in its own row. The whole table is read once more at the end.</summary>
         string? TryTable(List<Entry> entries, int start, out int used)
         {
             used = 0;
@@ -272,18 +275,8 @@ namespace SIL.TextEditing.Markdown.Writer
             var expected = new List<Paragraph> { header.Paragraph };
             var lines = new List<string>();
 
-            bool TableReadsBack(string candidate)
-            {
-                string text = string.Join("\n", lines.Concat(new[] { candidate }));
-                var read = MarkdownReader.ReadParagraphs(text + "\n", _options, out bool clean);
-                if (!clean || read.Count != expected.Count) return false;
-                for (int i = 0; i < expected.Count; i++) if (!Equivalence.Equal(expected[i], read[i])) return false;
-                return true;
-            }
-
             string? headerLine = Search(new InlineGenerator(_options, context), headerCells, candidate =>
             {
-                // A row of closing brackets follows, so a bracket the header leaves open is caught here and not only when a later row closes it.
                 var read = MarkdownReader.ReadParagraphs(candidate + "\n" + Delimiter(width) + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
                 return clean && read.Count == 2 && Equivalence.Equal(header.Paragraph, read[0]);
             });
@@ -297,12 +290,19 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (row.IsEmpty || row.Props.Count > 0 || row.Paragraph.Style != Names.TableRow || !CellEligible(row)) break;
                 var cells = SplitCells(row.Paragraph);
                 if (cells.Count != width) break;
+                string? line = Search(new InlineGenerator(_options, context), cells, candidate =>
+                {
+                    var read = MarkdownReader.ReadParagraphs(PlaceholderHeader(width) + "\n" + Delimiter(width) + "\n" + candidate + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
+                    return clean && read.Count == 3 && Equivalence.Equal(row.Paragraph, read[1]);
+                });
+                if (line == null) break;
                 expected.Add(row.Paragraph);
-                string? line = Search(new InlineGenerator(_options, context), cells, candidate => TableReadsBack(candidate));
-                if (line == null) { expected.RemoveAt(expected.Count - 1); break; }
                 lines.Add(line);
                 j++;
             }
+            var all = MarkdownReader.ReadParagraphs(string.Join("\n", lines) + "\n", _options, out bool wholeIsClean);
+            if (!wholeIsClean || all.Count != expected.Count) return null;
+            for (int i = 0; i < expected.Count; i++) if (!Equivalence.Equal(expected[i], all[i])) return null;
             used = j - start;
             return string.Join("\n", lines);
         }
