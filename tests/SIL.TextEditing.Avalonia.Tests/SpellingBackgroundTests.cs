@@ -32,6 +32,8 @@ namespace SIL.TextEditing.Avalonia.Tests
             public int GateOwner;
             int _inside;
             public int MaxInside;
+            /// <summary>Called after each question with how many have been asked.</summary>
+            public Action<int>? AfterCheck;
 
             public bool Check(string word)
             {
@@ -49,6 +51,9 @@ namespace SIL.TextEditing.Avalonia.Tests
                         Entered!.Set();
                         Release.Wait();
                     }
+                    int count;
+                    lock (Asked) count = Asked.Count;
+                    AfterCheck?.Invoke(count);
                     if (Throws != null) throw Throws;
                     return Known.Contains(word);
                 }
@@ -313,6 +318,67 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.NotNull(s);
             Assert.Equal(2, en.MaxInside);                   // so a background checker's Check must be fully thread-safe
             rig.RunAll();
+        });
+
+        // ---- a batch that is out is cancelled when the field lets go of the host
+
+        [Fact]
+        public void Taking_the_host_away_while_a_batch_is_out_stops_the_worker_asking_the_old_checker() => Headless.Run(() =>
+        {
+            using var rig = new Rig(Two(), BgHost(out var en));
+            rig.Step();
+            en.AfterCheck = n => { if (n == 2) rig.Field.SpellChecking = null; };
+            rig.WorkerRuns();
+            Assert.Equal(2, en.Asked.Count);                 // the third and fourth words of the step were not asked
+            rig.RunAll();
+            Assert.Empty(rig.Field.SpellingMarks(0));
+        });
+
+        [Fact]
+        public void Leaving_the_visual_tree_while_a_batch_is_out_stops_the_worker_asking_and_coming_back_asks_again() => Headless.Run(() =>
+        {
+            using var rig = new Rig(Two(), BgHost(out var en));
+            rig.Step();
+            en.AfterCheck = n => { if (n == 2) rig.Window.Content = null; };
+            rig.WorkerRuns();
+            Assert.Equal(2, en.Asked.Count);
+            en.AfterCheck = null;
+            rig.RunAll();
+            Assert.Empty(rig.Field.SpellingMarks(0));        // the half answer was dropped
+            rig.Window.Content = rig.Field;                  // back on screen: everything in view is asked again
+            rig.RunAll();
+            Assert.True(rig.Field.IsSpellingComplete);
+            Assert.Equal(new[] { "saat" }, rig.Words(0));
+        });
+
+        [Fact]
+        public void Starting_checking_over_while_a_batch_is_out_stops_the_worker_asking_the_rest_of_it() => Headless.Run(() =>
+        {
+            using var rig = new Rig(Two(), BgHost(out var en));
+            rig.Step();
+            en.AfterCheck = n => { if (n == 2) rig.Field.RestartSpelling(); };
+            rig.WorkerRuns();
+            Assert.Equal(2, en.Asked.Count);
+            en.AfterCheck = null;
+            rig.RunAll();
+            Assert.True(rig.Field.IsSpellingComplete);
+            Assert.Equal(new[] { "saat" }, rig.Words(0));
+        });
+
+        [Fact]
+        public void A_new_host_works_even_when_the_old_checker_never_returned() => Headless.Run(() =>
+        {
+            using var rig = new Rig(Two(), BgHost(out var hung));
+            rig.Step();
+            Assert.Single(rig.Worker);                       // the batch is out and, for this test, never comes back
+            rig.Worker.Clear();
+            rig.Idle.Clear();
+            rig.Field.SpellChecking = BgHost(out var fresh);
+            Assert.NotEmpty(rig.Idle);
+            rig.RunAll();
+            Assert.True(rig.Field.IsSpellingComplete);
+            Assert.NotEmpty(fresh.Asked);
+            Assert.Equal(new[] { "saat" }, rig.Words(0));
         });
 
         // ---- failures stay on the field's thread

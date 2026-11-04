@@ -586,6 +586,7 @@ namespace SIL.TextEditing.Avalonia
         protected override void OnDetachedFromVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
         {
             _onScreen = false;
+            CancelBatch();   // a worker that is asking the host's checker stops: the field is going away
             if (_platformSettings != null) _platformSettings.ColorValuesChanged -= OnPlatformColoursChanged;
             _platformSettings = null;
             StopWatchingScrolling();

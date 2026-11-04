@@ -16,6 +16,26 @@ namespace SIL.TextEditing.Avalonia
         /// another step: the answer asks for the next one.</summary>
         bool _spellInFlight;
 
+        /// <summary>The batch that is out, so the field can tell the worker to stop asking when it lets go of the host.</summary>
+        SpellBatch? _spellBatchOut;
+
+        /// <summary>Tells the worker of the batch that is out to ask no further word (one question already running cannot be interrupted). The answer that
+        /// comes back is dropped; the in-flight flag is cleared when it does.</summary>
+        void CancelBatch()
+        {
+            var batch = _spellBatchOut;
+            if (batch != null) batch.Cancelled = true;
+        }
+
+        /// <summary>The field has a new host (or none): the batch that is out is cancelled and no longer waited for, so a checker that never returns cannot stop
+        /// the new host being checked.</summary>
+        void ReleaseBatch()
+        {
+            CancelBatch();
+            _spellBatchOut = null;
+            _spellInFlight = false;
+        }
+
         /// <summary>The words of one step whose dictionary questions went to the worker, with what is needed to apply the answers: only if the paragraph's
         /// state is the one that was being checked, at the stamp it had, in the same epoch.</summary>
         sealed class SpellBatch
@@ -27,6 +47,8 @@ namespace SIL.TextEditing.Avalonia
             public int Epoch;
             public int ZoneStart, Pos, RangeEnd;
             public bool Done;
+            /// <summary>Set by the field's thread when the host goes, the field leaves the screen or checking starts over: the worker asks no further word.</summary>
+            public volatile bool Cancelled;
             /// <summary>The marks of the step that the field's thread decided itself.</summary>
             public List<SpellingMark> Fresh = null!;
             public List<SpellScanner.Judged> Asked = null!;
@@ -54,6 +76,7 @@ namespace SIL.TextEditing.Avalonia
         void SendToWorker(SpellBatch batch)
         {
             _spellInFlight = true;
+            _spellBatchOut = batch;
             var dispatcher = OwnDispatcher;
             void Back(Action action)
             {
@@ -84,6 +107,7 @@ namespace SIL.TextEditing.Avalonia
             HashSet<string>? failed = null;
             for (int i = 0; i < answers.Length; i++)
             {
+                if (batch.Cancelled) { batch.Answers = null; return; }
                 var checker = (GuardedChecker)batch.Asked[i].Checker!;
                 if (failed != null && failed.Contains(checker.Ws)) { answers[i] = true; continue; }
                 try { answers[i] = checker.CheckOnWorker(batch.Asked[i].Word); }
@@ -102,12 +126,16 @@ namespace SIL.TextEditing.Avalonia
         /// the checking is of the same epoch. Otherwise they are dropped and the text is asked again.</summary>
         void FinishBatch(SpellBatch batch)
         {
-            _spellInFlight = false;
-            if (batch.Epoch == _spellEpoch)
+            if (ReferenceEquals(_spellBatchOut, batch))
+            {
+                _spellBatchOut = null;
+                _spellInFlight = false;
+            }
+            if (batch.Epoch == _spellEpoch && !batch.Cancelled)
                 foreach (var (ws, error) in batch.Failures) SpellFailure(ws, error);
             var paragraphs = Editor.Document.Paragraphs;
             int index = _spellHost == null ? -1 : _info.IndexOf(batch.Info);
-            bool current = batch.Answers != null && index >= 0 && index < paragraphs.Count && ReferenceEquals(paragraphs[index], batch.Paragraph)
+            bool current = !batch.Cancelled && batch.Answers != null && index >= 0 && index < paragraphs.Count && ReferenceEquals(paragraphs[index], batch.Paragraph)
                 && batch.Epoch == _spellEpoch && ReferenceEquals(batch.Info.Spell, batch.State) && batch.Paragraph.ChangeStamp == batch.Stamp;
             if (current)
             {

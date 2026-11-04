@@ -33,6 +33,7 @@ namespace SIL.TextEditing.Avalonia
             set
             {
                 StopListening();
+                ReleaseBatch();
                 _spellHost = value;
                 _spellGuard = value == null ? null : new GuardedHost(this, value);
                 // The word of a double-click, Ctrl+arrow, find and context request is the word the spell checker marks while the host has no word rule of its own (WordRules).
@@ -82,6 +83,7 @@ namespace SIL.TextEditing.Avalonia
         public void RestartSpelling()
         {
             SpellRestarts++;
+            CancelBatch();
             _spellFailed.Clear();
             (_spellGuard as GuardedHost)?.Forget();
             _spellEpoch++;
