@@ -215,14 +215,26 @@ namespace SIL.TextEditing.Markdown.Reader
             return true;
         }
 
+        /// <summary>The block with the brace it lacks, when that is an exact fix: the result reads as a block, and every bare word in it is a
+        /// flag the grammar knows. Stray words (<c>{ws=ceb and more</c>) would become unknown flags, so they get no fix.</summary>
+        static string? ClosingBraceFix(string observed)
+        {
+            string fixedBlock = observed + "}";
+            if (AttributeScanner.TryScan(fixedBlock, 0, fixedBlock.Length, out var block, out _, out _) != ScanStatus.Ok) return null;
+            foreach (var item in block!.Items)
+                if (item.IsFlag && item.Key != "v" && item.Key != "broken" && item.Key != "empty") return null;
+            return fixedBlock;
+        }
+
         /// <param name="delta">What to add to an offset in Markdig's text to get the offset in the source (not zero inside a table).</param>
         internal static void ReportBadBlock(ReaderContext context, ScanStatus status, int blockStart, int errorPos, string error, int delta = 0)
         {
             string id = status == ScanStatus.Unclosed ? MarkdownDiagnosticIds.UnclosedMark : MarkdownDiagnosticIds.MalformedAttribute;
-            int end = Math.Min(context.Source.Length, context.Base + delta + errorPos + 1);
             int start = context.Base + delta + blockStart;
-            // A block that only lacks its closing brace is fixed by adding it.
-            string? fix = status == ScanStatus.Unclosed && error == "no closing }" && end > start ? context.Source.Substring(start, end - start) + "}" : null;
+            // An unclosed block ran out at errorPos (the line end or the end of the text), so it ends there and the line end is not part
+            // of it; any other error is at a character of the block, which is the last one it covers.
+            int end = Math.Min(context.Source.Length, context.Base + delta + errorPos + (status == ScanStatus.Unclosed ? 0 : 1));
+            string? fix = status == ScanStatus.Unclosed && error == "no closing }" && end > start ? ClosingBraceFix(context.Source.Substring(start, end - start)) : null;
             context.Report(id, MarkdownSeverity.Error, "The attribute block here is not valid: " + error + ". Escape the brace as \\{ if it is text.", start, end, fix);
         }
     }

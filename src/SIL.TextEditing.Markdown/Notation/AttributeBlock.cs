@@ -136,7 +136,7 @@ namespace SIL.TextEditing.Markdown.Notation
                 if (c == '"') { i++; value = sb.ToString(); return ScanStatus.Ok; }
                 if (c == '\\')
                 {
-                    if (i + 1 >= limit) { errorPos = i; error = "no closing quote"; return ScanStatus.Unclosed; }
+                    if (i + 1 >= limit) { errorPos = i + 1; error = "no closing quote"; return ScanStatus.Unclosed; }
                     char n = s[i + 1];
                     if (n == '\\' || n == '"') { sb.Append(n); i += 2; continue; }
                     if (n == 'u' && TryHex4(s, i + 2, limit, out int cp)) { sb.Append((char)cp); i += 6; continue; }

@@ -141,6 +141,66 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Equal("{ws=ceb-x-old}", d.Replacement);
         }
 
+        static MarkdownDiagnostic Unclosed(string markdown, string id = "gdr.syntax.unclosed-mark")
+            => Assert.Single(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics, d => d.Id == id);
+
+        // The spec's own example, in a real file: the block that lacks its } ends at the end of the line, not after the line end.
+        [Theory]
+        [InlineData("line1\n[kaon]{ws=ceb-x-old\nline3\n")]
+        [InlineData("line1\n[kaon]{ws=ceb-x-old\n")]
+        [InlineData("line1\n[kaon]{ws=ceb-x-old")]
+        [InlineData("line1\r\n[kaon]{ws=ceb-x-old\r\nline3\r\n")]
+        [InlineData("line1\r[kaon]{ws=ceb-x-old\rline3\r")]
+        public void AnUnclosedBlockEndsBeforeItsLineEnd(string markdown)
+        {
+            var d = Unclosed(markdown);
+            Assert.Equal("{ws=ceb-x-old", d.Observed);
+            Assert.Equal("{ws=ceb-x-old}", d.Replacement);
+            Assert.Equal((2, 7, 2, 20), (d.Line, d.Column, d.EndLine, d.EndColumn));
+            Assert.Equal(markdown.IndexOf("{ws", System.StringComparison.Ordinal) + 13, d.End);
+        }
+
+        [Theory]
+        [InlineData("::: {style=S}\n[kaon]{ws=ceb-x-old\n:::\n", 2)]
+        [InlineData("::: {style=S}\r\n[kaon]{ws=ceb-x-old\r\n:::\r\n", 2)]
+        [InlineData("a\n\n- x\n  [kaon]{ws=ceb-x-old\n", 4)]
+        [InlineData("a\n\n> [kaon]{ws=ceb-x-old\n", 3)]
+        [InlineData("a\n\n| h |\n| --- |\n| [kaon]{ws=ceb-x-old\n", 5)]
+        public void AnUnclosedBlockEndsBeforeItsLineEndInEveryBlock(string markdown, int line)
+        {
+            var d = Unclosed(markdown);
+            Assert.Equal("{ws=ceb-x-old", d.Observed);
+            Assert.Equal("{ws=ceb-x-old}", d.Replacement);
+            Assert.Equal(line, d.Line);
+            Assert.Equal(line, d.EndLine);
+        }
+
+        [Theory]
+        [InlineData("[[w:palit]]{guid=1\nmore\n", "{guid=1", "{guid=1}")]
+        [InlineData("[t](http://x){ws=ceb\nmore\n", "{ws=ceb", "{ws=ceb}")]
+        [InlineData("::: {style=S\nx\n:::\n", "{style=S", "{style=S}")]
+        [InlineData("{empty style=S\n", "{empty style=S", "{empty style=S}")]
+        public void AnUnclosedBlockOfEveryKindEndsBeforeItsLineEnd(string markdown, string observed, string fix)
+        {
+            var d = MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics.First(x => x.Id == "gdr.syntax.unclosed-mark");
+            Assert.Equal(observed, d.Observed);
+            Assert.Equal(d.Line, d.EndLine);
+            Assert.DoesNotContain('\n', d.Observed!);
+            if (fix != null) Assert.Equal(fix, d.Replacement);
+        }
+
+        // Adding } is an exact fix only when what is left is known items: stray words would become flags.
+        [Theory]
+        [InlineData("see [kaon]{ws=ceb-x-old and more\n", "{ws=ceb-x-old and more")]
+        [InlineData("see [kaon]{ws=\n", "{ws=")]
+        [InlineData("see [kaon]{cs=\"Strong\n", "{cs=\"Strong")]
+        public void AnUnclosedBlockWhoseClosingBraceWouldNotFixItHasNoReplacement(string markdown, string observed)
+        {
+            var d = Unclosed(markdown);
+            Assert.Equal(observed, d.Observed);
+            Assert.Null(d.Replacement);
+        }
+
         [Fact]
         public void FindingsAreInSourceOrder()
         {
