@@ -63,12 +63,14 @@ namespace SIL.TextEditing.Playground.Tests
                     timers.Add(t);
                     return t;
                 };
-                s.Editor.TypingPause = TimeSpan.FromMilliseconds(60);
+                // An hour, not milliseconds: the editor joins typing by wall-clock distance, so a slow machine must not be able to separate the two keystrokes.
+                var pause = TimeSpan.FromHours(1);
+                s.Editor.TypingPause = pause;
                 s.Caret(0, 0);
                 s.Type("a");
                 Assert.True(s.Editor.HasOpenUndoGroup);
                 var first = Assert.Single(timers.FindAll(t => !t.Cancelled));
-                Assert.Equal(TimeSpan.FromMilliseconds(60), first.After);
+                Assert.Equal(pause, first.After);
                 s.Type("b");   // more typing before the pause passes: the first timer is cancelled and a new one starts
                 Assert.True(first.Cancelled);
                 var second = Assert.Single(timers.FindAll(t => !t.Cancelled));
