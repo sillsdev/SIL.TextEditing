@@ -80,3 +80,16 @@ _Avoid_: error, underline (that is a text property)
 
 **Spell checker**:
 The host's dictionary for one writing system, behind `ISpellChecker`. The field never loads a dictionary.
+
+## Markdown
+
+**FieldWorks Markdown**:
+The Markdown form of FieldWorks text: a strict profile of Pandoc Markdown that people and agents read and edit, and that the clipboard carries (ADR 0028).
+_Avoid_: GDR Markdown (for the general format), FWMD (in prose)
+
+**GDR Markdown**:
+A Grammar Design Record written in FieldWorks Markdown, following the GDR template.
+_Avoid_: GDR profile, GDR format
+
+**Project path**:
+The path of a FieldWorks object in the designed project tree, used in links.

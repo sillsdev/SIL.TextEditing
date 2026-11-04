@@ -16,3 +16,6 @@ Motif pin, and the net10.0 build must stay trimmable and AOT-compatible.
 - The suppression is removed when the minimum version is raised to the fixed release.
 
 Owner decision, 2026-11-03.
+
+Amended 2026-11-04: the Markdown converter does not reference libpalaso. It identifies writing systems by language tag
+and takes each one's language, direction and font from the file's front matter (ADR 0028).
