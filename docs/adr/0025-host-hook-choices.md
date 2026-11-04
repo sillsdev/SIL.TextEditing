@@ -55,3 +55,47 @@ take a `FindOptions`; a match is a `TextRange` inside one paragraph.
   replacement moves another. Text that was put in is not searched again, so replacing "a" with "aa" cannot loop. The selection
   is kept and moves with the text (FieldWorks restores the old selection without adjusting it for the change in length); a
   default. Matches that cannot be replaced are left, and the count says how many were replaced.
+
+## Context-menu information
+
+The host builds the menu; the field reports what it was asked about. `RichTextField.ContextMenuRequested` carries a
+`ContextInfo` (`DocumentEditor.DescribeContext` makes it) and where to open the menu.
+
+- **One request, one event.** The field rides on Avalonia's own context request, which both lines raise for a right click
+  (on release, as FieldWorks opens its menu on right-button up) and for the Menu key. Neither line raises it for Shift+F10, so the
+  field raises that itself. A host builds its menu from the event or sets Avalonia's `ContextMenu` on the field, not both. If
+  Avalonia ever raises one for Shift+F10 too, a host would see two events for that key; a default to revisit then.
+- **Right click inside a selection keeps it; outside it moves the caret there first.** "Inside" means the pointer is over a
+  selected character, so a click on the character just after the selection moves the caret. FieldWorks' rule for a click at the
+  very edge was not confirmed; a default.
+- **What is reported.** The word under the pointer (or at the caret) by the field's word rule, its range and its writing system;
+  a copy of the run there with its properties; the embedded object at the place, with its data, its range and whether it is a
+  link; the selection and its text; and a list for spelling suggestions, empty until ADR 0020 fills it. Everything is a copy, so
+  the host cannot change the document through it.
+- **A keyboard request means the caret.** The word is the one after the caret, else the one before it (the caret at the end of a
+  word means that word); an object is likewise the one after the caret, else before. A default.
+- **A link is an object whose data starts with a hot-link kind.** The first character of object data is the kind FieldWorks
+  stores (3 and 5 are hot links to a name and GUID, 4 an external path name); the field reports `IsLink` for those. These are
+  persisted facts, like property numbers. How a link is activated stays the host's.
+
+## Paging and scrolling
+
+Scrolling the view that shows the field is the host's (ADR 0021); the field moves the caret and the selection, and asks.
+
+- **PageUp and PageDown move the caret by the field's visible height**, as FieldWorks moves it by the height of its window, and
+  keep its place along the line (the caret's own horizontal place, not the remembered one Up and Down keep). Shift extends the
+  selection from the anchor. Ctrl and Ctrl+Shift do the same as without Ctrl, as in FieldWorks, which ignores the Ctrl. The
+  move stops on the first or last line. With a range selected, the move starts from the end the caret is at; a default (FieldWorks
+  measures from the lower end whichever it is). PageUp and PageDown never leave the field.
+- **The visible height** is the part of the field that shows: its bounds cut down to the scroll viewers round it, so a field that
+  fits moves to its first or last line. A host that knows its view height can set `PageHeight`.
+- **The field asks the host to scroll** through `ScrollRequested` (a reason, the part of the field to show in its own
+  coordinates, and a distance). A page move carries how far the caret moved, so a host that scrolls by that keeps the caret where
+  it was on the screen. When no handler marks the request handled, the field asks the nearest scroll viewer: it scrolls by the
+  distance, or brings the part into view. A field with neither a listener nor a scroll viewer works out nothing, which keeps an
+  unscrolled field's cost where it was.
+- **The caret is asked to be shown after a move the user makes** (keys, a click, typing), with a line of margin, as FieldWorks
+  scrolls a selection into view. Not while dragging, which has its own rule.
+- **Auto-scroll while drag-selecting** goes per pointer-move event, with no timer, as FieldWorks does: a pointer past the top or
+  bottom of what shows extends the selection only to just past the edge (by the scroll distance) and asks to scroll by 10
+  pixels when within 30 pixels of the edge and by 30 beyond that. A pointer held still scrolls no further, as in FieldWorks.

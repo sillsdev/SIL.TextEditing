@@ -98,12 +98,30 @@ follows changes of writing system, so a click into text of the same writing syst
 default keyboard, subscribe to the field's `LostFocus` and switch when focus has moved to a control of your own application
 that is not a field. The field raises nothing when it loses focus.
 
+## Host hooks (ADR 0021, ADR 0025)
+
+The field owns one text; the window around it belongs to the host. These are the hooks:
+
+- **Find and replace.** The host's dialog builds a `FindOptions` (text, match case, match diacritics, whole word, regular
+  expression, writing system, character style). `Editor.TryFind` searches from the selection (next or previous, optionally
+  wrapping), `Editor.FindAll` lists the matches, `Editor.ReplaceMatch`, `ReplaceCurrent` and `ReplaceAll` replace as
+  single undo steps. `RichTextField.Find` and `SelectMatch` also select the match, mark it as the current match
+  (`CurrentMatch`) and ask the host to scroll; `SetFindHighlight` highlights every match while the dialog is open. Text
+  is compared as NFD, so composed and decomposed forms find each other.
+- **Context menu.** `RichTextField.ContextMenuRequested` fires for a right click, the Menu key and Shift+F10 with a
+  `ContextInfo`: the word and its range, its writing system, the run and its properties, any link or embedded object, the
+  selection and an (empty, for now) list of spelling suggestions. The host builds the menu. Use the event or Avalonia's
+  `ContextMenu` on the field, not both.
+- **Paging and scrolling.** PageUp and PageDown (with Shift) move the caret by the field's visible height
+  (`VisibleBounds`, or `PageHeight` when the host sets it); a drag past the edge extends the selection and asks for
+  scrolling. The field never scrolls anything itself: it raises `ScrollRequested` (reason, the part to show, the distance)
+  and a scroll viewer round the field answers when no handler marks it handled.
 ## Known gaps
 
 - **Accessibility**: no UIA `TextPattern`; the field is an Edit with a name and a value only. Inside a net48
   `WinFormsAvaloniaControlHost` Avalonia's UIA subtree was empty in the spike (unexplained).
 - **Input**: real IME and Keyman interaction are untested (the headless tests drive the IME client directly). Missing:
-  scrolling inside long fields, drag and drop, spelling squiggles, find highlights, touch. Selection by mouse (click
+  scrolling inside long fields (the host scrolls; see Host hooks), drag and drop, spelling squiggles, touch. Selection by mouse (click
   with bidi and soft-wrap affinity, Shift+click, drag across paragraphs, double-click word, triple-click paragraph) and
   keyboard (Shift+arrows, Ctrl+arrows by word, Home/End by visual line, Ctrl+Home/End, Ctrl+A, Up/Down with the
   preferred x) is done. The word rule (`WordBreaks`) is deliberately simple: runs of letters, digits and marks, with

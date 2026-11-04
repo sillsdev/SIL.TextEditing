@@ -124,6 +124,15 @@ namespace SIL.TextEditing.Playground.Tests
             Headless.Pump();
         }
 
+        /// <summary>Presses and releases the right button at a window point, as a mouse does for a context menu.</summary>
+        public void RightClick(Point at)
+        {
+            ResetClicks();
+            _window.MouseDown(at, MouseButton.Right);
+            _window.MouseUp(at, MouseButton.Right);
+            Headless.Pump();
+        }
+
         public void MouseDrag(Point from, Point to)
         {
             ResetClicks();

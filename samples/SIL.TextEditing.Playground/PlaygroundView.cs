@@ -50,6 +50,18 @@ namespace SIL.TextEditing.Playground
             public const string Inspector = "Inspector";
             public const string EventLog = "EventLog";
             public const string ScenarioDescription = "ScenarioDescription";
+            public const string FindText = "FindText";
+            public const string ReplaceText = "ReplaceText";
+            public const string MatchCase = "MatchCaseCheck";
+            public const string MatchDiacritics = "MatchDiacriticsCheck";
+            public const string WholeWord = "WholeWordCheck";
+            public const string RegularExpression = "RegularExpressionCheck";
+            public const string HighlightAll = "HighlightAllCheck";
+            public const string FindNext = "FindNextButton";
+            public const string FindPrevious = "FindPreviousButton";
+            public const string Replace = "ReplaceButton";
+            public const string ReplaceAll = "ReplaceAllButton";
+            public const string FindStatus = "FindStatus";
             public static string WritingSystem(string tag) => "Ws_" + tag;
         }
 
@@ -79,6 +91,14 @@ namespace SIL.TextEditing.Playground
         CheckBox _readOnlyCheck = null!;
         CheckBox _singleParagraphCheck = null!;
         CheckBox _leaveHandled = null!;
+        TextBox _findBox = null!;
+        TextBox _replaceBox = null!;
+        CheckBox _matchCase = null!;
+        CheckBox _matchDiacritics = null!;
+        CheckBox _wholeWord = null!;
+        CheckBox _regex = null!;
+        CheckBox _highlightAll = null!;
+        TextBlock _findStatus = null!;
         readonly TextBlock _description;
         readonly TextBlock _wsLabel;
         readonly TextBlock _selectionLabel;
@@ -202,6 +222,8 @@ namespace SIL.TextEditing.Playground
             }
             wsBar.Children.Add(_selectionLabel);
 
+            var findBar = BuildFindBar();
+
             var fieldScroll = new ScrollViewer
             {
                 Content = _fieldStack,
@@ -239,11 +261,176 @@ namespace SIL.TextEditing.Playground
             top.Children.Add(toolbar);
             top.Children.Add(_description);
             top.Children.Add(wsBar);
+            top.Children.Add(findBar);
             var root = new DockPanel { Background = Brushes.WhiteSmoke };
             DockPanel.SetDock(top, Dock.Top);
             root.Children.Add(top);
             root.Children.Add(body);
             return root;
+        }
+
+        // ------------------------------------------------------------ find and replace (the host's dialog, ADR 0021)
+
+        Control BuildFindBar()
+        {
+            var bar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
+            bar.Children.Add(Label("Find:"));
+            _findBox = new TextBox { Name = Names.FindText, MinWidth = 150, Margin = new Thickness(2), IsTabStop = false };
+            ToolTip.SetTip(_findBox, "The text to find in the focused field");
+            _findBox.TextChanged += (s, e) => UpdateFindHighlight();
+            bar.Children.Add(_findBox);
+            bar.Children.Add(Label("Replace with:"));
+            _replaceBox = new TextBox { Name = Names.ReplaceText, MinWidth = 150, Margin = new Thickness(2), IsTabStop = false };
+            ToolTip.SetTip(_replaceBox, "The replacement text; a regular expression may use $1");
+            bar.Children.Add(_replaceBox);
+            CheckBox Option(string name, string text, string tip, bool on)
+            {
+                var box = new CheckBox { Name = name, Content = text, IsChecked = on, Focusable = false, Margin = new Thickness(2) };
+                ToolTip.SetTip(box, tip);
+                box.IsCheckedChanged += (s, e) => UpdateFindHighlight();
+                bar.Children.Add(box);
+                return box;
+            }
+            _matchCase = Option(Names.MatchCase, "Match case", "Upper and lower case differ (diacritics are then matched too)", false);
+            _matchDiacritics = Option(Names.MatchDiacritics, "Match diacritics", "Combining marks must agree; off, they are ignored", true);
+            _wholeWord = Option(Names.WholeWord, "Whole word", "A match starts and ends at word boundaries", false);
+            _regex = Option(Names.RegularExpression, "Regular expression", "The text is a regular expression", false);
+            _highlightAll = Option(Names.HighlightAll, "Highlight all", "Highlight every match, not only the current one", true);
+            bar.Children.Add(Tool(Names.FindPrevious, "Find Previous", "Select the previous match", () => DoFind(false)));
+            bar.Children.Add(Tool(Names.FindNext, "Find Next", "Select the next match", () => DoFind(true)));
+            bar.Children.Add(Tool(Names.Replace, "Replace", "Replace the selected match, then find the next", () => DoReplace()));
+            bar.Children.Add(Tool(Names.ReplaceAll, "Replace All", "Replace every match in the field as one undo step", () => DoReplaceAll()));
+            _findStatus = new TextBlock { Name = Names.FindStatus, Foreground = Brushes.DimGray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 2) };
+            bar.Children.Add(_findStatus);
+            return bar;
+        }
+
+        FindOptions CurrentFindOptions() => new FindOptions
+        {
+            Pattern = _findBox.Text ?? string.Empty,
+            MatchCase = _matchCase.IsChecked == true,
+            MatchDiacritics = _matchDiacritics.IsChecked == true,
+            WholeWord = _wholeWord.IsChecked == true,
+            UseRegularExpression = _regex.IsChecked == true,
+        };
+
+        public string FindStatusText => _findStatus.Text ?? string.Empty;
+
+        void UpdateFindHighlight()
+        {
+            if (_active == null || _highlightAll == null) return;
+            var options = CurrentFindOptions();
+            _active.Field.SetFindHighlight(options.Pattern.Length == 0 || !options.IsValid(out _) ? null : options, _highlightAll.IsChecked == true);
+        }
+
+        bool FindOptionsUsable(out FindOptions options)
+        {
+            options = CurrentFindOptions();
+            if (!options.IsValid(out var error))
+            {
+                _findStatus.Text = "Not a valid regular expression: " + error;
+                Log("find: " + _findStatus.Text);
+                return false;
+            }
+            if (options.Pattern.Length == 0)
+            {
+                _findStatus.Text = "Type something to find";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>Find Next or Find Previous: the host's dialog asks the focused field to search, select and highlight, wrapping
+        /// round and saying so, as FieldWorks' dialog does.</summary>
+        public bool DoFind(bool forward)
+        {
+            if (!FindOptionsUsable(out var options)) return false;
+            var field = _active.Field;
+            UpdateFindHighlight();
+            bool found = field.Find(options, forward, true, out bool wrapped);
+            _findStatus.Text = found ? (wrapped ? "Wrapped. " : string.Empty) + "Found at " + field.Editor.SelectionRange : "Not found";
+            Log("find " + (forward ? "next" : "previous") + ": " + _findStatus.Text);
+            return found;
+        }
+
+        /// <summary>Replace: replaces the selected match (one undo step), then finds the next, as FieldWorks' dialog does.</summary>
+        public bool DoReplace()
+        {
+            if (!FindOptionsUsable(out var options)) return false;
+            var field = _active.Field;
+            bool done = field.Editor.ReplaceCurrent(options, _replaceBox.Text ?? string.Empty);
+            if (!done)
+            {
+                // Nothing selected is a match yet (or it may not be edited): select the next one, as Replace does in FieldWorks.
+                _findStatus.Text = "Select a match first; found the next one";
+                DoFind(true);
+                return false;
+            }
+            Log("replace: replaced the selected match");
+            UpdateFindHighlight();
+            bool next = field.Find(options, true, true, out bool wrapped);
+            _findStatus.Text = "Replaced" + (next ? "; next match at " + field.Editor.SelectionRange : "; no more matches");
+            return true;
+        }
+
+        /// <summary>Replace All: every match in the focused field, one undo step.</summary>
+        public int DoReplaceAll()
+        {
+            if (!FindOptionsUsable(out var options)) return 0;
+            var field = _active.Field;
+            int count = field.Editor.ReplaceAll(options, _replaceBox.Text ?? string.Empty);
+            _findStatus.Text = count == 0 ? "Not found" : "Replaced " + count + (count == 1 ? " match" : " matches");
+            Log("replace all: " + _findStatus.Text);
+            UpdateFindHighlight();
+            return count;
+        }
+
+        // ------------------------------------------------------------ context menu (the host builds it, ADR 0021)
+
+        /// <summary>What the last context-menu request told the host.</summary>
+        public ContextInfo? LastContextInfo { get; private set; }
+        /// <summary>The captions of the menu the playground built for it.</summary>
+        public IReadOnlyList<string> LastContextMenuItems { get; private set; } = new List<string>();
+        ContextMenu? _contextMenu;
+        /// <summary>Closes the menu the last context-menu request opened, if it is still open.</summary>
+        public void CloseContextMenu() => _contextMenu?.Close();
+
+
+        void ShowContextMenu(Session session, ContextMenuRequestedEventArgs e)
+        {
+            var info = e.Info;
+            LastContextInfo = info;
+            var field = session.Field;
+            var items = new List<Control>();
+            var captions = new List<string>();
+            void Add(string caption, bool enabled, Action? click = null)
+            {
+                var item = new MenuItem { Header = caption, IsEnabled = enabled };
+                if (click != null) item.Click += (s, a) => click();
+                items.Add(item);
+                captions.Add(caption);
+            }
+            if (info.Word.Length > 0)
+            {
+                Add("Word: " + info.Word + " (" + info.WritingSystem + ")", false);
+                if (info.SpellingSuggestions.Count == 0) Add("(no spelling suggestions)", false);
+                foreach (var s in info.SpellingSuggestions) Add(s, true);
+                Add("Find \"" + info.Word + "\"", true, () => { _findBox.Text = info.Word; });
+            }
+            if (info.EmbeddedObject != null)
+                Add((info.EmbeddedObject.IsLink ? "Open link" : "Object") + ": " + info.EmbeddedObject.Data.Substring(Math.Min(1, info.EmbeddedObject.Data.Length)), info.EmbeddedObject.IsLink);
+            Add("Cut", field.Editor.HasSelection && field.Editor.CanEdit, () => ClipboardIdle = CopyAsync(true));
+            Add("Copy", field.Editor.HasSelection, () => ClipboardIdle = CopyAsync(false));
+            Add("Paste", field.Editor.CanEdit, () => ClipboardIdle = PasteAsync());
+            LastContextMenuItems = captions;
+            Log("context menu (" + e.Trigger + ") at " + e.Position.X.ToString("0", CultureInfo.InvariantCulture) + "," + e.Position.Y.ToString("0", CultureInfo.InvariantCulture)
+                + ": word " + (info.Word.Length == 0 ? "none" : "\"" + info.Word + "\" " + info.WordRange)
+                + ", ws " + info.WritingSystem
+                + (info.EmbeddedObject != null ? ", " + (info.EmbeddedObject.IsLink ? "link" : "object") + " at " + info.EmbeddedObject.Range : string.Empty)
+                + ", selection " + (info.HasSelection ? info.Selection.ToString() : "none"));
+            _contextMenu?.Close();
+            _contextMenu = new ContextMenu { ItemsSource = items };
+            _contextMenu.Open(field);
         }
 
         static TextBlock Label(string text) => new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 2, 2, 2) };
@@ -297,6 +484,7 @@ namespace SIL.TextEditing.Playground
             _syncing = false;
             _selectionState = string.Empty;
             Log("scenario: " + scenario.Name + (scenario.Many ? " (" + documents.Count + " fields)" : string.Empty));
+            UpdateFindHighlight();
             UpdateWsLabel();
             RefreshInspector();
             if (TopLevel.GetTopLevel(this) != null) Dispatcher.UIThread.Post(() => _active.Field.Focus());
@@ -331,6 +519,13 @@ namespace SIL.TextEditing.Playground
                 e.Handled = _leaveHandled.IsChecked == true;
             };
             field.EnterRequested += m => Log("Enter passed to the host" + (m == KeyModifiers.None ? string.Empty : " (" + m + ")") + ": the host's default button would run");
+            field.ContextMenuRequested += (o, e) => { Activate(session); ShowContextMenu(session, e); };
+            field.ScrollRequested += (o, e) =>
+            {
+                // The playground leaves scrolling to Avalonia's scroll viewer (the field asks it when nothing handles the request); it only
+                // reports the requests that are not just the caret following typing.
+                if (_active == session && e.Reason != ScrollReason.Caret) Log("scroll requested: " + e.Reason + (e.Delta == 0 ? string.Empty : " by " + e.Delta.ToString("0", CultureInfo.InvariantCulture) + " px"));
+            };
             field.UndoRequested += () => { Activate(session); UndoLast("Ctrl+Z in the field"); };
             field.RedoRequested += () => { Activate(session); RedoLast("Ctrl+Y in the field"); };
             field.SelectionWsState += state =>
