@@ -101,21 +101,30 @@ namespace SIL.TextEditing
             {
                 if (!HasSelection || !CanEdit) return false;
                 Ordered(out var a, out var b);
-                for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
-                {
-                    var p = Document.Paragraphs[pi];
-                    int s = pi == a.Paragraph ? a.Offset : 0;
-                    int e = pi == b.Paragraph ? b.Offset : p.Length;
-                    int pos = 0;
-                    foreach (var r in p.Runs)
-                    {
-                        int rs = pos, re = pos + r.Text.Length;
-                        pos = re;
-                        if (re > s && rs < e && r.Editable != RunEditable.Editable) return false;
-                    }
-                }
-                return true;
+                return AllFullyEditable(a, b);
             }
+        }
+
+        /// <summary>True when the field is not read-only and the range can be edited and every run in it is fully editable: the
+        /// test for formatting and for a find replacement.</summary>
+        internal bool CanFormatRange(TextPosition a, TextPosition b) => !IsReadOnly && CanEditRange(a, b) && AllFullyEditable(a, b);
+
+        bool AllFullyEditable(TextPosition a, TextPosition b)
+        {
+            for (int pi = a.Paragraph; pi <= b.Paragraph; pi++)
+            {
+                var p = Document.Paragraphs[pi];
+                int s = pi == a.Paragraph ? a.Offset : 0;
+                int e = pi == b.Paragraph ? b.Offset : p.Length;
+                int pos = 0;
+                foreach (var r in p.Runs)
+                {
+                    int rs = pos, re = pos + r.Text.Length;
+                    pos = re;
+                    if (re > s && rs < e && r.Editable != RunEditable.Editable) return false;
+                }
+            }
+            return true;
         }
 
         bool CanEditSelectionOrCaret()
