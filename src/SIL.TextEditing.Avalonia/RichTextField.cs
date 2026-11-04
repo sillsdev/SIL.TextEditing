@@ -65,6 +65,7 @@ namespace SIL.TextEditing.Avalonia
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => ActiveWsChanged?.Invoke(o, n);
             Editor.CaretMoved += OnCaretMoved;
+            Editor.CaretLimit = p => p >= 0 && p < _layouts.Count && p < Editor.Document.Paragraphs.Count ? VisibleLength(p) : int.MaxValue;
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
             GotFocus += (o, e) => InvalidateVisual();
@@ -639,16 +640,23 @@ namespace SIL.TextEditing.Avalonia
             return pl.Truncated && c.Offset >= pl.VisibleEnd;
         }
 
-        /// <summary>True when a hard line break would add a line nobody can see. The paragraph that keeps its format is the first one
-        /// of the selection (a selection that spans paragraphs is replaced by one paragraph of the first one's head, the break and the
-        /// last one's tail), so that paragraph's limit decides: refused when the selection spans paragraphs, or when the paragraph
-        /// already shows as many lines as its limit allows (an empty paragraph is one line).</summary>
+
+        /// <summary>True when a hard line break would leave text nobody can see. It lays out the paragraph the replace would leave
+        /// (the first one's head, the break and the last one's tail, in the format of the paragraph the replace keeps, see
+        /// <see cref="DocumentEditor.KeptParagraph"/>) and refuses when the line limit would hide text or the new line itself.</summary>
         bool BreakWouldBeHidden()
         {
-            Editor.Ordered(out var first, out var last);
-            var pl = ParagraphLayoutFor(first.Paragraph);
-            int max = pl.Format.MaxLines;
-            return max > 0 && (first.Paragraph != last.Paragraph || Math.Max(1, pl.Lines.Count) >= max);
+            // The survivor's line limit decides; an unlimited paragraph can hide nothing, so skip the scratch editor and layout.
+            var a = Editor.Anchor;
+            var b = Editor.Caret;
+            if (a.Paragraph > b.Paragraph || (a.Paragraph == b.Paragraph && a.Offset > b.Offset)) (a, b) = (b, a);
+            int survivor = Editor.KeptParagraph(a, b);
+            if (ParagraphLayout.ResolveFormat(Editor.Document.Paragraphs[survivor], WritingSystems, _styles).MaxLines <= 0) return false;
+            var result = Editor.PreviewLineBreak(out int kept);
+            if (result == null) return false;
+            double above = kept > 0 ? FormatOf(kept - 1).SpaceAfter : 0;
+            using var layout = ParagraphLayout.Build(result, _layoutWidth > 0 ? _layoutWidth : PreferredWidth, WritingSystems, ObjectImage, Foreground, ObjectAsGlyph, -1, null, null, _styles, LabelOf(kept), above);
+            return layout.Truncated || layout.HiddenTrailingBreak;
         }
 
         /// <summary>True when the character after the caret is a hard line break. Delete may remove it at the visible end of a

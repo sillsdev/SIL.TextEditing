@@ -15,6 +15,19 @@ namespace SIL.TextEditing
         /// in type-ahead edit boxes) as editable for typing and deletion and refuse only formatting in it.</summary>
         internal static bool AllowsEditing(Run r) => r.Editable != RunEditable.NotEditable;
 
+        /// <summary>Set by a field that hides text (a line limit): for a paragraph, the last offset the caret can rest at. The
+        /// caret never rests beyond it, and the search for an editable place stops there, so text hidden behind a
+        /// non-editable run is not an editable place: when the only one is hidden, the caret stays at the visible end and
+        /// there is nowhere to edit. Null means no limit.</summary>
+        public Func<int, int>? CaretLimit { get; set; }
+
+        int LimitOf(int paragraph)
+        {
+            int len = Document.Paragraphs[paragraph].Length;
+            var limit = CaretLimit;
+            return limit == null ? len : Math.Max(0, Math.Min(len, limit(paragraph)));
+        }
+
         /// <summary>True when an insertion point at <paramref name="p"/> can take typing: the paragraph is empty, or the
         /// run on either side is editable (FieldWorks asks for both sides of the point).</summary>
         public bool IsEditableAt(TextPosition p)
@@ -91,25 +104,35 @@ namespace SIL.TextEditing
 
         /// <summary>The editable places of the document, in order: each is a stretch of insertion points [Start, End] in one
         /// paragraph that can take typing, with no read-only text between them. A paragraph with no read-only text has one
-        /// place; a field-level read-only document has none.</summary>
+        /// place; a field-level read-only document has none. An insertion point takes typing when a run next to it allows
+        /// editing, so each editable run covers the points from its start to its end and touching runs merge: the places come
+        /// from the run boundaries, one pass over the runs, not from asking every offset. Text a line limit hides
+        /// (<see cref="CaretLimit"/>) is not a place.</summary>
         List<(TextPosition Start, TextPosition End)> EditablePlaces()
         {
             var places = new List<(TextPosition, TextPosition)>();
             if (IsReadOnly) return places;
             for (int pi = 0; pi < Document.Paragraphs.Count; pi++)
             {
-                int len = Document.Paragraphs[pi].Length;
-                int start = -1;
-                for (int o = 0; o <= len + 1; o++)
+                var para = Document.Paragraphs[pi];
+                int limit = LimitOf(pi);
+                void Add(int s, int e)
                 {
-                    bool ok = o <= len && IsEditableAt(new TextPosition(pi, o));
-                    if (ok && start < 0) start = o;
-                    else if (!ok && start >= 0)
-                    {
-                        places.Add((new TextPosition(pi, start), new TextPosition(pi, o - 1)));
-                        start = -1;
-                    }
+                    if (s <= limit) places.Add((new TextPosition(pi, s), new TextPosition(pi, Math.Min(e, limit))));
                 }
+                if (para.Length == 0) { places.Add((new TextPosition(pi, 0), new TextPosition(pi, 0))); continue; }
+                int start = -1, end = -1, pos = 0;
+                foreach (var r in para.Runs)
+                {
+                    int rs = pos, re = pos + r.Text.Length;
+                    pos = re;
+                    if (re == rs || !AllowsEditing(r)) continue;
+                    if (start >= 0 && rs <= end) { end = re; continue; }
+                    if (start >= 0) Add(start, end);
+                    start = rs;
+                    end = re;
+                }
+                if (start >= 0) Add(start, end);
             }
             return places;
         }
@@ -156,7 +179,7 @@ namespace SIL.TextEditing
         public TextPosition NearestEditable(TextPosition p, int direction = 0)
         {
             if (IsEditableAt(p)) return p;
-            int len = Document.Paragraphs[p.Paragraph].Length;
+            int len = LimitOf(p.Paragraph);
             int Find(int from, int step)
             {
                 for (int o = from; o >= 0 && o <= len; o += step)

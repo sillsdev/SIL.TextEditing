@@ -85,7 +85,7 @@ namespace SIL.TextEditing
         public void SetCaret(TextPosition p, bool extend = false, int direction = 0)
         {
             p.Paragraph = Math.Max(0, Math.Min(Document.Paragraphs.Count - 1, p.Paragraph));
-            p.Offset = Math.Max(0, Math.Min(Document.Paragraphs[p.Paragraph].Length, p.Offset));
+            p.Offset = Math.Max(0, Math.Min(LimitOf(p.Paragraph), p.Offset));
             if (!extend && !IsReadOnly) p = NearestEditable(p, direction);
             if (!p.Equals(Caret) || (!extend && !p.Equals(Anchor))) CloseUndoGroup();   // a caret move ends a typing step (ADR 0023)
             Caret = p;
@@ -187,6 +187,24 @@ namespace SIL.TextEditing
             InOneUndoStep(() => InsertOne(LineSeparator.ToString()));
         }
 
+        /// <summary>The paragraph <see cref="InsertLineBreak"/> would leave in place of the selection (or the caret), without
+        /// changing the document, so a field can lay it out and refuse a break whose result a line limit would hide. Null when
+        /// the break would change nothing. <paramref name="kept"/> is the index of the paragraph that keeps its identity
+        /// (<see cref="KeptParagraph"/>).</summary>
+        public Paragraph? PreviewLineBreak(out int kept)
+        {
+            kept = -1;
+            if (!CanEditSelectionOrCaret()) return null;
+            Ordered(out var a, out var b);
+            kept = KeptParagraph(a, b);
+            var scratch = new Document { Normalization = Document.Normalization };
+            for (int i = a.Paragraph; i <= b.Paragraph; i++) scratch.Paragraphs.Add(Document.Paragraphs[i].Clone());
+            var trial = new DocumentEditor(scratch) { Anchor = new TextPosition(0, a.Offset), Caret = new TextPosition(b.Paragraph - a.Paragraph, b.Offset) };
+            trial.SetActiveWs(ActiveWs);
+            trial.InsertLineBreak();
+            return scratch.Paragraphs[0];
+        }
+
         void InsertOne(string text)
         {
             if (!CanEditSelectionOrCaret()) return;
@@ -247,6 +265,12 @@ namespace SIL.TextEditing
             ReplaceRange(Caret, new TextPosition(Caret.Paragraph, GraphemeClusters.DeleteTarget(p.Text, Caret.Offset)), null, "delete");
         }
 
+        /// <summary>The index of the paragraph that keeps its identity, style and properties when [a, b) is replaced: the last one
+        /// when the range spans paragraphs, starts at the very start of the first and leaves text in the last (the non-empty side
+        /// wins), otherwise the first.</summary>
+        public int KeptParagraph(TextPosition a, TextPosition b) =>
+            a.Paragraph != b.Paragraph && a.Offset == 0 && b.Offset < Document.Paragraphs[b.Paragraph].Length ? b.Paragraph : a.Paragraph;
+
         /// <summary>
         /// Replaces [a, b) with a fragment (null for nothing). When the range spans paragraphs, the surviving
         /// paragraph keeps its identity, style and direction: the non-empty side wins, and the first (left)
@@ -258,11 +282,18 @@ namespace SIL.TextEditing
             if (fragment != null)
             {
                 // Pasted text takes the editability of where it lands: a copied read-only run must not become text the user
-                // cannot remove from an editable field.
+                // cannot remove from an editable field, and text landing in a semi-editable run is semi-editable too, as typed
+                // text is (the run before the insertion point when it allows editing, else the one after).
+                var landing = Document.Paragraphs[a.Paragraph].RunBefore(a.Offset, out _);
+                if (landing == null || !AllowsEditing(landing)) landing = Document.Paragraphs[b.Paragraph].RunAfter(b.Offset, out _);
+                bool semi = landing != null && landing.Editable == RunEditable.SemiEditable;
                 fragment = fragment.Select(p => p.Clone()).ToList();
                 foreach (var p in fragment)
                     foreach (var r in p.Runs)
+                    {
                         r.Props.IntProps.Remove(TextPropertyNumbers.Editable);
+                        if (semi) r.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableSemi);
+                    }
             }
             if (SingleParagraph && fragment != null)
             {
@@ -284,8 +315,7 @@ namespace SIL.TextEditing
             head.Delete(a.Offset, head.Length - a.Offset);
             var tail = last.Clone();
             tail.Delete(0, b.Offset);
-            bool headEmpty = head.Length == 0, tailEmpty = tail.Length == 0;
-            var survivor = (a.Paragraph != b.Paragraph && headEmpty && !tailEmpty) ? last : first;
+            var survivor = Document.Paragraphs[KeptParagraph(a, b)];
             var merged = survivor.Clone();
             merged.Runs = new List<Run>();
             foreach (var r in head.Runs) merged.Runs.Add(r.Clone());
