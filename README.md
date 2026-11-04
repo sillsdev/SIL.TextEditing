@@ -158,7 +158,7 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   both 11.3.17 and 12.1.2 the caret, hit testing and selection of a left-to-right run are wrong on a right-to-left paragraph's line
   of two or more runs, and likewise on a left-to-right paragraph's line of two or more runs with a right-to-left run in it (on 12 some of its ranges throw); an inline object in right-to-left text is mis-ordered on both. The layout works around the first two by
   reading such a line from its runs as they are drawn (`LineInfo.UsesRuns`: caret x, hit testing, visual stops and selection boxes
-  from each run's glyphs). It is not behind `#if`, because 12 has the second fault too (ADR 0015 expected a layer for 11.3 only).
+  from each run's glyphs). It is not behind `#if`, because 12 has the second fault too (ADR 0027, which supersedes the 11.3-only scope of ADR 0015).
   `RichTextField.ObjectAsGlyph` is the workaround for the third. On 12 only, the spaces a wrapped line ends with after a run of Arabic in a
   left-to-right paragraph come with glyph clusters numbered against the run's direction and answer distances and hits that do not add up
   (a click at the end of the line lands one space short); `RunSlot` places such a run by counting its spaces (`ClusterOrderTests` names the

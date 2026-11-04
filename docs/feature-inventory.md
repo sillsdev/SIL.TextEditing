@@ -334,7 +334,7 @@ U+FFFC (ORC) carries `ktptObjData`: first char = kodt type, rest = payload (KRN:
 | Feature | Legacy source | FA | TE | Size |
 |---|---|---|---|---|
 | Uniscribe shaping/itemisation per run, script-aware clusters, fallback fonts | V/lib/UniscribeSegment.cpp:785 `ShapePlaceRun`, 3064 `CallScriptItemize` | YES (Avalonia) | YES (Avalonia TextFormatter; headless tests on Indic, Thai, Arabic) | M |
-| Graphite smart-font rendering (ws-selected) | V/lib/GraphiteSegment.cpp, GraphiteEngine.cpp | UNVERIFIED (Avalonia has no Graphite; is it planned?) | NO | L |
+| Graphite smart-font rendering (ws-selected) | V/lib/GraphiteSegment.cpp, GraphiteEngine.cpp | NO (Avalonia has no Graphite) | NO, deliberately (ADR 0022) | L |
 | OpenType features per ws and per run | UniscribeSegment.cpp:241; ws DefaultFontFeatures V/VwPropertyStore.cpp:~1999 | NO | PARTIAL: ws features only (`ParagraphLayout.MakeProperties`) | M |
 | Paragraph direction (ktptRightToLeft) and ws direction; base direction affects alignment (Leading/Trailing) | V/VwPropertyStore.cpp:1357; alignment keyed to direction | PARTIAL | PARTIAL: Rtl flag; alignment not applied | M |
 | Direction depth per segment | V/lib/UniscribeSegment.cpp:1335 `get_DirectionDepth`, 1353 `SetDirectionDepth` | N/A | N/A | S |
