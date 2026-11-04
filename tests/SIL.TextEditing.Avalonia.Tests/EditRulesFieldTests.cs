@@ -82,6 +82,26 @@ namespace SIL.TextEditing.Avalonia.Tests
         }
 
         [Fact]
+        public void GetTextRun_finds_each_segment_through_SegmentAt_so_a_paragraph_of_many_runs_is_not_scanned_from_the_first()
+        {
+            // The formatter asks GetTextRun once per segment. Counted, not timed: the lookup is given a list that counts reads.
+            const int runs = 8000;
+            var props = new global::Avalonia.Media.TextFormatting.GenericTextRunProperties(global::Avalonia.Media.Typeface.Default);
+            var items = new ParagraphSource.Segment[runs];
+            for (int i = 0; i < runs; i++) items[i] = new ParagraphSource.Segment { Start = i * 10, End = i * 10 + 10, Properties = props };
+            var counting = new CountingList(items);
+            var source = new ParagraphSource { Text = new string('a', runs * 10), SegmentLookup = counting };
+            source.Segments.AddRange(items);
+            for (int i = 0; i < runs; i++)
+            {
+                var run = Assert.IsAssignableFrom<global::Avalonia.Media.TextFormatting.TextCharacters>(source.GetTextRun(i * 10 + 3));
+                Assert.Equal(7, run.Length);   // the rest of the segment that holds the index
+            }
+            Assert.True(counting.Reads > 0, "GetTextRun did not look segments up through SegmentAt");
+            Assert.True(counting.Reads < 20L * runs, $"{counting.Reads} segment reads for {runs} lookups");
+        }
+
+        [Fact]
         public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_joins_them_into_one_laid_out_paragraph() => Headless.Run(() =>
         {
             const int paragraphsPasted = 8000;

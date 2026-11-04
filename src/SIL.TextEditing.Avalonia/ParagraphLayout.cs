@@ -119,6 +119,9 @@ namespace SIL.TextEditing.Avalonia
 
         public string Text = string.Empty;
         public List<Segment> Segments = new List<Segment>();
+        /// <summary>Test seam: when set, <see cref="GetTextRun"/> looks segments up in this list instead of <see cref="Segments"/>
+        /// (the same segments), so a test can count the reads.</summary>
+        internal IReadOnlyList<Segment>? SegmentLookup;
         public Func<string, IImage?>? ObjectImage;
         public bool ObjectAsGlyph;
 
@@ -139,10 +142,11 @@ namespace SIL.TextEditing.Avalonia
         public TextRun? GetTextRun(int textSourceIndex)
         {
             if (textSourceIndex >= Text.Length) return null;
-            int lo = SegmentAt(Segments, textSourceIndex);
-            if (lo < Segments.Count)
+            IReadOnlyList<Segment> segments = SegmentLookup ?? Segments;
+            int lo = SegmentAt(segments, textSourceIndex);
+            if (lo < segments.Count)
             {
-                var s = Segments[lo];
+                var s = segments[lo];
                 if (textSourceIndex < s.Start) return null;
                 if (s.IsObject && ObjectAsGlyph)
                     return new TextCharacters(Text.AsMemory(textSourceIndex, 1), new RunTextProperties(s.Properties.Typeface, 28, s.Properties.ForegroundBrush ?? Brushes.Black, null, s.Properties.CultureInfo ?? CultureInfo.InvariantCulture, null));
