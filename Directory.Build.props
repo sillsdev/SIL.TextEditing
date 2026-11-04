@@ -5,6 +5,9 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+    <!-- Work counters (Paragraph.TextReads, RunList.ElementReads) let a test count work instead of timing it. Only a build that is not Release
+         counts, so a release build carries no counting on its hot paths (issue 107); tests that read them sit inside #if TEXTEDITING_COUNTERS. -->
+    <DefineConstants Condition="'$(Configuration)' != 'Release'">$(DefineConstants);TEXTEDITING_COUNTERS</DefineConstants>
     <!-- One tree for all outputs, so a Windows build and a WSL build never share obj state. -->
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
     <BaseOutputPath>$(MSBuildThisFileDirectory)bin\$(MSBuildProjectName)\</BaseOutputPath>

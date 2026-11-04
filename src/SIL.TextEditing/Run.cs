@@ -7,9 +7,24 @@ namespace SIL.TextEditing
 {
     /// <summary>One run of a string, as an ITsString reports it: text, a writing-system id, an opaque property bag
     /// and, for an object run, the object data. An object run's text is exactly one U+FFFC.</summary>
-    public sealed class Run
+    public sealed class Run : IBagOwner
     {
         public const char ObjectReplacement = '￼';
+
+        public Run()
+        {
+            _props = new PropertyBag();
+            _props.Attach(this);
+        }
+
+        // A copy takes its bag at once, so no default bag is made, attached and thrown away.
+        Run(PropertyBag props)
+        {
+            _props = props;
+            props.Attach(this);
+        }
+
+        void IBagOwner.BagChanged() => NotifyOwners(false);
 
         string _text = string.Empty;
         RunList? _owner;
@@ -77,7 +92,7 @@ namespace SIL.TextEditing
         internal int OwnerCount => (_owner == null ? 0 : 1) + (_otherOwners == null ? 0 : _otherOwners.Count);
 
         string _ws = "en";
-        PropertyBag _props = new PropertyBag();
+        PropertyBag _props;
         string? _objData;
 
         /// <summary>The run's writing system. Changing it tells every paragraph that holds the run (<see cref="Paragraph.ChangeStamp"/>).</summary>
@@ -92,14 +107,21 @@ namespace SIL.TextEditing
             }
         }
 
-        /// <summary>The run's property bag. Replacing it tells every paragraph that holds the run; changing the bag it holds, in place, is
-        /// not seen (call <c>RichTextField.RefreshFromDocument</c> afterwards).</summary>
+        /// <summary>The run's property bag. Replacing it, or changing the bag it holds in place (<see cref="PropertyBag.SetInt"/>, a write to
+        /// its <see cref="PropertyBag.IntProps"/>), tells every paragraph that holds the run (<see cref="Paragraph.ChangeStamp"/>). A bag
+        /// the run has let go of no longer does.</summary>
         public PropertyBag Props
         {
             get => _props;
             set
             {
-                _props = value;
+                if (value == null) throw new ArgumentNullException(nameof(value));
+                if (!ReferenceEquals(_props, value))
+                {
+                    _props.Detach(this);
+                    _props = value;
+                    value.Attach(this);
+                }
                 NotifyOwners(false);
             }
         }
@@ -132,7 +154,7 @@ namespace SIL.TextEditing
 
         public Run Clone()
         {
-            return new Run { Text = Text, Ws = Ws, ObjData = ObjData, Props = Props.Clone() };
+            return new Run(Props.Clone()) { Text = Text, Ws = Ws, ObjData = ObjData };
         }
 
         public Run CloneWithText(string text)

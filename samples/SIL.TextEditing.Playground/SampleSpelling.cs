@@ -33,7 +33,51 @@ namespace SIL.TextEditing.Playground
 
         void Changed() => RaiseDictionariesChanged();
 
-        public override ISpellChecker? GetChecker(string ws) => _checkers.TryGetValue(ws, out var c) ? c : null;
+        readonly Dictionary<string, BackgroundChecker> _background = new Dictionary<string, BackgroundChecker>();
+        readonly List<int> _checkThreads = new List<int>();
+
+        /// <summary>True: the checkers are <see cref="IBackgroundSpellChecker"/>s, so the field asks them on a worker thread (issue 103) and a slow dictionary
+        /// does not hold up typing. False (the default): the plain checkers, asked on the UI thread. A host that changes it raises
+        /// <see cref="SpellCheckHostBase.RaiseDictionariesChanged"/> so the fields ask again.</summary>
+        public bool OffUiThread { get; set; }
+
+        /// <summary>How long each word takes to look up when <see cref="OffUiThread"/> is on, in milliseconds: a stand-in for a dictionary that is slow.</summary>
+        public int Delay { get; set; }
+
+        /// <summary>The managed thread of each question the off-thread checkers were asked, so a person or a test can see they were not the UI thread's.</summary>
+        public IReadOnlyList<int> CheckThreads { get { lock (_checkThreads) return _checkThreads.ToList(); } }
+
+        public override ISpellChecker? GetChecker(string ws)
+        {
+            if (!_checkers.TryGetValue(ws, out var c)) return null;
+            if (!OffUiThread) return c;
+            if (!_background.TryGetValue(ws, out var b)) _background[ws] = b = new BackgroundChecker(c, this);
+            return b;
+        }
+
+        /// <summary>The same dictionary, safe to ask from a worker thread: it takes a moment per word and notes the thread that asked.</summary>
+        sealed class BackgroundChecker : IBackgroundSpellChecker, ISpellIgnorer
+        {
+            readonly SampleChecker _inner;
+            readonly SampleSpelling _host;
+
+            public BackgroundChecker(SampleChecker inner, SampleSpelling host)
+            {
+                _inner = inner;
+                _host = host;
+            }
+
+            public bool Check(string word)
+            {
+                lock (_host._checkThreads) _host._checkThreads.Add(Environment.CurrentManagedThreadId);
+                if (_host.Delay > 0) System.Threading.Thread.Sleep(_host.Delay);
+                return _inner.Check(word);
+            }
+
+            public IReadOnlyList<string> Suggest(string word) => _inner.Suggest(word);
+            public void Add(string word) => _inner.Add(word);
+            public void Ignore(string word) => _inner.Ignore(word);
+        }
 
         /// <summary>What a person can see of the dictionaries: the words added or ignored.</summary>
         public IEnumerable<string> Added => _checkers.Values.SelectMany(c => c.Added);
@@ -55,15 +99,23 @@ namespace SIL.TextEditing.Playground
 
             public List<string> Added { get; } = new List<string>();
 
-            public bool Check(string word) => _words.Contains(word);
+            // The word list is read on a worker thread when the checkers are off-thread ones, so it is guarded.
+            public bool Check(string word)
+            {
+                lock (_words) return _words.Contains(word);
+            }
 
             // The words within two edits, the nearest first: enough to show a menu of several suggestions.
-            public IReadOnlyList<string> Suggest(string word) =>
-                _words.Select(w => (Word: w, Distance: Distance(w.ToLowerInvariant(), word.ToLowerInvariant()))).Where(x => x.Distance <= 2).OrderBy(x => x.Distance).ThenBy(x => x.Word, StringComparer.Ordinal).Select(x => x.Word).ToList();
+            public IReadOnlyList<string> Suggest(string word)
+            {
+                string[] words;
+                lock (_words) words = _words.ToArray();
+                return words.Select(w => (Word: w, Distance: Distance(w.ToLowerInvariant(), word.ToLowerInvariant()))).Where(x => x.Distance <= 2).OrderBy(x => x.Distance).ThenBy(x => x.Word, StringComparer.Ordinal).Select(x => x.Word).ToList();
+            }
 
             public void Add(string word)
             {
-                _words.Add(word);
+                lock (_words) _words.Add(word);
                 Added.Add(word);
                 _log("dictionary " + _ws + ": added '" + word + "' (the host records an undo)");
                 _changed();
@@ -71,7 +123,7 @@ namespace SIL.TextEditing.Playground
 
             public void Ignore(string word)
             {
-                _words.Add(word);
+                lock (_words) _words.Add(word);
                 _log("dictionary " + _ws + ": ignoring '" + word + "'");
                 _changed();
             }

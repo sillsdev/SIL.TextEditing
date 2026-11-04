@@ -6,21 +6,15 @@ namespace SIL.TextEditing
     // Context-menu information (ADR 0021): the editor describes a place; the field raises the event and the host builds the menu.
     public sealed partial class DocumentEditor
     {
-        /// <summary>Finds the word at a character of a paragraph for <see cref="DescribeContext"/>: the paragraph, the index, and the word's range, or
-        /// null when the character is not part of a word. Null (the default) uses <see cref="WordBreaks"/>, whose rule agrees with the spell checker's
-        /// defaults. A field with spell checking sets it to the spell checker's rule, so the word of a context request is the squiggled word; it is the
-        /// field's to set, so a host that sets <c>SpellChecking</c> or clears it does not have its own overwritten.</summary>
-        internal Func<Paragraph, int, (int Start, int End)?>? WordFinder { get; set; }
+        /// <summary>The host's word rule for the questions the editor answers about words: the word of a context request (<see cref="DescribeContext"/>)
+        /// and a whole-word find (<see cref="FindOptions.WholeWord"/>). A field gives it the same rule it uses for the double-click and Ctrl+arrows
+        /// (<c>RichTextField.WordRules</c>, else its spell checker's), so there is one word rule: a field sets this property itself whenever its
+        /// <c>SpellChecking</c> or <c>WordRules</c> is set, so a host with a field sets those, not this. Null, the default, uses
+        /// <see cref="DefaultWordRules"/>.</summary>
+        public IWordRules? WordRules { get; set; }
 
         bool TryWordAt(Paragraph paragraph, string text, int index, out int start, out int end)
-        {
-            var finder = WordFinder;
-            if (finder == null) return WordBreaks.TryWordAt(text, index, out start, out end);
-            var found = finder(paragraph, index);
-            start = found?.Start ?? Math.Max(0, Math.Min(text.Length, index));
-            end = found?.End ?? start;
-            return found != null;
-        }
+            => WordBreaks.TryWordAt(paragraph, index, WordRules, out start, out end);
 
         /// <summary>Describes the place at <paramref name="position"/> for a context menu. With <paramref name="atCaret"/> the
         /// place is an insertion point (a keyboard request): the character after it counts, and when that is not part of a word or

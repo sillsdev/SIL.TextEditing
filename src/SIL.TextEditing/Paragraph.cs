@@ -6,7 +6,7 @@ namespace SIL.TextEditing
 {
     /// <summary>A paragraph: a host key, paragraph properties and a list of runs. Offsets are UTF-16 indices into
     /// the concatenated run text, equal to ITsString offsets.</summary>
-    public sealed class Paragraph
+    public sealed class Paragraph : IBagOwner
     {
         /// <summary>The host's opaque key for this paragraph (in FieldWorks the StTxtPara GUID); null until the host assigns one.
         /// The field never interprets it: it only moves it by the split and join rules of <see cref="DocumentEditor"/>.</summary>
@@ -22,44 +22,87 @@ namespace SIL.TextEditing
                 Touch();
             }
         }
+        bool _rtl;
         /// <summary>Paragraph direction (ktptRightToLeft).</summary>
-        public bool Rtl { get; set; }
+        public bool Rtl
+        {
+            get => _rtl;
+            set
+            {
+                if (_rtl == value) return;
+                _rtl = value;
+                Touch();
+            }
+        }
+        string _defaultWs = "en";
         /// <summary>The writing system used for typing in an empty paragraph.</summary>
-        public string DefaultWs { get; set; } = "en";
+        public string DefaultWs
+        {
+            get => _defaultWs;
+            set
+            {
+                if (_defaultWs == value) return;
+                _defaultWs = value;
+                Touch();
+            }
+        }
         /// <summary>The paragraph's own text properties (an ITsString paragraph's StyleRules), opaque like a run's bag: copied through
         /// every split, join and slice, never interpreted. <see cref="Style"/> and <see cref="Rtl"/> are the two the field reads.</summary>
-        PropertyBag _props = new PropertyBag();
+        PropertyBag _props;
         public PropertyBag Props
         {
             get => _props;
             set
             {
-                _props = value;
+                if (value == null) throw new ArgumentNullException(nameof(value));
+                if (!ReferenceEquals(_props, value))
+                {
+                    _props.Detach(this);
+                    _props = value;
+                    value.Attach(this);
+                }
                 Touch();
             }
         }
 
         RunList _runs;
 
-        public Paragraph()
+        public Paragraph() : this(new PropertyBag()) { }
+
+        // A copy takes its bag at once, so no default bag is made, attached and thrown away.
+        Paragraph(PropertyBag props)
         {
             _runs = new RunList(this);
             _stamp = NextStamp();
+            _props = props;
+            props.Attach(this);
         }
+
+        void IBagOwner.BagChanged() => Touch();
 
         static long s_stamps;
         long _stamp;
 
         static long NextStamp() => System.Threading.Interlocked.Increment(ref s_stamps);
 
-        void Touch() => _stamp = NextStamp();
+        // A field that shows this paragraph hears of every change (RichTextField, issue 101); nothing else listens.
+        Action<Paragraph>? _watchers;
+
+        internal void Watch(Action<Paragraph> watcher) => _watchers += watcher;
+        internal void Unwatch(Action<Paragraph> watcher) => _watchers -= watcher;
+
+        void Touch()
+        {
+            System.Threading.Interlocked.Exchange(ref _stamp, NextStamp());
+            _watchers?.Invoke(this);
+        }
 
         /// <summary>A number that is different whenever something the field draws or checks of this paragraph has changed: a run added,
-        /// removed or replaced, a run's text, writing system, object data or property bag replaced, the paragraph's style or property bag
-        /// replaced. No two paragraphs ever share one, so a result remembered with it cannot be taken for another paragraph's. What it does
-        /// not see: a property bag changed in place (<c>PropertyBag.SetInt</c> on a run's or the paragraph's own bag), and the paragraph
-        /// list of the document. A host that does either calls <c>RichTextField.RefreshFromDocument</c>.</summary>
-        public long ChangeStamp => _stamp;
+        /// removed or replaced, a run's text, writing system, object data or property bag replaced or changed in place
+        /// (<c>PropertyBag.SetInt</c>, a write to its <c>IntProps</c>), the paragraph's style, direction, default writing system or property
+        /// bag replaced or changed in place. No two paragraphs ever share one, so a result remembered with it cannot be taken for another
+        /// paragraph's. What it does not see: the paragraph list of the document, and a style resolver whose answers changed.</summary>
+        public long ChangeStamp => System.Threading.Interlocked.Read(ref _stamp);
 
         /// <summary>The paragraph's runs. Add, remove or change them directly if you like: the list and each run tell the paragraph,
         /// so <see cref="Length"/> and the run lookups stay right. Assigning a list that no paragraph holds adopts it; any other
@@ -142,31 +185,51 @@ namespace SIL.TextEditing
             }
         }
 
-        string? _text;
-        long _textStamp;
+        // The joined text and the stamp it was joined at, as one object that is never changed after it is made: a reader on another thread
+        // takes the whole pair or none of it, never the new stamp with the old string.
+        sealed class JoinedText
+        {
+            public readonly long Stamp;
+            public readonly string Text;
+            public JoinedText(long stamp, string text) { Stamp = stamp; Text = text; }
+        }
 
-        /// <summary>For a test: how many times <see cref="Text"/> has been asked for, so a test can count that work instead of timing it.</summary>
+        JoinedText? _joined;
+
+#if TEXTEDITING_COUNTERS
+        /// <summary>For a test (a build that defines <c>TEXTEDITING_COUNTERS</c>, as Debug does): how many times <see cref="Text"/> has been asked for,
+        /// so a test can count that work instead of timing it. A release build counts nothing and this stays 0.</summary>
         internal long TextReads { get; private set; }
+#else
+        internal long TextReads => 0;
+#endif
 
         /// <summary>The paragraph's text. One run's text is that run's string; several are joined once and the result kept until the paragraph changes
-        /// (<see cref="ChangeStamp"/>), so asking again is free.</summary>
+        /// (<see cref="ChangeStamp"/>), so asking again is free. Reading it is safe from any thread while nothing changes the paragraph (the
+        /// model is edited on the UI thread only, ADR 0024).</summary>
         public string Text
         {
             get
             {
+#if TEXTEDITING_COUNTERS
                 TextReads++;
-                if (Runs.Count == 1) return Runs[0].Text;
-                if (_text != null && _textStamp == _stamp) return _text;
+#endif
+                var runs = _runs;
+                if (runs.Count == 1) return runs[0].Text;
+                long stamp = ChangeStamp;
+                var joined = _joined;
+                if (joined != null && joined.Stamp == stamp) return joined.Text;
                 var sb = new StringBuilder();
-                foreach (var r in Runs) sb.Append(r.Text);
-                _textStamp = _stamp;
-                return _text = sb.ToString();
+                foreach (var r in runs) sb.Append(r.Text);
+                var made = new JoinedText(stamp, sb.ToString());
+                _joined = made;
+                return made.Text;
             }
         }
 
         public Paragraph Clone(bool keepKey = true)
         {
-            var p = new Paragraph { Style = Style, Rtl = Rtl, DefaultWs = DefaultWs, Props = Props.Clone() };
+            var p = new Paragraph(Props.Clone()) { Style = Style, Rtl = Rtl, DefaultWs = DefaultWs };
             if (keepKey) p.Key = Key;
             foreach (var r in Runs) p.Runs.Add(r.Clone());
             return p;

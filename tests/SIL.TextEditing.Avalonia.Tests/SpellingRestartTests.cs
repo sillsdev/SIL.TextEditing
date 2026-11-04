@@ -145,16 +145,16 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
-        public void A_property_bag_changed_in_place_is_not_noticed_until_the_host_refreshes_the_field() => Headless.Run(() =>
+        public void A_property_bag_changed_in_place_is_noticed_without_the_host_refreshing_the_field() => Headless.Run(() =>
         {
             var f = Field(Doc3());
             CheckAll(f);
             f.Editor.Document.Paragraphs[0].Runs[0].Props.SetInt(TextPropertyNumbers.SpellCheck, TextPropertyNumbers.SpellCheckDoNot);
-            Assert.Equal(new[] { "saat" }, Words(f, 0));     // pinned: the model cannot see this change
-            f.RefreshFromDocument();
+            Assert.Empty(f.SpellingMarks(0));                // the marks of the changed paragraph are gone at once
             Fixtures.Layout(f, 520);
             CheckAll(f);
-            Assert.Empty(Words(f, 0));
+            Assert.Empty(Words(f, 0));                       // and it was checked again, with the run now not checked
+            Assert.Equal(new[] { "teh" }, Words(f, 2));      // the other paragraphs were not touched
         });
 
         [Fact]
@@ -193,9 +193,10 @@ namespace SIL.TextEditing.Avalonia.Tests
             a.Runs[0].ObjData = "d";
             long s5 = a.ChangeStamp;
             Assert.Equal(6, new[] { s0, s1, s2, s3, s4, s5 }.Distinct().Count());
-            a.Runs[0].Props.SetInt(TextPropertyNumbers.Bold, 1);   // in place: not seen
-            Assert.Equal(s5, a.ChangeStamp);
-            Assert.Equal(a.ChangeStamp, a.ChangeStamp);
+            a.Runs[0].Props.SetInt(TextPropertyNumbers.Bold, 1);   // in place: seen too (issue 101)
+            long s6 = a.ChangeStamp;
+            Assert.NotEqual(s5, s6);
+            Assert.Equal(s6, a.ChangeStamp);
             var clone = a.Clone();
             Assert.NotEqual(a.ChangeStamp, clone.ChangeStamp);
         }
