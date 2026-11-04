@@ -44,7 +44,10 @@ one, and can change without superseding anything.
   the pasted text are dropped. One at the start still gives a space, even at the start of the paragraph. Nothing else is
   collapsed: pasting "a", two newlines and "b" gives "a" and two spaces and "b", white space beside a separator stays, and
   a no-break space is kept. Tab characters are removed (FieldWorks does the same; the field used to keep them, issue #35).
-  U+2028 is kept as a hard line break and is not a separator for this. Typed text gets the same treatment. Pasting only
+  U+2028 is kept as a hard line break and is not a separator for this. NEL and U+2029 count as separators here (ADR 0012),
+  whereas FieldWorks converts only CR and LF. A separator followed only by tabs is dropped too (tabs are removed first, so
+  "a", a newline and a tab gives "a"); this is deliberate and differs slightly from FieldWorks, which keeps a space there.
+  Typed text gets the same treatment. Pasting only
   one separator over a selection replaces the selection with nothing. Because a trailing separator is dropped, pasting
   "a" and a newline at the start of "bcd" gives "abcd": the words fuse. That is the FieldWorks result, not a bug.
 - **Enter at an editable and read-only boundary can leave a paragraph the field cannot join back.** Enter between an
@@ -63,4 +66,5 @@ one, and can change without superseding anything.
 `StartsUndoGroup` arrives. The field supports the first (it closes the open step before it raises an undo or redo
 request, so the event never fires in the middle of an undo), and the second is not ruled out. Not decided here.
 
-Owner decision, 2026-11-03.
+Written at the owner's request, 2026-11-03. Entries marked as defaults are not owner decisions and can change without
+superseding this ADR.
