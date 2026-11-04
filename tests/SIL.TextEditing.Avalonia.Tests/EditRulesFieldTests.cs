@@ -55,6 +55,22 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
+        public void Pasting_many_paragraphs_in_two_writing_systems_into_a_single_paragraph_field_takes_linear_time() => Headless.Run(() =>
+        {
+            // The joined paragraph has one run per paragraph (the writing system alternates), and the field lays it out as the
+            // caret lands in it, so the layout is part of what the paste costs.
+            var paragraphs = new List<Paragraph>();
+            for (int i = 0; i < 32000; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
+            var field = Fixtures.Field(OneParagraph(string.Empty), 520, f => f.SingleParagraph = true);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            field.Editor.Paste(paragraphs);
+            Fixtures.Layout(field, 520);
+            clock.Stop();
+            Assert.Single(field.Editor.Document.Paragraphs);
+            Assert.True(clock.Elapsed < System.TimeSpan.FromSeconds(5), $"took {clock.Elapsed}");
+        });
+
+        [Fact]
         public void Plain_Enter_still_splits_a_paragraph_or_goes_to_the_host() => Headless.Run(() =>
         {
             var field = Fixtures.Field(OneParagraph("abcd"));

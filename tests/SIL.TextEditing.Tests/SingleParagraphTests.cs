@@ -248,6 +248,21 @@ namespace SIL.TextEditing.Tests
         }
 
         [Fact]
+        public void Many_pasted_paragraphs_join_into_one_in_linear_time()
+        {
+            var paragraphs = new List<Paragraph>();
+            for (int i = 0; i < 16000; i++) paragraphs.Add(Para("en", i % 2 == 0 ? "en" : "fr", "line " + i));
+            var e = Single(string.Empty);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            e.Paste(paragraphs);
+            clock.Stop();
+            Assert.Single(e.Document.Paragraphs);
+            Assert.StartsWith("line 0 line 1 line 2 ", e.Document.Paragraphs[0].Text);
+            Assert.EndsWith(" line 15999", e.Document.Paragraphs[0].Text);
+            Assert.True(clock.Elapsed < System.TimeSpan.FromSeconds(5), $"took {clock.Elapsed}");
+        }
+
+        [Fact]
         public void A_leading_empty_paragraph_or_one_that_starts_with_whitespace_beside_a_break_gets_one_space_too()
         {
             var e = Single("X");
