@@ -62,7 +62,8 @@ namespace SIL.TextEditing.Avalonia.Tests
                 foreach (var box in DrawnBoxes(li))
                 {
                     // The leading edge of a character: its left in a left-to-right run, its right in a right-to-left one.
-                    double expected = box.Rtl ? box.Right : box.Left;
+                    // (a caret at the edge of the control is held inside it)
+                    double expected = System.Math.Min(box.Rtl ? box.Right : box.Left, width - ParagraphLayout.CaretWidth);
                     var caret = pl.CaretRect(box.Offset, true, new global::Avalonia.Media.CharacterHit(box.Offset));
                     Assert.True(System.Math.Abs(caret.X - expected) < 1, "line " + li.Start + ", offset " + box.Offset + ": the caret is at " + caret.X + ", the character is drawn from " + expected);
                 }

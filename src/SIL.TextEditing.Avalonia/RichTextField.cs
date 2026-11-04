@@ -349,7 +349,7 @@ namespace SIL.TextEditing.Avalonia
             var pl = ParagraphLayoutFor(c.Paragraph);
             var r = pl.CaretRect(c.Offset, false, CurrentHit());
             if (_preedit != null && pl.PreeditAt >= 0) r = pl.CaretRect(pl.PreeditAt + _preeditCursor, true);   // inside the preedit, in effective offsets
-            return new Rect(r.X, r.Y + ParagraphTop(c.Paragraph), 1.5, r.Height);
+            return new Rect(r.X, r.Y + ParagraphTop(c.Paragraph), ParagraphLayout.CaretWidth, r.Height);
         }
 
         // ------------------------------------------------ rendering

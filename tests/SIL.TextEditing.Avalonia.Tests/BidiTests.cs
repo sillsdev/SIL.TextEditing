@@ -160,7 +160,8 @@ namespace SIL.TextEditing.Avalonia.Tests
                 int merged = 0;
                 for (int q = 0; q < sorted.Count; q++) if (q == 0 || sorted[q].X > sorted[q - 1].Right + 0.5) merged++;
                 Assert.True(merged == groups, c.Name + " [" + range[0] + "," + range[1] + ") groups " + merged + " expected " + groups);
-                Assert.True(Math.Abs(expectedWidth - rects.Sum(r => r.Width)) < 1.5, c.Name + " [" + range[0] + "," + range[1] + ") width");
+                // (a stop at the edge of the control is held inside it, which can take a caret's width off the first or the last box)
+                Assert.True(Math.Abs(expectedWidth - rects.Sum(r => r.Width)) < 1.5 + ParagraphLayout.CaretWidth, c.Name + " [" + range[0] + "," + range[1] + ") width");
             }
         });
 
@@ -226,6 +227,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             foreach (var li in layout.Lines)
                 foreach (var stop in layout.VisualStops(li))
                 {
+                    if (stop.X > width - ParagraphLayout.CaretWidth - 0.01) continue;   // held inside the control: not where the character edge is
                     var hit = layout.HitTestDetailed(new Point(stop.X, li.Y + 2));
                     var caret = layout.CaretRect(hit.Offset, false, hit.CaretHit);
                     Assert.True(Math.Abs(caret.X - stop.X) < 1, "a click at " + stop.X + " (the stop of offset " + stop.Offset + ") gave offset " + hit.Offset + ", whose caret is at " + caret.X);

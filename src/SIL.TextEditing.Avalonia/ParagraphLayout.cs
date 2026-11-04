@@ -375,8 +375,6 @@ namespace SIL.TextEditing.Avalonia
         public double X { get; }
         /// <summary>The height of the slot.</summary>
         public double Height { get; }
-        /// <summary>How wide the line was allowed to be, from <see cref="X"/> (the text area less the room kept for an ellipsis), or 0 when not known.</summary>
-        internal double Available { get; set; }
         /// <summary>Where the text of the line starts vertically: at the bottom of the slot, or, under an exact line height, wherever puts the
         /// baseline at the same fraction of the slot as the text's own (the text then overflows the slot both ways when it is taller).</summary>
         public double TextY => double.IsNaN(_baselineInSlot) ? Y + Height - Lower - Line.Height : Y + _baselineInSlot - Line.Baseline;
@@ -873,7 +871,7 @@ namespace SIL.TextEditing.Avalonia
                 }
                 double slot = layout.SlotHeight(line.Height + ExtentOf(line, layout._offsets));
                 if (first && pf.ExactLineHeight && pf.LineHeight > 0 && line.Height > 0) layout._exactAscentFraction = ExactFraction(line);
-                var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl) { Available = usedWidth };
+                var shown = new LineInfo(line, y, lineX, slot, layout.BaselineIn(slot), layout._offsets, layout.Rtl);
                 layout.Lines.Add(shown);
                 if (pf.Align == 5 && index + line.Length < source.Text.Length) layout.Justify(shown, usedWidth);
                 y += slot;
@@ -1395,25 +1393,21 @@ namespace SIL.TextEditing.Avalonia
             if (li.IsEmpty) return new Rect(li.EmptyCaretX, li.TextY, 1, li.Line.Height);
             var h = hit.HasValue && hit.Value.FirstCharacterIndex + hit.Value.TrailingLength == e ? hit.Value : new CharacterHit(e);
             if (h.TrailingLength == 0 && e > li.Start && e == TextEnd(li) && e < li.End && EffectiveText[e] == HardLineBreak) h = TrailingHit(e);   // before the break: after the last character of the line
-            return new Rect(CaretX(li, h), li.TextY - CaretOffset(li, e), 1, li.Line.Height);
+            return new Rect(CaretX(li, h), li.TextY - CaretOffset(li, e), CaretWidth, li.Line.Height);
         }
 
         /// <summary>Where a caret hit is drawn on a line, in paragraph coordinates. A caret in the spaces a wrapped line ends with (End puts it
-        /// after them) would hang past the text area when the text fills the line, so it is drawn no further out than the text area's edge
-        /// or the last letter, whichever is further; its offset is unchanged.</summary>
+        /// after them) is drawn one space width further out for each, as FieldWorks does, even past the text area; it stops at the edge of
+        /// the control so that it is always seen.</summary>
         double CaretX(LineInfo li, CharacterHit h)
         {
             double x = li.X + li.Map(li.DistanceOf(h));
-            int o = h.FirstCharacterIndex + h.TrailingLength;
-            if (li.IsEmpty || li.Available <= 0 || li == Lines[Lines.Count - 1]) return x;
-            int core = TextBeforeTrailingSpaces(li);
-            if (o <= core || core <= li.Start) return x;
-            double inkEdge = double.NaN;
-            foreach (var piece in li.Pieces(li.Start, core))
-                inkEdge = double.IsNaN(inkEdge) ? (Rtl ? piece.Key.X : piece.Key.Right) : (Rtl ? Math.Min(inkEdge, piece.Key.X) : Math.Max(inkEdge, piece.Key.Right));
-            if (double.IsNaN(inkEdge)) return x;
-            return Rtl ? Math.Max(x, Math.Min(li.X, inkEdge)) : Math.Min(x, Math.Max(li.X + li.Available, inkEdge));
+            if (li.IsEmpty || double.IsInfinity(LayoutWidth)) return x;
+            return Math.Max(0, Math.Min(x, LayoutWidth - CaretWidth));
         }
+
+        /// <summary>The width of the caret as the field draws it.</summary>
+        internal const double CaretWidth = 1.5;
 
         /// <summary>How far a caret at the effective offset is raised: it follows the character before it (the one it would extend), or the one
         /// after it at the start of a line.</summary>
