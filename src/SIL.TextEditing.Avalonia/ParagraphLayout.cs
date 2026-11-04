@@ -820,7 +820,15 @@ namespace SIL.TextEditing.Avalonia
             var weight = (FontWeight)f.Weight;
             var style = f.Italic ? FontStyle.Italic : FontStyle.Normal;
             double size = f.SizePt > 0 ? f.SizePt : ws.Size;
-            if (f.Superscript != 0) size *= CharFormat.DefaultSuperscriptScale;
+            var typeface = new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight);
+            double scriptOffset = 0;
+            if (f.Superscript != 0)
+            {
+                // The font's own size and offset for superscripts and subscripts, from its OS/2 table; FieldWorks' two thirds where it gives none.
+                var place = ScriptPlacement.For(typeface, f.Superscript == 1);
+                scriptOffset = (f.Superscript == 1 ? 1 : -1) * place.OffsetScale * size;
+                size *= place.SizeScale;
+            }
             FontFeatureCollection? features = cache != null ? cache.Features(ws.Features, f.FontFeatures) : FormatCache.ParseFeatures(ws.Features, f.FontFeatures);
             CultureInfo culture;
             try { culture = CultureInfo.GetCultureInfo(wsTag); }
@@ -829,8 +837,8 @@ namespace SIL.TextEditing.Avalonia
             int lineKind = preedit ? 3 : f.Underline >= 1 && f.Underline <= 5 ? f.Underline : 0;
             var lineBrush = lineKind == 0 ? null : forceText ?? (preedit ? null : ColorBrush(f.UnderColor)) ?? text;
             var decorations = ownDecorations ? null : preedit ? Decorations(3, null, text) : Decorations(f.Underline, f.UnderColor, text);
-            var baseline = f.Superscript == 1 ? BaselineAlignment.Superscript : f.Superscript == 2 ? BaselineAlignment.Subscript : BaselineAlignment.Baseline;
-            return new RunTextProperties(new Typeface(new FontFamily(f.FontFamily ?? ws.Font), style, weight), size, text, decorations, culture, features, ColorBrush(f.BackColor), baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null, preedit ? 0 : f.OffsetPt, lineKind, lineBrush, lineKind == 3 && (preedit || ColorBrush(f.UnderColor) == null));
+            // The raise or drop is the run's baseline offset (the layout draws the run shifted and makes room for it), on top of the offset the run has of its own.
+            return new RunTextProperties(typeface, size, text, decorations, culture, features, ColorBrush(f.BackColor), BaselineAlignment.Baseline, !preedit && f.Underline == 6 ? ColorBrush(f.UnderColor) ?? text : null, (preedit ? 0 : f.OffsetPt) + scriptOffset, lineKind, lineBrush, lineKind == 3 && (preedit || ColorBrush(f.UnderColor) == null));
         }
 
         /// <summary>Where a run's top is below the top of its line, as Avalonia draws it: baselines aligned, a superscript at the top, a subscript at the bottom.</summary>

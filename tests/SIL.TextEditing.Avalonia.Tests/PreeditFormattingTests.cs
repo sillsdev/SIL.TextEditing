@@ -56,7 +56,9 @@ namespace SIL.TextEditing.Avalonia.Tests
             var field = Fixtures.Field(doc, 400);
             field.Editor.SetCaret(new TextPosition(0, 3));
             var properties = PreeditProperties(field, "xyz");
-            Assert.Equal(BaselineAlignment.Superscript, properties.BaselineAlignment);
+            Assert.True(properties.FontRenderingEmSize < 16 * 0.9, "smaller than the text beside it: " + properties.FontRenderingEmSize);
+            double raised = field.ParagraphLayoutFor(0).Lines[0].Pieces(3, 6).Single().Value;   // the layout's own offset for the composition (Avalonia's runs do not carry it)
+            Assert.True(raised > 0, "raised: " + raised);
         });
 
         [Fact]

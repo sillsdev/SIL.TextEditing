@@ -31,8 +31,9 @@ One source tree serves both Avalonia generations. The netstandard2.0 target comp
 versions are set per target framework in `Directory.Packages.props`. There is currently no `#if` in the source: the spike's one per-version spot (the clipboard API) is not needed,
 because Avalonia 11.3.17 already has the `DataTransfer` API that 12 uses, and `FontFeature` parsing is written
 without `FontFeatureCollection.Parse` (absent in 11.3) for both. Keep any future per-version difference small, behind
-`#if NET10_0_OR_GREATER`, and list it here. The one difference now: `SpellScanner` asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a
-one-character string on netstandard2.0 (no overload there), which only costs an allocation for a letter outside the basic plane.
+`#if NET10_0_OR_GREATER`, and list it here. The differences now: `SpellScanner` asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a
+one-character string on netstandard2.0 (no overload there), which only costs an allocation for a letter outside the basic plane; and `ScriptPlacement` reads a font's
+OS/2 and hhea tables with `IGlyphTypeface.TryGetTable` on netstandard2.0 and, as Avalonia 12 gives no access to tables, from the font file's own table directory on net10.0 (once for each font).
 
 Avalonia.Desktop, Avalonia.Themes.Fluent and Avalonia.Win32.Interoperability are used by the samples only; the
 libraries do not reference them. The playground tests load the Fluent theme so the sample's buttons and pickers have
@@ -191,7 +192,7 @@ to following the theme. A run's own colours (text property 8 and 9) are the docu
   be greater than zero"; the layout catches it and answers that such a range has no box (`RlmWrapTests` names it and fails when 12 stops doing it).
 - **Paragraph and character properties**: drawn, with the host's `IStyleResolver` supplying named styles (ADR 0004): weight (any 100 to
   900, invert), italic, foreground and background colour, underline type and colour (dotted, dashed, single, double,
-  strikethrough, and the squiggle, which the layout draws itself as a zigzag below the baseline), superscript and subscript, font size (absolute, relative, named), font
+  strikethrough, and the squiggle, which the layout draws itself as a zigzag below the baseline), superscript and subscript (sized, and raised or lowered, as the font's own OS/2 table says, with FieldWorks' two thirds where it gives nothing; the ratios are applied to the size of the text beside it, which is a default), font size (absolute, relative, named), font
   family and per-run font features; for a paragraph, alignment, first-line and hanging indents, margins, space before
   and after, line height, paragraph colour, borders and padding, a line limit, bullets and numbers. A run's baseline offset is drawn by drawing the run
   ourselves, shifted: the line's slot makes room for it and the caret, selection and squiggle follow it. A justified paragraph is stretched by

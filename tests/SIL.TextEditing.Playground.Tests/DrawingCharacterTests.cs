@@ -155,13 +155,21 @@ namespace SIL.TextEditing.Playground.Tests
             using (var s = new Session(Scenarios.Drawing))
             {
                 var shot = new DrawingParagraphTests.Shot(s);
-                int bottomH = shot.InkBottom(BoxOf(s, 5, "H2O", 0, 1));
-                int bottomSub = shot.InkBottom(BoxOf(s, 5, "H2O", 1, 1));
-                int bottomC = shot.InkBottom(BoxOf(s, 5, "mc2", 1, 1));
-                int bottomSup = shot.InkBottom(BoxOf(s, 5, "mc2", 2, 1));
+                // The superscript and the subscript are small (the font's own size for them), so their strokes are light: a lighter ink counts here.
+                int Bottom(Rect box)
+                {
+                    for (int y = (int)box.Bottom + 7; y >= (int)box.Y - 8; y--)
+                        for (int x = (int)box.X + 1; x < (int)box.Right - 1; x++)
+                            if (shot.IsInk(x, y, 200)) return y;
+                    return -1;
+                }
+                int bottomH = Bottom(BoxOf(s, 5, "H2O", 0, 1));
+                int bottomSub = Bottom(BoxOf(s, 5, "H2O", 1, 1));
+                int bottomC = Bottom(BoxOf(s, 5, "mc2", 1, 1));
+                int bottomSup = Bottom(BoxOf(s, 5, "mc2", 2, 1));
                 Assert.True(bottomH >= 0 && bottomSub >= 0 && bottomC >= 0 && bottomSup >= 0);
                 Assert.True(bottomSup <= bottomC - 3, "superscript ink ends at " + bottomSup + ", the text beside it at " + bottomC);
-                Assert.True(bottomSub >= bottomH + 2, "subscript ink ends at " + bottomSub + ", the text beside it at " + bottomH);
+                Assert.True(bottomSub >= bottomH + 1, "subscript ink ends at " + bottomSub + ", the text beside it at " + bottomH);
             }
         });
 
@@ -228,16 +236,23 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
-        public void Superscript_and_subscript_shrink_to_two_thirds_and_shift_the_baseline() => Headless.Run(() =>
+        public void Superscript_and_subscript_are_smaller_than_the_text_beside_them_and_their_baseline_is_shifted_not_aligned_to_the_line() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Drawing))
             {
                 var sup = RunWith(s, 5, "super");
                 var sub = RunWith(s, 5, "sub");
-                Assert.Equal(16 * 2.0 / 3.0, sup.FontRenderingEmSize, 3);
-                Assert.Equal(BaselineAlignment.Superscript, sup.BaselineAlignment);
-                Assert.Equal(BaselineAlignment.Subscript, sub.BaselineAlignment);
-                Assert.Equal(BaselineAlignment.Baseline, RunWith(s, 5, "Position: H").BaselineAlignment);
+                var plain = RunWith(s, 5, "Position: H");
+                // The size is the font's own, from its OS/2 table (SuperscriptFontTests pins it against the font files), and well under the text beside it.
+                Assert.InRange(sup.FontRenderingEmSize, 4, 16 * 0.8);
+                Assert.InRange(sub.FontRenderingEmSize, 4, 16 * 0.8);
+                Assert.Equal(16, plain.FontRenderingEmSize);
+                Assert.Equal(BaselineAlignment.Baseline, sup.BaselineAlignment);
+                Assert.Equal(BaselineAlignment.Baseline, sub.BaselineAlignment);
+                var layout = s.Field.ParagraphLayoutFor(5);
+                string text = s.ParagraphText(5);
+                Assert.True(layout.Lines[0].Pieces(text.IndexOf("super", System.StringComparison.Ordinal), text.IndexOf("super", System.StringComparison.Ordinal) + 5).Single().Value > 0);
+                Assert.True(layout.Lines[0].Pieces(text.IndexOf("sub,", System.StringComparison.Ordinal), text.IndexOf("sub,", System.StringComparison.Ordinal) + 3).Single().Value < 0);
             }
         });
 
@@ -276,14 +291,15 @@ namespace SIL.TextEditing.Playground.Tests
                 var shot = new DrawingParagraphTests.Shot(s);
                 Assert.Equal(4000, s.Editor.Document.Paragraphs[5].Runs.Single(r => r.Text == "up").Props.IntProps[TextPropertyNumbers.Offset].Value);
                 Assert.Equal(-4000, s.Editor.Document.Paragraphs[5].Runs.Single(r => r.Text == "down").Props.IntProps[TextPropertyNumbers.Offset].Value);
-                // The p of "up" (raised 4 pt) and the p of "pt" beside it: the same letter, 4 pixels apart; and the n of "down" (lowered) and of "drawn".
+                // The p of "up" (raised 4 pt) and the p of "pt" beside it: the same letter, 4 pixels apart; and the o of "down" (lowered) and of "ordinary".
                 // (They are on the same line, so the rows are comparable; a pixel allows for rounding.)
                 var paragraph = s.Field.ParagraphLayoutFor(5);
                 string text = s.ParagraphText(5);
                 Assert.Equal(paragraph.LineIndexOf(text.IndexOf(": up", System.StringComparison.Ordinal) + 3), paragraph.LineIndexOf(text.IndexOf("pt", System.StringComparison.Ordinal)));
                 int upP = InkBottomRow(shot, BoxOf(s, 5, ": up", 3, 1)), plainP = InkBottomRow(shot, BoxOf(s, 5, "pt", 0, 1));
                 Assert.InRange(plainP - upP, 3, 5);
-                int downN = InkBottomRow(shot, BoxOf(s, 5, "down", 3, 1)), plainN = InkBottomRow(shot, BoxOf(s, 5, "ordinary run", 11, 1));
+                // (The o, whose bowl is dark in the middle of its box wherever the letter falls between pixels, and not the n, whose stems are at its edges.)
+                int downN = InkBottomRow(shot, BoxOf(s, 5, "down", 1, 1)), plainN = InkBottomRow(shot, BoxOf(s, 5, "ordinary run", 0, 1));
                 Assert.InRange(downN - plainN, 3, 5);
             }
         });

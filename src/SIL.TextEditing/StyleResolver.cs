@@ -18,9 +18,9 @@ namespace SIL.TextEditing
     /// <summary>The character formatting of one run after styles and the run's own properties are applied.</summary>
     public sealed class CharFormat
     {
-        /// <summary>The size of superscript and subscript text against its line: two thirds. Provenance: this is the value FieldWorks falls back to when a
-        /// font gives no superscript or subscript size; FieldWorks first reads the size (and the raise or drop) from the font's own OS/2 table, which the field
-        /// does not do yet, so a font that has them draws larger or smaller there. Observed behaviour; the code is ours.</summary>
+        /// <summary>The size of superscript and subscript text against the text beside it where the font gives none: two thirds. Provenance: this is the value
+        /// FieldWorks falls back to when a font gives no superscript or subscript size in its OS/2 table; FieldWorks reads the size, and the raise or drop,
+        /// from that table first, and so does the field (<c>ScriptPlacement</c>). Observed behaviour; the code is ours.</summary>
         public const double DefaultSuperscriptScale = 2.0 / 3.0;
 
         /// <summary>CSS-style weight 100 to 900; 400 is normal and 700 bold.</summary>
