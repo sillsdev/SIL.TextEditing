@@ -246,15 +246,42 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The offset of the run that holds the index, or 0. The runs are added in text order, so the one that holds it is found by halving.</summary>
         public double At(int index)
         {
-            int lo = 0, hi = _starts.Count;   // the first run that ends after the index
+            int lo = 0, hi = _starts.Count, steps = 0;   // the first run that ends after the index
             while (lo < hi)
             {
-                ParagraphLayout.RangeProbes++;
+                steps++;
                 int mid = (lo + hi) / 2;
                 if (_ends[mid] > index) hi = mid; else lo = mid + 1;
             }
+            ParagraphLayout.CountRangeProbes(steps);
             return lo < _starts.Count && index >= _starts[lo] ? _values[lo] : 0;
         }
+    }
+
+    /// <summary>The work a layout and a draw did, for a test that counts it (<see cref="ParagraphLayout.Probe"/>): nothing counts unless a test started a probe on
+    /// the thread.</summary>
+    internal sealed class LayoutProbe : IDisposable
+    {
+        readonly LayoutProbe? _outer;
+
+        LayoutProbe() { _outer = ParagraphLayout.Probe; ParagraphLayout.Probe = this; }
+
+        /// <summary>Starts counting on this thread until the probe is disposed.</summary>
+        public static LayoutProbe Start() => new LayoutProbe();
+
+        /// <summary>How many times a line's run slots were worked out.</summary>
+        public long RunSlotBuilds;
+
+        /// <summary>How many ranges (a run's offset, background, decoration or squiggle) were looked at.</summary>
+        public long RangeProbes;
+
+        /// <summary>How many times a line of paragraph text was formatted (a label, an ellipsis and an empty line are not counted).</summary>
+        public long LinesFormatted;
+
+        /// <summary>How many glyphs (and object runs) were handed to the renderer.</summary>
+        public long GlyphsDrawn;
+
+        public void Dispose() => ParagraphLayout.Probe = _outer;
     }
 
     /// <summary>A run of a line: where it is drawn (x from the line's origin) and the text it holds (<c>Start</c> and <c>Length</c>).</summary>
@@ -401,9 +428,6 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The runs of the line as they are drawn (<see cref="ParagraphLayout.RunSlots"/>), made once when the line was.</summary>
         internal List<RunSlot> AllSlots { get; } = new List<RunSlot>();
 
-        /// <summary>The width of the line's text without the spaces it wraps on (<see cref="ParagraphLayout.NaturalWidth"/>), worked out once.</summary>
-        internal double? NaturalWidthCache;
-
         /// <summary>True for the empty last line a trailing hard line break makes: it holds no text, only a caret place.</summary>
         public bool IsEmpty { get; }
         /// <summary>Where the caret sits on an empty line, in paragraph coordinates (following the alignment).</summary>
@@ -499,7 +523,7 @@ namespace SIL.TextEditing.Avalonia
             double y = top + TextY;
             foreach (var piece in _pieces)
             {
-                ParagraphLayout.GlyphsDrawn += piece.Count;
+                { var p = ParagraphLayout.Probe; if (p != null) p.GlyphsDrawn += piece.Count; }
                 if (piece.Glyphs == null) { piece.Run!.Draw(context, new Point(piece.X, y + piece.Y)); continue; }
                 using (context.PushTransform(Matrix.CreateTranslation(piece.X, y + piece.Y)))
                 using (context.PushClip(new Rect(piece.Left - piece.X, -2500, piece.Right - piece.Left, 5000)))
@@ -572,7 +596,9 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>The x range, from the line's origin, that the words between two spaces are drawn in: from the middle of the space before them to the middle of the
         /// space after, as stretched. A letter's ink can reach past its advance (the hook of a "j", italics), into the space beside it; it stays with its letter up
-        /// to the middle of the space, which is as far as the space's own width reaches, and is not smeared across the stretched gap.</summary>
+        /// to the middle of the space, which is as far as the space's own width reaches, and is not smeared across the stretched gap. Ink of a letter beyond that
+        /// is not drawn (a hook longer than half a space loses its tip: a pixel or two of an italic "j"), where the line drawn whole and cut at each space drew
+        /// it at the wrong place, apart from its letter; <c>JustifiedDrawTests</c> pins both.</summary>
         (double Left, double Right) PieceBounds(Justification j, double shift)
         {
             const double Far = 5000;
@@ -594,7 +620,8 @@ namespace SIL.TextEditing.Avalonia
         void DrawNatural(DrawingContext context, double top)
         {
             double y = top + TextY;
-            foreach (var slot in AllSlots) ParagraphLayout.GlyphsDrawn += (slot.Run as ShapedTextRun)?.GlyphRun.GlyphInfos.Count ?? 1;
+            var probe = ParagraphLayout.Probe;
+            if (probe != null) foreach (var slot in AllSlots) probe.GlyphsDrawn += (slot.Run as ShapedTextRun)?.GlyphRun.GlyphInfos.Count ?? 1;
             if (!HasOffsets) { Line.Draw(context, new Point(X, y)); return; }
             double x = X + Line.Start;
             foreach (var run in _runs!)
@@ -817,17 +844,13 @@ namespace SIL.TextEditing.Avalonia
             }
         }
 
-        /// <summary>How many times a line's run slots were worked out, for a test that counts the work a layout does.</summary>
-        internal static long RunSlotBuilds;
+        /// <summary>The work counts a test asks for, on this thread; null (the default, and always in a host) counts nothing. Thread-local, so a field on
+        /// another dispatcher never writes a test's counts and the counts need no locking.</summary>
+        [ThreadStatic] static LayoutProbe? _probe;
 
-        /// <summary>How many ranges (a run's offset, background, decoration or squiggle) were looked at, for a test that counts the work a layout and a draw do.</summary>
-        internal static long RangeProbes;
+        internal static LayoutProbe? Probe { get => _probe; set => _probe = value; }
 
-        /// <summary>How many times a line of paragraph text was formatted, for a test that counts the work a layout does (a label, an ellipsis and an empty line are not counted).</summary>
-        internal static long LinesFormatted;
-
-        /// <summary>How many glyphs (and object runs) were handed to the renderer, for a test that counts the work a draw does.</summary>
-        internal static long GlyphsDrawn;
+        internal static void CountRangeProbes(int n) { var p = _probe; if (p != null) p.RangeProbes += n; }
 
         /// <summary>Where each run of a line is drawn and which text it holds, in drawing order. Avalonia's own numbering of a line's runs (the
         /// text run bounds and the character hits) is wrong for a right-to-left paragraph's line with two or more left-to-right runs and a wrapped
@@ -835,7 +858,7 @@ namespace SIL.TextEditing.Avalonia
         /// it was shaped from.</summary>
         internal static List<RunSlot> RunSlots(TextLine line)
         {
-            RunSlotBuilds++;
+            { var p = _probe; if (p != null) p.RunSlotBuilds++; }
             var result = new List<RunSlot>();
             double x = line.Start;
             foreach (var run in line.TextRuns)
@@ -971,7 +994,11 @@ namespace SIL.TextEditing.Avalonia
         static ParagraphLayout BuildWith(int swap, Paragraph paragraph, double width, WritingSystemRegistry writingSystems, Func<string, IImage?>? objectImage, IBrush foreground, bool objectAsGlyph, int preeditAt, string? preedit, Run? preeditTemplate, IStyleResolver? styles, string? label, double previousSpaceAfter, IBrush? forceText)
         {
             var layout = new ParagraphLayout(paragraph, width);
-            if (forceText == null) layout._recolour = brush => Build(paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, brush);
+            if (forceText == null)
+            {
+                layout._recolour = brush => Build(paragraph, width, writingSystems, objectImage, foreground, objectAsGlyph, preeditAt, preedit, preeditTemplate, styles, label, previousSpaceAfter, brush);
+                layout._builtFrom = Fingerprint(paragraph);
+            }
             var pf = ResolveFormat(paragraph, writingSystems, styles);
             var formats = layout._formats = new FormatCache(paragraph, writingSystems, foreground, styles, forceText);
             // Every paragraph draws its own underlines and strikethrough (DrawDecorations): Avalonia's leave a gap at each descender, and in a justified
@@ -1109,7 +1136,7 @@ namespace SIL.TextEditing.Avalonia
                 // The first line starts where PlaceFirstLine put it; the others use the whole text area.
                 double lineWidth = first ? layout._firstWidth : w;
                 double lineX = first ? layout._firstX : layout.ContentLeft;
-                LinesFormatted++;
+                { var p = _probe; if (p != null) p.LinesFormatted++; }
                 var line = FormatLineGuarded(formatter, source, index, lineWidth, paragraphProperties, previous);
                 if (line == null) break;
                 double usedWidth = lineWidth;
@@ -1124,7 +1151,7 @@ namespace SIL.TextEditing.Avalonia
                         double room = dots.WidthIncludingTrailingWhitespace;
                         if (w > 3 * room)
                         {
-                            LinesFormatted++;
+                            { var p = _probe; if (p != null) p.LinesFormatted++; }
                             var narrower = FormatLineGuarded(formatter, source, index, Math.Max(lineWidth - room, 1), paragraphProperties, previous);
                             if (narrower != null && narrower.Length > 0)
                             {
@@ -1219,7 +1246,7 @@ namespace SIL.TextEditing.Avalonia
                 for (int i = FirstEndingAfter(_backgrounds, li.Start); i < _backgrounds.Count && _backgrounds[i].Key < li.End; i++)
                 {
                     var bg = _backgrounds[i];
-                    RangeProbes++;
+                    CountRangeProbes(1);
                     // The spaces a wrapped line ends with hang outside its text and are not painted (the paragraph's last line is all text).
                     int a = Math.Max(bg.Key, li.Start), b = Math.Min(bg.Value.Key, li == Lines[Lines.Count - 1] ? TextEnd(li) : TextBeforeTrailingSpaces(li));
                     if (b <= a) continue;
@@ -1233,9 +1260,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>The width of a line's text up to <paramref name="last"/> (the end of its last letter), without the spaces it wraps on.
         /// Avalonia 11.3 also leaves out a space at the end of one of the line's runs that is not the last, so the line's own width is
         /// not trusted when the runs' widths less those spaces come to more.</summary>
-        double NaturalWidth(LineInfo li, int last) => li.NaturalWidthCache ??= MeasureNaturalWidth(li, last);
-
-        double MeasureNaturalWidth(LineInfo li, int last)
+        double NaturalWidth(LineInfo li, int last)
         {
             double total = 0, trailing = 0;
             int to = TextEnd(li);
@@ -1314,7 +1339,7 @@ namespace SIL.TextEditing.Avalonia
             int lo = 0, hi = _decorations.Count;
             while (lo < hi)
             {
-                RangeProbes++;
+                CountRangeProbes(1);
                 int mid = (lo + hi) / 2;
                 if (_decorations[mid].End > offset) hi = mid; else lo = mid + 1;
             }
@@ -1327,7 +1352,7 @@ namespace SIL.TextEditing.Avalonia
             int lo = 0, hi = ranges.Count;
             while (lo < hi)
             {
-                RangeProbes++;
+                CountRangeProbes(1);
                 int mid = (lo + hi) / 2;
                 if (ranges[mid].Value.Key > offset) hi = mid; else lo = mid + 1;
             }
@@ -1361,7 +1386,7 @@ namespace SIL.TextEditing.Avalonia
                 for (int d = FirstDecorationEndingAfter(li.Start); d < _decorations.Count && _decorations[d].Start < li.End; d++)
                 {
                     var decoration = _decorations[d];
-                    RangeProbes++;
+                    CountRangeProbes(1);
                     int a = Math.Max(decoration.Start, li.Start), b = Math.Min(decoration.End, end);
                     if (b <= a) continue;
                     // Boxes that touch are one line, so a pattern runs on across them.
@@ -1448,7 +1473,7 @@ namespace SIL.TextEditing.Avalonia
                 for (int i = ordered ? FirstEndingAfter(list, li.Start) : 0; i < list.Count; i++)
                 {
                     if (ordered && list[i].Key >= li.End) break;
-                    RangeProbes++;
+                    CountRangeProbes(1);
                     yield return list[i];
                 }
             }
@@ -2071,13 +2096,37 @@ namespace SIL.TextEditing.Avalonia
         Func<IBrush, ParagraphLayout>? _recolour;
         ParagraphLayout? _recoloured;
         Color _recolouredTo;
+        long _builtFrom;
+
+        /// <summary>What this layout was made from, in a number: the paragraph's change stamp (its runs, their text, writing systems and object data, a
+        /// replaced property bag, its style) and the contents of every property bag. A host that edits a bag in place and does not call
+        /// <c>RefreshFromDocument()</c> changes the second, which the stamp does not see.</summary>
+        static long Fingerprint(Paragraph paragraph)
+        {
+            unchecked
+            {
+                long h = paragraph.ChangeStamp * 31 + (paragraph.Rtl ? 1 : 0);
+                h = h * 31 + Bag(paragraph.Props);
+                foreach (var run in paragraph.Runs) h = h * 31 + Bag(run.Props);
+                return h;
+            }
+
+            long Bag(PropertyBag bag)
+            {
+                long b = bag.Count;
+                foreach (var p in bag.IntProps) b = b * 31 + p.Key * 7 + p.Value.GetHashCode();
+                foreach (var p in bag.StrProps) b = b * 31 + p.Key * 7 + (p.Value?.GetHashCode() ?? 0);
+                return b;
+            }
+        }
 
         /// <summary>This paragraph laid out the same way (the same lines, so the same places) with all its text and its underlines in <paramref name="colour"/>,
         /// whatever colours the runs have: what the selected text is drawn in where the system gives it a colour of its own. Built once and kept with this
-        /// layout, so selecting costs a redraw and not a layout of the text each time.</summary>
+        /// layout, so selecting costs a redraw and not a layout of the text each time. Null when the paragraph is not what this layout was made from (a host
+        /// changed it in place and has not called <c>RefreshFromDocument()</c>): a second layout of the new text would be drawn over this one's selection boxes.</summary>
         internal ParagraphLayout? InColour(Color colour)
         {
-            if (_recolour == null) return null;
+            if (_recolour == null || Fingerprint(Paragraph) != _builtFrom) return null;
             if (_recoloured == null || _recolouredTo != colour)
             {
                 _recoloured?.Dispose();

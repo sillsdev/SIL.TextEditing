@@ -83,6 +83,37 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(0, Count(shot, WindowText, 0, (int)pl.CaretRect(8).X - 1));
         }));
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_paragraph_the_host_changed_in_place_is_not_drawn_again_from_its_new_properties_over_the_old_layout_s_selection(bool changeInPlace) => Headless.Run(() => InHighContrast(() =>
+        {
+            var field = Make("HHHHHHHH iiiiiiii");
+            field.Editor.SetCaret(new TextPosition(0, 0));
+            field.Editor.SetCaret(new TextPosition(0, 17), true);
+            field.RefreshSystemColours();
+            var pl = field.ParagraphLayoutFor(0);
+            Assert.NotNull(pl.InColour(HighlightText));
+            if (changeInPlace)
+            {
+                // No RefreshFromDocument(): the layout, and the selection boxes that come from it, are the old ones.
+                var run = field.Editor.Document.Paragraphs[0].Runs[0];
+                run.Props.SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn);
+                run.Props.SetInt(TextPropertyNumbers.FontSize, 30000, TextPropertyNumbers.VariationMilliPoint);
+                Assert.Null(pl.InColour(HighlightText));
+            }
+            var shot = Fixtures.Render(field);
+            int selectedText = Count(shot, HighlightText, 0, 390);
+            if (changeInPlace) Assert.Equal(0, selectedText);   // no text of the new paragraph in the highlight text colour over the old layout's boxes
+            else Assert.True(selectedText > 40, "selected text pixels: " + selectedText);
+            if (changeInPlace)
+            {
+                field.RefreshFromDocument();
+                pl = field.ParagraphLayoutFor(0);
+                Assert.NotNull(pl.InColour(HighlightText));   // laid out again from the changed paragraph, it is drawn in the selected colour again
+            }
+        }));
+
         [Fact]
         public void Selecting_text_in_high_contrast_does_not_lay_the_paragraphs_out_again() => Headless.Run(() => InHighContrast(() =>
         {
