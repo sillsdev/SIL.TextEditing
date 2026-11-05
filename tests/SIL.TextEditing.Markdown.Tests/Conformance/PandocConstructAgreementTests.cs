@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using Xunit;
 
 namespace SIL.TextEditing.Markdown.Tests.Conformance
@@ -33,10 +32,9 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         public void TheReaderReportsWhatPandocReadsAsAnotherStructure(string markdown)
         {
             Assert.True(PandocRunner.Available, "Pandoc is not on the PATH, and this run says it must be (CI)");
-            using (var doc = JsonDocument.Parse(PandocRunner.ToJson(markdown)))
             {
-                var blocks = doc.RootElement.GetProperty("blocks");
-                bool onePara = blocks.GetArrayLength() == 1 && blocks[0].GetProperty("t").GetString() == "Para";
+                var blocks = Json.Arr(Json.Obj(Json.Parse(PandocRunner.ToJson(markdown)))["blocks"]);
+                bool onePara = blocks.Count == 1 && Json.Str(Json.Obj(blocks[0])["t"]) == "Para";
                 var result = MarkdownConverter.Parse(markdown, new MarkdownOptions { WriteFrontMatter = false });
                 bool reported = result.Diagnostics.Any(d => d.Id == "fwmd.syntax.unsupported-markup");
                 bool sameStructure = result.Document.Paragraphs.Any(p => p.Style != "Normal") || result.Document.Paragraphs.Count > 1;
