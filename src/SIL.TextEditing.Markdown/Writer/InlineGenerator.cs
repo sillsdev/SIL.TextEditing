@@ -64,6 +64,8 @@ namespace SIL.TextEditing.Markdown.Writer
         readonly BlockContext _context;
         readonly string _analysis, _vernacular;
         GenMode _mode;
+        // The units this generator looked at (see WriterWork.Steps); published when a paragraph is rendered.
+        long _steps;
 
         struct Unit
         {
@@ -556,6 +558,7 @@ namespace SIL.TextEditing.Markdown.Writer
             if (i + 1 >= _units.Count) return CharClass.Space;
             for (int j = i + 1; j < _units.Count; j++)
             {
+                _steps++;
                 var u = _units[j];
                 if (u.Break) return CharClass.Punct; // a backslash
                 if (u.Lit) return Classify(u.Cp);
@@ -577,6 +580,7 @@ namespace SIL.TextEditing.Markdown.Writer
         {
             for (int j = i + 1; j < _units.Count; j++)
             {
+                _steps++;
                 var u = _units[j];
                 if (u.Break) return '\\';
                 if (u.Lit) return u.Cp;
@@ -590,6 +594,7 @@ namespace SIL.TextEditing.Markdown.Writer
         {
             for (int j = i - 1; j >= 0; j--)
             {
+                _steps++;
                 var u = _units[j];
                 if (u.Break) return -1;
                 if (u.Lit) return u.Cp;
@@ -604,6 +609,7 @@ namespace SIL.TextEditing.Markdown.Writer
         string Render(List<Run> all)
         {
             int n = _units.Count;
+            _steps += n;
             var escape = new bool[n];
             var hexSpace = new bool[n];
             ResolveSpaces(hexSpace);
@@ -622,6 +628,8 @@ namespace SIL.TextEditing.Markdown.Writer
             offsets[n] = sb.Length;
             string line = sb.ToString();
             if (_context.BlockStart) line = EscapeLineStarts(line, offsets);
+            WriterWork.Steps += _steps;
+            _steps = 0;
             return line;
         }
 
@@ -637,7 +645,7 @@ namespace SIL.TextEditing.Markdown.Writer
                 bool boundary = false;
                 // The previous unit that is not an empty piece of syntax.
                 int p = i - 1;
-                while (p >= 0 && !_units[p].Lit && _units[p].Text.Length == 0 && _units[p].EdgeScope != -1) p--;
+                while (p >= 0 && !_units[p].Lit && _units[p].Text.Length == 0 && _units[p].EdgeScope != -1) { _steps++; p--; }
                 if (p < 0) boundary = true;
                 else
                 {
@@ -648,7 +656,7 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (!boundary)
                 {
                     int s = i + 1;
-                    while (s < n && !_units[s].Lit && _units[s].Text.Length == 0 && _units[s].EdgeScope != -1) s++;
+                    while (s < n && !_units[s].Lit && _units[s].Text.Length == 0 && _units[s].EdgeScope != -1) { _steps++; s++; }
                     if (s >= n) boundary = true;
                     else
                     {
@@ -750,7 +758,7 @@ namespace SIL.TextEditing.Markdown.Writer
                     case '&':
                     {
                         var sb = new StringBuilder();
-                        for (int j = i + 1; j < n && j < i + 36 && _units[j].Lit && !_units[j].IsSpace; j++) sb.Append(_units[j].Text); // an entity name is at most 32 characters
+                        for (int j = i + 1; j < n && j < i + 36 && _units[j].Lit && !_units[j].IsSpace; j++) { _steps++; sb.Append(_units[j].Text); } // an entity name is at most 32 characters
                         string after = sb.ToString();
                         escape[i] = after.Length > 0 && (after[0] == '#' || AttributeText.ReadsAsReference("&" + after, 0));
                         break;

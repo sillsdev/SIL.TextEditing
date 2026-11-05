@@ -21,6 +21,15 @@ namespace SIL.TextEditing.Markdown.Writer
         [ThreadStatic] public static int SafeTable;
     }
 
+    /// <summary>For the tests: how much work the writer did, counted and not timed (issue 141). <see cref="Steps"/> counts the units the inline generator
+    /// looked at, including each step of a scan past a unit; <see cref="Characters"/> counts the text the writer gave the reader to check what it wrote. Per
+    /// thread, so a test counts only its own work. Both grow with the input when the writer is linear, and grow as its square when it is not.</summary>
+    internal static class WriterWork
+    {
+        [ThreadStatic] public static long Steps;
+        [ThreadStatic] public static long Characters;
+    }
+
     internal sealed class MarkdownWriter
     {
         readonly MarkdownOptions _options;
@@ -51,6 +60,7 @@ namespace SIL.TextEditing.Markdown.Writer
             var generator = new InlineGenerator(options, BlockContext.Plain());
             bool Reads(string candidate)
             {
+                WriterWork.Characters += candidate.Length;
                 var back = MarkdownReader.ReadInline(candidate, options, out var context);
                 var findings = context.Diagnostics;
                 return !findings.Any(f => f.Severity == MarkdownSeverity.Error && MarkdownReader.IsSyntaxFinding(f.Id)) && Equivalence.Equal(paragraph.Runs, back);
@@ -174,8 +184,15 @@ namespace SIL.TextEditing.Markdown.Writer
 
         bool ReadsBack(string blockText, Paragraph expected, int paragraphs = 1)
         {
-            var read = MarkdownReader.ReadParagraphs(blockText + "\n", _options, out bool clean); // a block is always followed by a line end
+            var read = ReadBack(blockText + "\n", _options, out bool clean); // a block is always followed by a line end
             return clean && read.Count == paragraphs && Equivalence.Equal(expected, read[0]);
+        }
+
+        /// <summary>Every check of what the writer wrote is read here, so <see cref="WriterWork.Characters"/> is all the text the reader was given.</summary>
+        List<Paragraph> ReadBack(string markdown, MarkdownOptions options, out bool clean)
+        {
+            WriterWork.Characters += markdown.Length;
+            return MarkdownReader.ReadParagraphs(markdown, options, out clean);
         }
 
         // ---------------------------------------------------------------- the ladder
@@ -321,7 +338,7 @@ namespace SIL.TextEditing.Markdown.Writer
 
             Func<string, bool> headerAccepts = candidate =>
             {
-                var read = MarkdownReader.ReadParagraphs(candidate + "\n" + Delimiter(width) + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
+                var read = ReadBack(candidate + "\n" + Delimiter(width) + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
                 return clean && read.Count == 2 && Equivalence.Equal(header.Paragraph, read[0]);
             };
             string? headerLine = Search(new InlineGenerator(_options, BlockContext.TableRow()), headerCells, headerAccepts);
@@ -340,7 +357,7 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (cells.Count != width) break;
                 Func<string, bool> rowAccepts = candidate =>
                 {
-                    var read = MarkdownReader.ReadParagraphs(PlaceholderHeader(width) + "\n" + Delimiter(width) + "\n" + candidate + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
+                    var read = ReadBack(PlaceholderHeader(width) + "\n" + Delimiter(width) + "\n" + candidate + "\n" + SyntheticRow(width) + "\n", _options, out bool clean);
                     return clean && read.Count == 3 && Equivalence.Equal(row.Paragraph, read[1]);
                 };
                 string? line = Search(new InlineGenerator(_options, BlockContext.TableRow()), cells, rowAccepts);
@@ -368,7 +385,7 @@ namespace SIL.TextEditing.Markdown.Writer
         /// <summary>True when the table made of these lines (header first, then the rows) reads back as exactly the paragraphs expected.</summary>
         bool TableReadsBack(List<string> lines, int width, List<Paragraph> expected)
         {
-            var all = MarkdownReader.ReadParagraphs(TableText(lines, width) + "\n", _options, out bool clean);
+            var all = ReadBack(TableText(lines, width) + "\n", _options, out bool clean);
             if (!clean || all.Count != expected.Count) return false;
             for (int i = 0; i < expected.Count; i++) if (!Equivalence.Equal(expected[i], all[i])) return false;
             return true;
