@@ -12,6 +12,33 @@ namespace SIL.TextEditing
         /// paragraphs keeps them; only new splits are refused.</summary>
         public bool SingleParagraph { get; set; }
 
+        /// <summary>Single-line mode (ADR 0030), for a box whose text is a notation: <see cref="SingleParagraph"/> as well, and no hard line break
+        /// either. <see cref="InsertLineBreak"/> (Shift+Enter) does nothing, and a line separator (U+2028) in typed or pasted text becomes a space, as a
+        /// line end does. Setting it sets <see cref="SingleParagraph"/>; clearing it leaves that on.</summary>
+        public bool SingleLine
+        {
+            get => _singleLine;
+            set
+            {
+                _singleLine = value;
+                if (value) SingleParagraph = true;
+            }
+        }
+
+        bool _singleLine;
+
+        /// <summary>The line separators of a single-line text turned into spaces.</summary>
+        static void LineBreaksToSpaces(IEnumerable<Paragraph> paragraphs)
+        {
+            foreach (var p in paragraphs)
+            {
+                bool any = false;
+                foreach (var r in p.Runs)
+                    if (!r.IsObject && r.Text.IndexOf(LineSeparator) >= 0) { r.Text = r.Text.Replace(LineSeparator, ' '); any = true; }
+                if (any) p.Normalize();
+            }
+        }
+
         /// <summary>True for the characters that separate paragraphs or lines of a paragraph list: CR, LF, NEL (U+0085) and the
         /// paragraph separator (U+2029). The line separator (U+2028) is not one: it is FieldWorks' hard line break inside a
         /// paragraph, so a single paragraph keeps it.</summary>

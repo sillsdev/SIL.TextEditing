@@ -52,6 +52,7 @@ namespace SIL.TextEditing.Playground.Tests
     public sealed class Session : IDisposable
     {
         readonly Window _window;
+        public Window Window => _window;
 
         public Session(string scenario = Scenarios.MixedBidi, double width = 1100, double height = 700)
         {

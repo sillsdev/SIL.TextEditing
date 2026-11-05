@@ -49,6 +49,10 @@ namespace SIL.TextEditing
         /// why it is marked, all the suggestions, and what the menu's choices need (<c>RichTextField.ApplySpellingSuggestion</c>,
         /// <c>AddToDictionary</c>, <c>IgnoreWord</c>, <see cref="SIL.TextEditing.SpellingSuggestions.WithMissingSpaces"/>).</summary>
         public SIL.TextEditing.SpellingSuggestions? Spelling { get; set; }
+
+        /// <summary>The language service's diagnostics at the place (ADR 0030), worst first; empty when there are none or the field has no language service. A host
+        /// adds one menu item per diagnostic that has a <see cref="LanguageDiagnostic.Fix"/> and applies the choice with <c>RichTextField.ApplyDiagnosticFix</c>.</summary>
+        public List<LanguageDiagnostic> Diagnostics { get; } = new List<LanguageDiagnostic>();
     }
 
     /// <summary>An embedded object (an ORC) at a place: its one-character range and the host's data for it.</summary>

@@ -212,6 +212,28 @@ Scenarios *Find and replace* (the find bar under the writing-system bar) and *Lo
 | 11.11 | Drag from the middle of the field to well below its bottom edge, and above its top edge. | The selection grows and the view scrolls a little at each mouse movement (more when far outside); it stops when the mouse stops. | | | | |
 | 11.12 | In *Spell checking* double-click `known` in `well-known`, then tick *Hyphen is a letter* and double-click it again; press Ctrl+Right from the start of `well-known`; untick the box. | Unticked the double-click takes `known` and Ctrl+Right stops at the hyphen; ticked the double-click takes `well-known`, Ctrl+Right goes past it and its space, and `well-known` gets a red squiggle (the word list does not have it). Unticking brings the first behaviour and its squiggles back. | | | | |
 | 11.13 | In *Spell checking* tick *Slow dictionary, off the UI thread* and type in the last paragraph while the squiggles come back. | The dictionary takes 15 ms a word, but typing is not held up, the squiggles arrive a few words at a time, and none is ever drawn on text that is no longer there. Unticking asks the dictionary on the UI thread again. | | | | |
+## 12. Language service box: the environment (all hosts)
+
+Scenario *Environment (language service)*. See ADR 0030. These are the phase 0 questions the headless tests cannot answer: whether the chips read as chips,
+whether completion works with an input method or Keyman active, and whether the popup behaves in the WinForms host.
+
+| # | Steps | Expected | D10 | D48 | W48 | Notes |
+|---|---|---|---|---|---|---|
+| 12.1 | Load the scenario and look at `/ [V] _ #`. | One line. The slash is outlined, `[V]` is a blue chip, `_` a purple chip, `#` an orange one, each behind the plain text; nothing changes in the inspector's runs. | | | | |
+| 12.2 | Type `/ [X] _`. | `[X]` gets a red outline and a red squiggle under the X; the log shows `fwmd.env.unknown-class`. Nothing about the squiggle is in the inspector. | | | | |
+| 12.3 | Rest the pointer on the class `[V]`, then on the red squiggle. | A tooltip: `Natural class V: Vowels.`; for the squiggle, the problem's message. | | | | |
+| 12.4 | Press Enter, then Shift+Enter. | Enter: the log says it was passed to the host; Shift+Enter does nothing. The text stays one line. | | | | |
+| 12.5 | Clear the box, press Ctrl+Space. | A popup under the caret offers `/`. Down, Up move the highlight; Tab accepts (focus stays in the field) and the text is `/ `. | | | | |
+| 12.6 | Type `[`. | The popup opens at once with the classes; typing `+` narrows it; Esc closes it and the text keeps `[+`. | | | | |
+| 12.7 | With the popup open press Enter on a class, and click on another class in a second try. Then type a whole environment (`/ [V] _ a`) and press Enter and Tab. | The class replaces the bracket and what was typed; Enter does not reach the host while the popup is open; a click accepts the row clicked. After the `]` the popup is gone, and Enter then reaches the host (the log says so) and Tab leaves the field. In the WinForms host (W48) Enter, Tab and Esc with the popup open go to the popup, not to a form button. | | | | |
+| 12.8 | Use the Insert buttons at different carets. | Each is enabled as FieldWorks' Insert menu is (slash only while there is none; bar once; `#` only at the edges; a class or `( )` inside the boundaries); `( )` leaves the caret between the parentheses; each insert is one undo step. | | | | |
+| 12.9 | Type `/ [v] _`, right-click the `v`. | The menu shows the problem and *Change to V*; choosing it fixes the text as one undo step. | | | | |
+| 12.10 | Click *Drop class V*, then *Restore class V*. | Every `[V]` is marked as unknown after the first and clean after the second, without typing. | | | | |
+| 12.11 | Switch to dark: in Windows settings, or by running `Playground.Desktop` with the theme set to dark. Then turn on a high contrast theme. | The chips take their dark styles; in a high contrast theme there are no chips and the text is in the system colours. | | | | |
+| 12.12 | With a Keyman keyboard or an input method active, type in the box and press Ctrl+Space. | The popup opens under the caret and does not take the focus; composing text gets no popup and any open one closes. | | | | |
+| 12.13 | In the WinForms host (W48) open the popup near the bottom edge of the form. | The popup shows (it may reach beyond the Avalonia control), is left-aligned under the caret, keeps the keyboard in the field and closes on Esc (the form is not cancelled) or when the form loses focus. It does not follow the form if the form is moved while it is open. | | | | |
+| 12.14 | With a screen reader on, open the popup and move through it, and rest on a problem. | The field reports its popup as expanded, and its status says the worst problem's message and the selected item; the popup is a list whose items are named with their label and detail. The highlight's change is not announced by itself (an open question in ADR 0030, with the accessibility question Q59). | | | | |
+
 ## Record
 
 | | |

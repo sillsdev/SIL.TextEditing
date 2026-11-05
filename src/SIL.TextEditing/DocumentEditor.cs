@@ -202,6 +202,7 @@ namespace SIL.TextEditing
             text = Normalized(text);
             if (SingleParagraph) text = OneLine(text);
             else text = text.Replace("\t", "").Replace("\r\n", "\n");
+            if (SingleLine) text = text.Replace(LineSeparator, ' ');
             if (text.Length == 0) return;
             var parts = text.Split('\n');
             for (int i = 0; i < parts.Length; i++)
@@ -233,7 +234,7 @@ namespace SIL.TextEditing
         public void InsertLineBreak()
         {
             CheckAccess();
-            if (!CanEditSelectionOrCaret()) return;
+            if (SingleLine || !CanEditSelectionOrCaret()) return;
             InOneUndoStep(() => InsertOne(LineSeparator.ToString()));
         }
 
@@ -353,6 +354,7 @@ namespace SIL.TextEditing
             {
                 if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
                 foreach (var p in fragment) SeparatorsToSpaces(p);
+                if (SingleLine) LineBreaksToSpaces(fragment);
             }
             else if (fragment != null)
             {

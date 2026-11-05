@@ -35,6 +35,7 @@ namespace SIL.TextEditing.Playground
         public const string Paragraphs = "Paragraph formatting";
         public const string Opaque = "Unknown properties";
         public const string Spelling = "Spell checking";
+        public const string Environment = "Environment (language service)";
         public const string Long = "Long document (200 paragraphs)";
         public const string ReadOnlyRuns = "Read-only runs";
         public const string FindReplace = "Find and replace";
@@ -56,6 +57,7 @@ namespace SIL.TextEditing.Playground
             new Scenario(Opaque, "Runs with property numbers the editor does not understand, and a paragraph style. They must survive typing, formatting, split, join, undo and copy and paste untouched.", _ => One(OpaqueDoc())),
             new Scenario(ReadOnlyRuns, "A label that may not be edited in front of editable text, a semi-editable run, and a paragraph that is all read-only. The caret moves to the nearest place where editing is allowed; typing, Delete, Backspace, cut and paste are refused across read-only text; selection and copy still work.", _ => One(ReadOnlyDoc())),
             new Scenario(Spelling, "Misspelled words get a red squiggle when the field is idle, in the paragraphs in view; a word that runs two writing systems together gets a blue one. The host's dictionaries are a short English and French word list (no Arabic). Text marked do-not-check, read-only text and the object in a word are skipped as FieldWorks skips them; text that forces checking is checked even when read-only. Put the caret in a marked word and use the Spelling buttons.", _ => One(SpellingDoc())),
+            new Scenario(Environment, "A phonological environment, the way FieldWorks writes one: a slash, the left context, an underscore and the right context, with natural classes in square brackets, segments, optional items in parentheses and the word boundary #. The box is one line (Enter goes to the host) and its text is the stored value: the colours are chips drawn behind plain text (in a light or a dark theme), problems are squiggles that are never saved in the text, and a host language service (the sample, over a made-up phonology: segments p t k b d g m n s l r h a e i o u ai ts; classes C, V, +son and +lab, +vd) explains them. Hover for help; Ctrl+Space, or typing [, offers completions (arrows, Enter or Tab, Esc); right-click a problem for its fix; the Insert buttons are enabled as FieldWorks' Insert menu is. Try / [X] _ , / (a _ , / _ _ , / chr _ , then Drop class V and Restore class V.", _ => One(EnvironmentDoc())),
             new Scenario(Long, "200 paragraphs in mixed writing systems: scrolling, caret at the far end, and cost of edits in a long document.", _ => One(LongDoc(200))),
             new Scenario(FindReplace, "Text for the find bar: repeated words in several cases, an accented word stored composed, decomposed and bare, words in two writing systems, a picture, and a read-only label. Try Match case, Match diacritics, Whole word, a regular expression, Highlight all, Replace and Replace All (one undo step). Right-click a word, a picture or a selection to see what a context menu is told.", _ => One(FindDoc())),
             new Scenario(ManyFields, "N small fields in one window: tab between them by clicking, undo is per field, the inspector follows the focused field.", ManyDocs, many: true),
@@ -368,6 +370,8 @@ namespace SIL.TextEditing.Playground
 
             return Doc(labelled, semi, locked, Para("en", false, "en", "An ordinary paragraph."));
         }
+
+        static Document EnvironmentDoc() => Doc(Para("en", false, "en", "/ [V] _ #"));
 
         static Document SpellingDoc()
         {
