@@ -96,6 +96,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 if (i >= s.Length) throw new FormatException("Unterminated string");
                 char c = s[i++];
                 if (c == '"') return sb.ToString();
+                if (c < ' ') throw new FormatException("A raw control character (U+" + ((int)c).ToString("X4") + ") in a JSON string at " + (i - 1) + "; JSON writes it as an escape");
                 if (c != '\\') { sb.Append(c); continue; }
                 char n = s[i++];
                 switch (n)

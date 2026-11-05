@@ -258,3 +258,22 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         }
     }
 }
+namespace SIL.TextEditing.Markdown.Tests.Conformance
+{
+    public class FixtureJsonTests
+    {
+        [Fact]
+        public void EveryFixtureFileIsStrictJson()
+        {
+            // D6: a second implementation proves conformance by passing the same files, so they must load in any JSON parser, not only in this runner's reader.
+            foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json"))
+            {
+                string text = System.IO.File.ReadAllText(path);
+                Json.Parse(text); // our reader rejects raw control characters in strings
+#if NET10_0_OR_GREATER
+                using (System.Text.Json.JsonDocument.Parse(text)) { }
+#endif
+            }
+        }
+    }
+}

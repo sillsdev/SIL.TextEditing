@@ -31,8 +31,7 @@
       { "text": "b", "ws": "en", "props": { "bold": "off" } },
       { "text": "c", "ws": "en", "props": { "bold": "invert" } }
     ] } ],
-    "canonical": "**a**[b]{bold=off}[c]{bold=invert}
-"
+    "canonical": "**a**[b]{bold=off}[c]{bold=invert}\n"
   },
   {
     "name": "a value is bare when it has only letters digits and - _ . : # /",
@@ -56,8 +55,7 @@
     "name": "an ampersand is written as a reference only where it would read as one",
     "markdown": "[x]{fontFamily=\"a & b &amp;amp; c &#x26;\"}\n",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en", "props": { "fontFamily": "a & b &amp; c &" } } ] } ],
-    "canonical": "[x]{fontFamily=\"a & b &amp;amp; c &\"}
-"
+    "canonical": "[x]{fontFamily=\"a & b &amp;amp; c &\"}\n"
   },
   {
     "name": "a quoted value takes character references, as Pandoc does",
