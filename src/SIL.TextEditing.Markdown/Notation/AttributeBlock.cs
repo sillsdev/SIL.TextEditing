@@ -91,8 +91,17 @@ namespace SIL.TextEditing.Markdown.Notation
             if (i < limit && s[i] == '}') { errorPos = i; error = "{} is empty"; return ScanStatus.Malformed; }
             while (true)
             {
-                while (i < limit && (s[i] == ' ' || s[i] == '\t')) i++;
-                if (i >= limit || s[i] == '\n' || s[i] == '\r') { errorPos = i; error = "no closing }"; return ScanStatus.Unclosed; }
+                // A soft line break between attributes is a space, as in Pandoc.
+                while (i < limit && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r')) i++;
+                if (i >= limit)
+                {
+                    // The report covers the block as far as its first line goes, where the writer of the text most likely forgot the brace.
+                    int newline = s.IndexOfAny(new[] { '\n', '\r' }, start, limit - start);
+                    errorPos = start + 1;
+                    foreach (var item in items) if (newline < 0 || item.End <= newline) errorPos = item.End;
+                    error = "no closing }";
+                    return ScanStatus.Unclosed;
+                }
                 if (s[i] == '}')
                 {
                     if (items.Count == 0) { errorPos = i; error = "{} is empty"; return ScanStatus.Malformed; }
@@ -133,9 +142,8 @@ namespace SIL.TextEditing.Markdown.Notation
                     }
                     else items.Add(new AttrItem(key, null, false, itemStart, i));
                 }
-                if (i < limit && s[i] != ' ' && s[i] != '\t' && s[i] != '}')
+                if (i < limit && s[i] != ' ' && s[i] != '\t' && s[i] != '\n' && s[i] != '\r' && s[i] != '}')
                 {
-                    if (s[i] == '\n' || s[i] == '\r') { errorPos = i; error = "no closing }"; return ScanStatus.Unclosed; }
                     errorPos = i;
                     error = "unexpected '" + s[i] + "'";
                     return ScanStatus.Malformed;

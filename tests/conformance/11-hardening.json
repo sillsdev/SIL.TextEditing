@@ -194,6 +194,12 @@
     "pandoc": false
   },
   {
+    "name": "an attribute block may continue on the next line, which is a space as in Pandoc",
+    "markdown": "a [x]{ws=ceb-x-old\nws2=1} b\n",
+    "findings": [ { "id": "fwmd.syntax.unknown-attribute", "line": 2, "column": 1, "endLine": 2, "endColumn": 6 } ],
+    "pandoc": false
+  },
+  {
     "name": "math between dollar signs is a finding, because Pandoc reads it and the notation has none",
     "markdown": "cost $x$ here\n",
     "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 1, "column": 6, "endLine": 1, "endColumn": 9, "fix": "\\$x\\$" } ],
