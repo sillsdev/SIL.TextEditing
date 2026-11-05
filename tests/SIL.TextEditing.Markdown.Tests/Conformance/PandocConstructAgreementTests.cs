@@ -15,7 +15,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             "M. Dixon describes the pattern", "I. e. the form", "C. f. the form", "A. Consonants", "A.  Consonants", "I. Introduction", "V. the variant forms", "Mix. of both", "mix. of both",
             "MIX. of both", "Civil. The term", "II. x", "ii. x", "iv. x", "x. y", "a. palit", "b. c", "(i) x", "(A) x", "(1) x", "(a) x", "(@) x", "#. x", "#) x", "(#) x", "a) x", "A) x",
             "i) x", "I) x", "1) x", "10. x", "1990. That year", "2. Nouns", "Table: the forms", "table: the forms", "+nasal x", "+---+---+", "+-+-+", "#palit# is", "#x", "|a| is the phoneme", "| x",
-            "|", "| |", ": marks length", ":: marks", "~ indicates", "~~", "x@y.org", "(1)", "a.", "- x", "-x", "* x", "> x", "# x", "[x]: y", "$5 and $10", "a~b", "a^b",
+            "|", "| |", ": marks length", ":: marks", "~ indicates", "[a]: the low vowel", "[a]: x", "[x] y", "x@y.org", "(1)", "a.", "- x", "-x", "* x", "> x", "# x", "[x]: y", "$5 and $10", "a~b", "a^b",
         };
 
         public static IEnumerable<object[]> Cases()

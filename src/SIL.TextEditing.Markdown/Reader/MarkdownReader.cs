@@ -308,6 +308,7 @@ namespace SIL.TextEditing.Markdown.Reader
             int openColons = 0;
             int openLineStart = 0;
             int pos = 0;
+            int prevStart = -1, prevEnd = -1; // the line before, when it is text that a fence would not end (not a fence, a heading or a rule)
             while (pos < s.Length)
             {
                 int lineStart = pos;
@@ -319,6 +320,10 @@ namespace SIL.TextEditing.Markdown.Reader
                 {
                     if (TryOpener(lineStart, lineEnd, out int colons, out Fence? fence))
                     {
+                        if (prevStart >= 0 && TextLineBefore(prevStart, prevEnd))
+                            _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error,
+                                "Pandoc keeps a ::: line that follows a line of text in that paragraph, as text. Put a blank line before it.", lineStart, lineEnd,
+                                "\n" + _source.Substring(lineStart, lineEnd - lineStart));
                         open = fence;
                         openColons = colons;
                         openLineStart = lineStart;
@@ -342,6 +347,8 @@ namespace SIL.TextEditing.Markdown.Reader
                         open.Lines.Add(new[] { lineStart, lineEnd });
                     }
                 }
+                prevStart = lineStart; prevEnd = lineEnd;
+                if (open != null || lineEnd == lineStart) prevStart = -1;
                 pos = next;
             }
             if (open != null)
@@ -360,6 +367,16 @@ namespace SIL.TextEditing.Markdown.Reader
         static void Interrupt(StringBuilder text, Fence fence)
         {
             for (int i = 0; i < 3; i++) text[fence.Start + i] = '*';
+        }
+
+        /// <summary>True when the line is text that Pandoc's paragraph goes on through: not blank, not a fence, an ATX heading, a setext underline, a rule or a table row.</summary>
+        bool TextLineBefore(int start, int end)
+        {
+            string line = _source.Substring(start, end - start).Trim();
+            if (line.Length == 0 || line.StartsWith(":::", StringComparison.Ordinal) || line[0] == '#' || line[0] == '|') return false;
+            bool underline = true;
+            foreach (char c in line) if (c != '-' && c != '=' && c != '*' && c != '_' && c != ' ') underline = false;
+            return !underline;
         }
 
         static void Blank(StringBuilder text, int start, int end)

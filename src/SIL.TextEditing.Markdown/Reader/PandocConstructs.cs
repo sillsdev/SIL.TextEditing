@@ -56,6 +56,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 return (c == ':' || c == '~') && line.Length > 1 && (line[1] == ' ' || line[1] == '\t') ? 0 : -1;
             }
             if (nearTable && (line.StartsWith("Table:", StringComparison.OrdinalIgnoreCase) || (c == ':' && line.Length > 1 && (line[1] == ' ' || line[1] == '\t')))) return c == ':' ? 0 : 5;
+            if (c == '[') { int close = line.IndexOf(']'); return close > 1 && close + 1 < line.Length && line[close + 1] == ':' ? 0 : -1; } // a reference or note definition, which Pandoc takes out of the text
             if (c == '|') return line.Length == 1 || line[1] == ' ' || line[1] == '\t' ? 0 : -1;
             if (c == '+') return line.Length == 1 || IsGridTop(text, from, lineEnd, line) ? 0 : -1;
             return ListMarkerAt(line);
@@ -152,13 +153,19 @@ namespace SIL.TextEditing.Markdown.Reader
                     report(i, i + 1, "Pandoc reads this as a citation. Escape the at sign.", "\\@");
                 else if (c == '^' && i + 1 < end && text[i + 1] == '[')
                     report(i, i + 2, "Pandoc reads this as an inline note. Escape the caret.", "\\^[");
-                else if (c == '~' && i + 2 < end && text[i + 1] == '~' && !IsSpace(text[i + 2]))
+                else if (c == '~' && i + 1 < end && text[i + 1] == '~')
                 {
-                    int close = text.IndexOf("~~", i + 2, end - i - 2, StringComparison.Ordinal);
+                    int close = i + 2 < end && !IsSpace(text[i + 2]) ? text.IndexOf("~~", i + 2, end - i - 2, StringComparison.Ordinal) : -1;
                     if (close > 0 && !IsSpace(text[close - 1]))
                     {
                         report(i, close + 2, "Pandoc reads this as strikeout. Escape the tildes.", Escape(text, i, close + 2, '~'));
                         i = close + 1;
+                    }
+                    else
+                    {
+                        // Two tildes that close nothing are an empty subscript, which Pandoc drops.
+                        report(i, i + 2, "Pandoc reads two tildes as an empty subscript and drops them. Escape the tildes.", "\\~\\~");
+                        i++;
                     }
                 }
             }
