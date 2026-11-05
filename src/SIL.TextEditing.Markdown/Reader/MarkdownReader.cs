@@ -685,14 +685,12 @@ namespace SIL.TextEditing.Markdown.Reader
                     var runs = new List<Run>();
                     foreach (var part in cell)
                         if (part is ParagraphBlock paragraph) runs.AddRange(InlineReader.Read(paragraph.Inline, _context));
+                    // A raw tab reads as a space, but a cell may not hold one: the tab is the cell separator when the row is stored.
+                    bool tabInCell = cell.Span.Start >= 0 && cell.Span.End < _source.Length && _source.IndexOf('\t', cell.Span.Start, cell.Span.End - cell.Span.Start + 1) >= 0;
                     foreach (var run in runs)
-                    {
-                        if (run.Text.IndexOf('\t') >= 0 || run.Text.IndexOf(Chars.LineSeparator) >= 0)
-                        {
-                            _context.Report(MarkdownDiagnosticIds.TableTabInCell, MarkdownSeverity.Error, "A tab or line break inside a cell can't be stored. Replace it with spaces.", cell.Span.Start, cell.Span.End + 1);
-                            break;
-                        }
-                    }
+                        if (run.Text.IndexOf('\t') >= 0 || run.Text.IndexOf(Chars.LineSeparator) >= 0) { tabInCell = true; break; }
+                    if (tabInCell)
+                        _context.Report(MarkdownDiagnosticIds.TableTabInCell, MarkdownSeverity.Error, "A tab or line break inside a cell can't be stored. Replace it with spaces.", cell.Span.Start, cell.Span.End + 1);
                     cellRuns.Add(runs);
                 }
                 bool isHeader = row.IsHeader;

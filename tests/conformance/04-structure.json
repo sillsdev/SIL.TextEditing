@@ -259,6 +259,12 @@
     "canonical": null
   },
   {
+    "name": "a raw tab inside a cell cannot be stored either, although it would read as a space",
+    "markdown": "| A |\n|---|\n| 1\t2 |\n",
+    "findings": [ { "id": "fwmd.table.tab-in-cell", "line": 3, "column": 2, "endLine": 3, "endColumn": 7 } ],
+    "pandoc": false
+  },
+  {
     "name": "a tab inside a cell cannot be stored",
     "markdown": "| A |\n|---|\n| 1&#9;2 |\n",
     "findings": [ { "id": "fwmd.table.tab-in-cell", "line": 3, "column": 2, "endLine": 3, "endColumn": 10 } ],
