@@ -406,7 +406,7 @@ namespace SIL.TextEditing.LCModel.Tests
             {
                 foreach (bool styleRules in new[] { true, false })
                 {
-                    if (LiblcmOracle.Int(styleRules, tpt, variation, value) != LiblcmOracle.Outcome.Throws) continue;
+                    if (LiblcmOracle.SweptInt(styleRules, tpt, variation, value) != LiblcmOracle.Outcome.Throws) continue;
                     cases++;
                     var dropped = new List<DroppedProperty>();
                     bool loads;
@@ -430,7 +430,7 @@ namespace SIL.TextEditing.LCModel.Tests
             {
                 foreach (bool styleRules in new[] { true, false })
                 {
-                    if (LiblcmOracle.Str(styleRules, tpt, value) != LiblcmOracle.Outcome.Throws) continue;
+                    if (LiblcmOracle.SweptStr(styleRules, tpt, value) != LiblcmOracle.Outcome.Throws) continue;
                     cases++;
                     var dropped = new List<DroppedProperty>();
                     bool loads;

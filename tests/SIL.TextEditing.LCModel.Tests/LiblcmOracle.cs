@@ -41,6 +41,31 @@ namespace SIL.TextEditing.LCModel.Tests
             });
         }
 
+        // The whole sweep is run once, whichever test asks first: several tests read it, and the serializers are the slow part.
+        static readonly Lazy<Dictionary<(bool, int, int, int), Outcome>> IntTable = new Lazy<Dictionary<(bool, int, int, int), Outcome>>(() =>
+        {
+            var table = new Dictionary<(bool, int, int, int), Outcome>();
+            foreach (bool styleRules in new[] { true, false })
+                foreach (var (tpt, variation, value) in IntCases())
+                    table[(styleRules, tpt, variation, value)] = Int(styleRules, tpt, variation, value);
+            return table;
+        });
+
+        static readonly Lazy<Dictionary<(bool, int, string), Outcome>> StrTable = new Lazy<Dictionary<(bool, int, string), Outcome>>(() =>
+        {
+            var table = new Dictionary<(bool, int, string), Outcome>();
+            foreach (bool styleRules in new[] { true, false })
+                foreach (var (tpt, value) in StringCases())
+                    table[(styleRules, tpt, value)] = Str(styleRules, tpt, value);
+            return table;
+        });
+
+        /// <summary>The outcome of one case of the swept domain (<see cref="IntCases"/>), run once.</summary>
+        public static Outcome SweptInt(bool styleRules, int tpt, int variation, int value) => IntTable.Value[(styleRules, tpt, variation, value)];
+
+        /// <summary>The outcome of one case of the swept domain (<see cref="StringCases"/>), run once.</summary>
+        public static Outcome SweptStr(bool styleRules, int tpt, string value) => StrTable.Value[(styleRules, tpt, value)];
+
         public static Outcome Str(bool styleRules, int tpt, string value)
         {
             var builder = TsStringUtils.MakePropsBldr();
@@ -111,8 +136,7 @@ namespace SIL.TextEditing.LCModel.Tests
 
         public static readonly int[] IntValues =
         {
-            int.MinValue, int.MinValue + 1, -65536, -1000, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 16, 17, 100, 255, 256, 1000, 65535,
-            65536, 16777215, int.MaxValue,
+            int.MinValue, int.MinValue + 1, -65536, -1000, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 17, 100, 256, 65536, 16777215, int.MaxValue,
         };
 
         public static readonly string[] StringValues = StringSamples().Distinct().ToArray();

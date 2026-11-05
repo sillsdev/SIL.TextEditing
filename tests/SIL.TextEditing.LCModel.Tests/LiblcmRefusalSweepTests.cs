@@ -21,7 +21,7 @@ namespace SIL.TextEditing.LCModel.Tests
             foreach (bool styleRules in new[] { true, false })
                 foreach (var (tpt, variation, value) in IntCases())
                 {
-                    bool liblcmThrows = Int(styleRules, tpt, variation, value) == Outcome.Throws;
+                    bool liblcmThrows = SweptInt(styleRules, tpt, variation, value) == Outcome.Throws;
                     bool refused = LiblcmRefusals.ForInt(tpt, variation, value, styleRules) != null;
                     if (liblcmThrows != refused)
                         mismatches.Add(Describe(styleRules, tpt, $"var {variation} value {value}: liblcm {(liblcmThrows ? "throws" : "loads")}, rules {(refused ? "refuse" : "accept")}"));
@@ -36,7 +36,7 @@ namespace SIL.TextEditing.LCModel.Tests
             foreach (bool styleRules in new[] { true, false })
                 foreach (var (tpt, value) in StringCases())
                 {
-                    bool liblcmThrows = Str(styleRules, tpt, value) == Outcome.Throws;
+                    bool liblcmThrows = SweptStr(styleRules, tpt, value) == Outcome.Throws;
                     bool refused = LiblcmRefusals.ForString(tpt, value, styleRules) != null;
                     if (liblcmThrows != refused)
                         mismatches.Add(Describe(styleRules, tpt, $"'{Show(value)}': liblcm {(liblcmThrows ? "throws" : "loads")}, rules {(refused ? "refuse" : "accept")}"));
@@ -53,7 +53,7 @@ namespace SIL.TextEditing.LCModel.Tests
             var byNumber = new Dictionary<bool, List<int>>();
             foreach (bool styleRules in new[] { true, false })
                 byNumber[styleRules] = IntNumbers
-                    .Where(tpt => IntCases().Where(c => c.tpt == tpt && !(c.variation == -1 && c.value == -1)).All(c => Int(styleRules, c.tpt, c.variation, c.value) == Outcome.Throws))
+                    .Where(tpt => IntCases().Where(c => c.tpt == tpt && !(c.variation == -1 && c.value == -1)).All(c => SweptInt(styleRules, c.tpt, c.variation, c.value) == Outcome.Throws))
                     .ToList();
             foreach (bool styleRules in new[] { true, false })
                 Assert.Equal(IntNumbers.Where(n => LiblcmRefusals.IsPropertyRefused(n, styleRules)).ToList(), byNumber[styleRules]);
