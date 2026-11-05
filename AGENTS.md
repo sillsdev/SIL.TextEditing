@@ -14,7 +14,7 @@
   difference goes behind `#if NET10_0_OR_GREATER`, is small, and is listed in the README.
 - **Packages.** Only SIL.WritingSystems (libpalaso, ADR 0002; referenced by the Avalonia and LCModel projects), Avalonia (and its Headless, Skia, Desktop, Themes.Fluent and Win32.Interoperability packages; Themes.Fluent and Win32.Interoperability are samples-only; Desktop is for samples and test projects that need a real window, never for a shipped library), SIL.LCModel.Core (FieldWorks' pin; referenced by `SIL.TextEditing.LCModel`, ADR 0016) and SIL.LCModel (FieldWorks' pin, hosts may float up; referenced by the planned `SIL.TextEditing.Project` only, ADR 0031), Markdig.Signed 0.37.0 (referenced by the `SIL.TextEditing.Markdown` project only, ADRs 0011 and 0028) and the
   xunit test stack. Ask before adding anything else.
-- **Warnings are errors, nullable is on.** `IsTrimmable` and `IsAotCompatible` stay on for net10.0 libraries, except `SIL.TextEditing.LCModel` and the planned `SIL.TextEditing.Project` (liblcm is not trim-safe; neither is for Motif's AOT GUI).
+- **Warnings are errors, nullable is on.** `IsTrimmable` and `IsAotCompatible` stay on for net10.0 libraries, except `SIL.TextEditing.LCModel` and the planned `SIL.TextEditing.Project` (liblcm is not trim-safe; neither host publishes trimmed or native AOT, ADR 0031).
 - **No "Fw" prefixes** in names. Namespaces are `SIL.TextEditing` and `SIL.TextEditing.Avalonia`.
 - **Run model.** `Run` is shaped like one ITsString run (Ws and ObjData are fields, mapped by the adapter): text, writing-system id, an opaque `PropertyBag` keyed by FieldWorks
   property numbers, and `ObjData`. The editor never interprets a bag; it carries it through every edit.
