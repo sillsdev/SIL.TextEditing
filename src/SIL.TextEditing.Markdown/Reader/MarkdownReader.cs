@@ -52,8 +52,9 @@ namespace SIL.TextEditing.Markdown.Reader
                     "fwmd: " + fm.Version.Value + " is not a version this reader knows (it reads version " + MarkdownFrontMatter.CurrentVersion + "). Update the tool.", at, lineEnd);
                 _unsupportedVersion = true;
             }
-            if (fm.Analysis != null) _context.DefaultAnalysis = fm.Analysis;
-            if (fm.Vernacular != null) _context.DefaultVernacular = fm.Vernacular;
+            // The file names its defaults, and the project says whether it has them (spec 2.1): an id the project lacks is as unknown here as after ws=.
+            if (fm.Analysis != null) { _context.DefaultAnalysis = fm.Analysis; _context.CheckWritingSystem(fm.Analysis, fm.AnalysisAt![0], fm.AnalysisAt[1]); }
+            if (fm.Vernacular != null) { _context.DefaultVernacular = fm.Vernacular; _context.CheckWritingSystem(fm.Vernacular, fm.VernacularAt![0], fm.VernacularAt[1]); }
             return blanked.ToString();
         }
 

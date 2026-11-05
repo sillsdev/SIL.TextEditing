@@ -29,6 +29,9 @@ namespace SIL.TextEditing.Markdown
 
         /// <summary>The source range [start, end) of the whole block including its <c>---</c> lines, or null when the text has none.</summary>
         public int[]? Range { get; internal set; }
+
+        /// <summary>The [start, end) of the <c>analysis</c> and <c>vernacular</c> lines in the block, for a finding about their writing systems.</summary>
+        internal int[]? AnalysisAt, VernacularAt;
     }
 
     internal static class FrontMatterFormat
@@ -87,6 +90,11 @@ namespace SIL.TextEditing.Markdown
                 string trimmed = line.TrimEnd();
                 if (trimmed.Length == 0 || trimmed.TrimStart().StartsWith("#", StringComparison.Ordinal)) continue;
                 if (line.StartsWith("---", StringComparison.Ordinal) || line.StartsWith("...", StringComparison.Ordinal)) break;
+                if (trimmed.Length > 0 && trimmed[0] == '	')
+                {
+                    problem(lineStart, lineEnd, "YAML is indented with spaces, not tabs: Pandoc refuses this front matter.");
+                    continue;
+                }
                 int indent = 0;
                 while (indent < trimmed.Length && trimmed[indent] == ' ') indent++;
                 string body = trimmed.Substring(indent);
@@ -106,8 +114,14 @@ namespace SIL.TextEditing.Markdown
                             if (value != null && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int version)) result.Version = version;
                             else problem(lineStart, lineEnd, "fwmd takes a whole number, the format version.");
                             break;
-                        case "analysis": result.Analysis = value; break;
-                        case "vernacular": result.Vernacular = value; break;
+                        case "analysis":
+                            if (IsOneId(value)) { result.Analysis = value; result.AnalysisAt = new[] { lineStart, lineEnd }; }
+                            else problem(lineStart, lineEnd, "analysis takes one writing-system id.");
+                            break;
+                        case "vernacular":
+                            if (IsOneId(value)) { result.Vernacular = value; result.VernacularAt = new[] { lineStart, lineEnd }; }
+                            else problem(lineStart, lineEnd, "vernacular takes one writing-system id.");
+                            break;
                         case "writingSystems": section = "writingSystems"; break;
                     }
                 }
@@ -119,6 +133,14 @@ namespace SIL.TextEditing.Markdown
             }
             FlushWs(result, currentWs, props);
             return result;
+        }
+
+        /// <summary>A writing-system id is one scalar: not empty, not a list or a map, no control character.</summary>
+        static bool IsOneId(string? value)
+        {
+            if (string.IsNullOrEmpty(value) || value![0] == '[' || value[0] == '{' || value[0] == '-' || value[0] == '|' || value[0] == '>') return false;
+            foreach (char c in value) if (c < ' ' || c == (char)0x7F) return false;
+            return true;
         }
 
         static void FlushWs(MarkdownFrontMatter result, string? id, Dictionary<string, string> props)

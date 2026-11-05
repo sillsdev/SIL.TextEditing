@@ -120,5 +120,42 @@
       { "text": "dots", "ws": "en", "props": { "s133": "Hyperlink" }, "link": { "guid": "0000000d-0000-4000-8000-00000000000d", "tool": "lexiconEdit" } }
     ] } ],
     "canonical": "[dots](/lexicon/..(0000000d)){.name guid=0000000d-0000-4000-8000-00000000000d}\n"
+  },
+  {
+    "name": "a default writing system in the front matter that the project lacks is as unknown as one after ws=",
+    "project": "standard",
+    "markdown": "---\nfwmd: 1\nanalysis: \"en\"\nvernacular: \"zzz\"\n---\n\n[x]{.v}\n",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "zzz" } ] } ],
+    "findings": [ { "id": "fwmd.ws.unknown", "line": 4, "column": 1, "endLine": 4, "endColumn": 18, "choices": [ "en", "ceb", "ceb-x-old", "ar" ] } ],
+    "pandoc": false
+  },
+  {
+    "name": "ok: fwmd.ws.unknown a front matter default the project has",
+    "project": "standard",
+    "markdown": "---\nfwmd: 1\nanalysis: \"ceb\"\nvernacular: \"ceb-x-old\"\n---\n\n[x]{.v}\n",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "ceb-x-old" } ] } ]
+  },
+  {
+    "name": "a front matter default that is empty is malformed, and unmarked text keeps the host's default",
+    "project": "standard",
+    "markdown": "---\nfwmd: 1\nanalysis: \"\"\n---\n\nx\n",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en" } ] } ],
+    "findings": [ { "id": "fwmd.syntax.malformed-attribute", "line": 3, "column": 1, "endLine": 3, "endColumn": 13 } ],
+    "pandoc": false
+  },
+  {
+    "name": "a front matter default that is a list is malformed",
+    "project": "standard",
+    "markdown": "---\nfwmd: 1\nanalysis: [en]\n---\n\nx\n",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "x", "ws": "en" } ] } ],
+    "findings": [ { "id": "fwmd.syntax.malformed-attribute", "line": 3, "column": 1, "endLine": 3, "endColumn": 15 } ],
+    "pandoc": false
+  },
+  {
+    "name": "a tab in the front matter's indentation is malformed, because Pandoc refuses it",
+    "project": "standard",
+    "markdown": "---\nfwmd: 1\nwritingSystems:\n\ten:\n---\n\nx\n",
+    "findings": [ { "id": "fwmd.syntax.malformed-attribute", "line": 4, "column": 1, "endLine": 4, "endColumn": 5 } ],
+    "pandoc": false
   }
 ]
