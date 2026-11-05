@@ -19,8 +19,9 @@ jobs:
           dotnet-version: 10.0.x
 
       # FieldWorks Markdown is a profile of Pandoc Markdown (ADR 0028). The Markdown tests read every conformance fixture and every generated document with
-      # Pandoc and compare what it sees with what the library reads, so Pandoc is installed here, pinned: its tree differs between versions. A missing Pandoc
-      # fails those tests in CI (the tests skip only on a machine that does not set CI).
+      # Pandoc and compare what it sees with what the library reads, so Pandoc is installed here, pinned: its tree differs between versions. Record files
+      # (ADR 0032) are checked the same way: Pandoc must read every canonical record fixture and generated record file, the shape of its record-data, its
+      # one-paragraph rich values and its body as the library does. A missing Pandoc fails those tests in CI (the tests skip only on a machine that does not set CI).
       - name: Install Pandoc
         shell: pwsh
         env:
