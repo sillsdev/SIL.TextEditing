@@ -129,6 +129,9 @@ namespace SIL.TextEditing
         /// <summary>For a test: how many holders the bag remembers (the dead ones among the weak ones until they are pruned).</summary>
         internal int OwnerCount => (_owner == null ? 0 : 1) + (_otherOwners?.Count ?? 0);
 
+        /// <summary>For a test: holders this says are gone are swept like holders the garbage collector took, so the sweep can be tested without the collector.</summary>
+        internal Predicate<IBagOwner>? TreatAsGone { get; set; }
+
         internal void Attach(IBagOwner owner)
         {
             if (_owner == null) _owner = owner;
@@ -156,7 +159,7 @@ namespace SIL.TextEditing
                 for (int i = 0; i < _otherOwners.Count; i++)
                 {
                     var entry = _otherOwners[i];
-                    if (!entry.TryGetTarget(out var other)) continue;
+                    if (!entry.TryGetTarget(out var other) || TreatAsGone?.Invoke(other) == true) continue;
                     if (!removed && ReferenceEquals(other, owner)) { removed = true; continue; }
                     _otherOwners[keep++] = entry;
                 }

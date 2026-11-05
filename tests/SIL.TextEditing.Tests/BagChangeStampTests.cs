@@ -177,16 +177,17 @@ namespace SIL.TextEditing.Tests
         [Fact]
         public void Letting_go_of_a_bag_drops_the_holders_that_are_gone_without_waiting_for_a_new_one()
         {
+            // No garbage collector: the test says which holders count as gone (a collection may or may not reclaim a local on every runtime and build).
             var shared = new PropertyBag();
             var first = new Run { Text = "first" };
             first.Props = shared;
-            HoldBriefly(shared, 100);
+            var gone = new System.Collections.Generic.List<Run>();
+            for (int i = 0; i < 100; i++) { var r = new Run { Text = "x" }; r.Props = shared; gone.Add(r); }
             var last = new Run { Text = "last" };
             last.Props = shared;
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            Assert.True(shared.OwnerCount > 50);             // the dead holders are still listed: nothing has attached or detached since
-            last.Props = new PropertyBag();                   // a live holder lets go; the bag sweeps the dead ones on the way
+            shared.TreatAsGone = owner => owner is Run run && gone.Contains(run);
+            Assert.True(shared.OwnerCount > 50);             // all of them are still listed: nothing has attached or detached since
+            last.Props = new PropertyBag();                   // a live holder lets go; the bag sweeps the gone ones on the way
             Assert.Equal(1, shared.OwnerCount);
             GC.KeepAlive(first);
         }
