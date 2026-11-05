@@ -146,6 +146,24 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             return builder.Build();
         }
 
+        /// <summary>The block kinds a rich field allows, from its <c>blocks</c> list of <c>tables</c>, <c>lists</c> and <c>headings</c> (empty: none); absent: the default.</summary>
+        static BlockFeatures? Blocks(Dictionary<string, object?> f)
+        {
+            if (!f.TryGetValue("blocks", out var list) || list == null) return null;
+            var features = BlockFeatures.None;
+            foreach (string name in Json.Arr(list).Select(Json.Str))
+            {
+                switch (name)
+                {
+                    case "tables": features |= BlockFeatures.Tables; break;
+                    case "lists": features |= BlockFeatures.Lists; break;
+                    case "headings": features |= BlockFeatures.Headings; break;
+                    default: throw new InvalidOperationException("A block feature called " + name);
+                }
+            }
+            return features;
+        }
+
         static RecordWritingSystem Ws(Dictionary<string, object?> f) => Json.OptStr(f, "ws") == "vernacular" ? RecordWritingSystem.Vernacular : RecordWritingSystem.Analysis;
 
         static void AddField(RecordObjectTypeBuilder type, Dictionary<string, object?> f)
@@ -157,8 +175,8 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             {
                 case "text": if (multi) type.MultiText(name); else type.Text(name, Ws(f)); break;
                 case "rich":
-                    if (multi) type.MultiRich(name, Json.OptBool(f, "paragraphs", false));
-                    else type.Rich(name, Json.OptBool(f, "paragraphs", false), Ws(f));
+                    if (multi) type.MultiRich(name, Json.OptBool(f, "paragraphs", false), Blocks(f));
+                    else type.Rich(name, Json.OptBool(f, "paragraphs", false), Ws(f), Blocks(f));
                     break;
                 case "notation": if (multi) type.MultiNotation(name, Json.Str(f["notation"])); else type.Notation(name, Json.Str(f["notation"]), Ws(f)); break;
                 case "integer": type.Integer(name); break;
@@ -272,6 +290,8 @@ namespace SIL.TextEditing.Markdown.Tests.Records
         {
             var host = FixtureHost.From(c.Project);
             var markdown = new MarkdownOptions { WritingSystems = host, Styles = host.HasStyles ? host : null };
+            if (host.TableHeaderStyle != null) markdown.StyleNames.TableHeader = host.TableHeaderStyle;
+            if (host.TableRowStyle != null) markdown.StyleNames.TableRow = host.TableRowStyle;
             if (c.Project != null && c.Project.ContainsKey("objects")) { markdown.Objects = host; markdown.Paths = host; }
             return new RecordReadOptions { Markdown = markdown, Notations = c.Notations == null ? null : new FixtureNotations(c.Notations) };
         }

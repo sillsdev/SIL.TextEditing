@@ -18,6 +18,23 @@ namespace SIL.TextEditing.Markdown.Reader
         readonly ReaderContext _context;
         readonly string _source;
         readonly List<Paragraph> _paragraphs = new List<Paragraph>();
+        // Where each paragraph came from, parallel to _paragraphs: the source range of the paragraph, and the number of the Markdown block it belongs to
+        // (a table's rows share one, a list's items share one). The record reader places block-not-allowed findings with them.
+        readonly List<ParagraphSource> _sources = new List<ParagraphSource>();
+        int _spanStart, _spanEnd, _blockNumber;
+
+        void StartBlock(int start, int end)
+        {
+            _blockNumber++;
+            _spanStart = start;
+            _spanEnd = end;
+        }
+
+        void SetSpan(Markdig.Syntax.SourceSpan span)
+        {
+            _spanStart = span.Start;
+            _spanEnd = span.End + 1;
+        }
 
         MarkdownReader(MarkdownOptions options, string source, bool bom)
         {
@@ -157,7 +174,7 @@ namespace SIL.TextEditing.Markdown.Reader
             reader.ReadAll();
             var document = new Document();
             document.Paragraphs.AddRange(reader._paragraphs);
-            return new MarkdownParseResult(document, reader._context.Diagnostics.Select((d, i) => (d, i)).OrderBy(x => x.d.Start).ThenBy(x => x.i).Select(x => x.d).ToList(), reader._context);
+            return new MarkdownParseResult(document, reader._context.Diagnostics.Select((d, i) => (d, i)).OrderBy(x => x.d.Start).ThenBy(x => x.i).Select(x => x.d).ToList(), reader._context, reader._sources);
         }
 
         /// <summary>The paragraphs of a text, for the writer's check that what it wrote reads back. <paramref name="clean"/> is false when
@@ -558,6 +575,7 @@ namespace SIL.TextEditing.Markdown.Reader
             if (TryEmptyMarker(text, start, style, props)) return;
             CheckPandoc(start, end, true, false, false);
             _context.Base = start;
+            StartBlock(start, end);
             int mark = _context.Count;
             var document = TryParse(text, NotationExtension.Document, _context);
             if (document == null)
@@ -606,6 +624,7 @@ namespace SIL.TextEditing.Markdown.Reader
         void ReadBlock(Block block, string text)
         {
             _context.Base = 0;
+            StartBlock(block.Span.Start, block.Span.End + 1);
             switch (block)
             {
                 case ParagraphBlock paragraph:
@@ -773,13 +792,14 @@ namespace SIL.TextEditing.Markdown.Reader
                         if (!first)
                             _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, "A list item is one paragraph. Start a new item.", paragraph.Span.Start, paragraph.Span.End + 1);
                         first = false;
+                        SetSpan(item.Span);   // the item, so that its marker is in the range
                         CheckPandoc(paragraph.Span.Start, paragraph.Span.End + 1);
                         _paragraphs.Add(MakeParagraph(style, new PropertyBag(), InlineReader.Read(paragraph.Inline, _context), null));
                     }
                     else UnsupportedBlock(part, "A list item holds one paragraph; nested blocks are not supported.");
                 }
                 // A marker with nothing after it is an empty list item in Pandoc too: an empty paragraph in the list's style.
-                if (item.Count == 0) _paragraphs.Add(MakeParagraph(style, new PropertyBag(), new List<Run>(), null));
+                if (item.Count == 0) { SetSpan(item.Span); _paragraphs.Add(MakeParagraph(style, new PropertyBag(), new List<Run>(), null)); }
             }
         }
 
@@ -805,6 +825,7 @@ namespace SIL.TextEditing.Markdown.Reader
             {
                 if (!(child is TableRow row)) continue;
                 rowNumber++;
+                SetSpan(row.Span);
                 var cellRuns = new List<List<Run>>();
                 foreach (var cellBlock in row)
                 {
@@ -982,6 +1003,7 @@ namespace SIL.TextEditing.Markdown.Reader
             paragraph.Normalize();
             if (_options.NormalizeText) ToNfd(paragraph.Runs);
             paragraph.DefaultWs = paragraph.Runs.Count > 0 ? paragraph.Runs[0].Ws : defaultWs ?? _context.DefaultAnalysis;
+            _sources.Add(new ParagraphSource(_spanStart, _spanEnd, _blockNumber));
             return paragraph;
         }
     }

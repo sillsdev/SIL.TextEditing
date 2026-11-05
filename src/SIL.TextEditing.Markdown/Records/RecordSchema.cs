@@ -58,6 +58,13 @@ namespace SIL.TextEditing.Markdown.Records
         /// text (a MultiString or String; block syntax is <c>fwmd.field.block-syntax</c>).</summary>
         public bool Paragraphs { get; internal set; }
 
+        internal BlockFeatures? Blocks { get; set; }
+
+        /// <summary>For a rich field of paragraphs: the block kinds its text may hold, a field's block-features setting (ADR 0033, owner decision Q79). Default
+        /// <see cref="SIL.TextEditing.BlockFeatures.All"/>. The reader reports <c>fwmd.record.block-not-allowed</c> for a block the field does not allow. For every
+        /// other field, one paragraph of inline text included, it is <see cref="SIL.TextEditing.BlockFeatures.None"/>: such a field holds no block at all.</summary>
+        public BlockFeatures BlockFeatures => Kind == RecordFieldKind.Rich && Paragraphs ? Blocks ?? BlockFeatures.All : BlockFeatures.None;
+
         /// <summary>For a field that is not per writing system: the default writing system its unmarked text means.</summary>
         public RecordWritingSystem WritingSystem { get; internal set; }
 
@@ -323,12 +330,23 @@ namespace SIL.TextEditing.Markdown.Records
         public RecordObjectTypeBuilder MultiText(string name) => Add(new RecordField(name, RecordFieldKind.Text) { MultiWritingSystem = true });
 
         /// <summary>FieldWorks Markdown in one writing system: one paragraph (a String) or, with <paramref name="paragraphs"/>, several (an StText).</summary>
-        public RecordObjectTypeBuilder Rich(string name, bool paragraphs = false, RecordWritingSystem ws = RecordWritingSystem.Analysis)
-            => Add(new RecordField(name, RecordFieldKind.Rich) { Paragraphs = paragraphs, WritingSystem = ws });
+        /// <param name="blocks">For a field of paragraphs, the block kinds it allows; default <see cref="BlockFeatures.All"/>. A field of one paragraph allows none, and says
+        /// <see cref="BlockFeatures.None"/> or nothing (ADR 0033).</param>
+        /// <exception cref="ArgumentException">A field of one paragraph is given a block kind, or <paramref name="blocks"/> holds a bit that is not a kind.</exception>
+        public RecordObjectTypeBuilder Rich(string name, bool paragraphs = false, RecordWritingSystem ws = RecordWritingSystem.Analysis, BlockFeatures? blocks = null)
+            => Add(new RecordField(name, RecordFieldKind.Rich) { Paragraphs = paragraphs, WritingSystem = ws, Blocks = CheckBlocks(name, paragraphs, blocks) });
 
         /// <summary>FieldWorks Markdown per writing system (a MultiString: one paragraph each).</summary>
-        public RecordObjectTypeBuilder MultiRich(string name, bool paragraphs = false)
-            => Add(new RecordField(name, RecordFieldKind.Rich) { Paragraphs = paragraphs, MultiWritingSystem = true });
+        public RecordObjectTypeBuilder MultiRich(string name, bool paragraphs = false, BlockFeatures? blocks = null)
+            => Add(new RecordField(name, RecordFieldKind.Rich) { Paragraphs = paragraphs, MultiWritingSystem = true, Blocks = CheckBlocks(name, paragraphs, blocks) });
+
+        static BlockFeatures? CheckBlocks(string name, bool paragraphs, BlockFeatures? blocks)
+        {
+            if (blocks == null) return null;
+            if ((blocks.Value & ~BlockFeatures.All) != 0) throw new ArgumentException("Block features of " + name + " name tables, lists and headings only: " + blocks.Value, nameof(blocks));
+            if (!paragraphs && blocks.Value != BlockFeatures.None) throw new ArgumentException("The field " + name + " holds one paragraph of inline text, so it holds no block: its block features are None.", nameof(blocks));
+            return blocks;
+        }
 
         /// <summary>Text in the named notation, in one writing system.</summary>
         public RecordObjectTypeBuilder Notation(string name, string notation, RecordWritingSystem ws = RecordWritingSystem.Analysis)

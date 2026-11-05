@@ -64,11 +64,20 @@ namespace SIL.TextEditing.Playground
                 .SetStr(TextPropertyNumbers.BulNumTxtBefore, "(").SetStr(TextPropertyNumbers.BulNumTxtAfter, ")"),
             ["List Wide Label"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-24), 1).SetInt(TextPropertyNumbers.BulNumScheme, 10)
                 .SetStr(TextPropertyNumbers.BulNumTxtBefore, "Chapter number ").SetStr(TextPropertyNumbers.BulNumTxtAfter, "."),
+            ["Table Header"] = Bag().SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn).SetInt(TextPropertyNumbers.ParaColor, PaleGrey),
+            ["Table Row"] = Bag(),
             ["List Letter"] = Bag().SetInt(TextPropertyNumbers.LeadingIndent, Mpt(36), 1).SetInt(TextPropertyNumbers.FirstIndent, Mpt(-24), 1).SetInt(TextPropertyNumbers.BulNumScheme, 14)
                 .SetStr(TextPropertyNumbers.BulNumTxtAfter, ")"),
         };
 
         public static SampleStyles Instance { get; } = new SampleStyles();
+
+        /// <summary>How the playground's fields tell a table row, a list item and a heading from a plain paragraph (ADR 0033): by these style names, which are the host's.</summary>
+        public static IBlockRecognizer Recognizer { get; } = new StyleBlockRecognizer(
+            new[] { "Heading 1" },
+            new[] { "List Bullet", "List Number", "List Flush", "List Roman", "List Wide Label", "List Letter" },
+            new[] { "Table Header", "Table Row" },
+            plainStyle: string.Empty);
 
         public static IReadOnlyList<string> CharacterStyles { get; } = new[] { None }.Concat(Character.Keys).ToList();
         public static IReadOnlyList<string> ParagraphStyles { get; } = new[] { None }.Concat(Paragraphs.Keys).ToList();

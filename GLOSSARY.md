@@ -68,6 +68,17 @@ _Avoid_: editor (for a single control), text box
 One thing the host undoes with one Undo: a run of consecutive typing, or a single command such as a delete or a paste. Each delta carries the number of the step it belongs to (ADR 0023).
 _Avoid_: undo group (in prose; `UndoGroup` is the member name), undo unit
 
+**Block features**:
+The set of block kinds (tables, lists, headings) a field, or a rich field of a record schema, may hold. The default is all of them. When a kind is off, the host's commands for it are refused and a paste or Markdown import turns a block of it into plain paragraphs (ADR 0033).
+_Avoid_: block settings, block flags
+
+**Flatten**:
+To turn a block the field does not allow into plain paragraphs: a table into one paragraph per row with the cells joined by a space, a bar and a space, a list item or a heading into a plain paragraph. Paste and the record reader's fix do it with the same code.
+_Avoid_: strip, unformat
+
+**Block recogniser**:
+The one place that says whether a paragraph is a table row, a list item or a heading, by the host's style names (ADR 0033).
+
 **Leave request**:
 The event a field raises, with a direction, when a key such as Tab or an arrow cannot move the caret any further inside it, so the host can move focus (ADR 0021).
 _Avoid_: focus request, tab-out

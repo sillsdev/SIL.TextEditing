@@ -805,7 +805,7 @@ namespace SIL.TextEditing.Markdown.Records
 
             var scalar = new RecordScalar(value) { Path = path, Range = range };
             int[] map = decoded ? Fallback(value, valueStart, spellEnd) : ValueMap(node, valueStart, value, spellEnd);
-            if (field.Kind == RecordFieldKind.Rich) scalar.Paragraphs = ReadRich(value, field, ws, map);
+            if (field.Kind == RecordFieldKind.Rich) scalar.Paragraphs = ReadRich(value, field, ws, map, node.Kind == YamlFrameKind.Scalar && node.Style == ScalarStyle.Literal);
 
             // The canonical spelling, and a finding when the file spells it otherwise. A value the writer cannot spell is an error, so a file read without one
             // can always be written (review of PR 147, P2-1); its fix spells what was read, where that reads back the same.
@@ -934,13 +934,14 @@ namespace SIL.TextEditing.Markdown.Records
 
         string DefaultWs(RecordField field, string? ws) => ws ?? (field.WritingSystem == RecordWritingSystem.Vernacular ? _vernacular : _analysis);
 
-        IReadOnlyList<Paragraph> ReadRich(string value, RecordField field, string? ws, int[] map)
+        IReadOnlyList<Paragraph> ReadRich(string value, RecordField field, string? ws, int[] map, bool literal = false)
         {
             var options = LeafOptions(DefaultWs(field, ws));
             if (field.Paragraphs)
             {
                 var result = MarkdownConverter.Parse(value, options);
                 Forward(result.Diagnostics, map);
+                CheckBlocks(result, field, options, map, literal);
                 return result.Document.Paragraphs.ToList();
             }
             var inline = MarkdownConverter.ParseInline(value, options);
@@ -952,6 +953,76 @@ namespace SIL.TextEditing.Markdown.Records
             if (paragraph.Runs.Count > 0) paragraph.DefaultWs = paragraph.Runs[0].Ws;
             else paragraph.DefaultWs = DefaultWs(field, ws);
             return new[] { paragraph };
+        }
+
+        /// <summary>A table, list or heading in a rich field that does not allow it is <c>fwmd.record.block-not-allowed</c> (ADR 0033, owner decision Q79): one finding for each
+        /// block, on the block's lines. Its fix is the block as plain paragraphs, made by <see cref="BlockFlattener"/>, the same code that flattens a paste; it is offered
+        /// for a literal block (the body too), where the lines can be replaced, and only when the plain paragraphs read back as what they were made from.</summary>
+        void CheckBlocks(MarkdownParseResult result, RecordField field, MarkdownOptions options, int[] map, bool literal)
+        {
+            var allowed = field.BlockFeatures;
+            if (allowed == BlockFeatures.All) return;
+            var paragraphs = result.Document.Paragraphs;
+            var sources = result.ParagraphSources;
+            if (sources.Count != paragraphs.Count) return;
+            var recognizer = options.StyleNames.ToBlockRecognizer();
+            int i = 0;
+            while (i < paragraphs.Count)
+            {
+                var kind = recognizer.Recognize(paragraphs[i]);
+                if (!BlockFlattener.IsBlockKind(kind) || (allowed & kind) != 0) { i++; continue; }
+                int j = i + 1;
+                while (j < paragraphs.Count && sources[j].Block == sources[i].Block && recognizer.Recognize(paragraphs[j]) == kind) j++;
+                // The block's lines, whole: Markdig's span of a table row leaves out its outer pipes, and the fix replaces the lines.
+                string text = result.Source;
+                int start = Math.Max(0, Math.Min(sources[i].Start, text.Length)), end = Math.Max(start, Math.Min(sources[j - 1].End, text.Length));
+                while (start > 0 && text[start - 1] != '\n' && text[start - 1] != '\r') start--;
+                while (end > start && (text[end - 1] == '\n' || text[end - 1] == '\r')) end--;
+                while (end < text.Length && text[end] != '\n' && text[end] != '\r') end++;
+                var flat = paragraphs.Skip(i).Take(j - i).Select(p => p.Clone(false)).ToList();
+                BlockFlattener.Flatten(flat, allowed, recognizer);
+                string name = kind == BlockFeatures.Tables ? "a table" : kind == BlockFeatures.Lists ? "a list" : "a heading";
+                string? fix = literal ? FlatBlockText(flat, options, Math.Max(0, ColumnOf(Map(map, 0)))) : null;
+                Report(RecordDiagnosticIds.BlockNotAllowed, MarkdownSeverity.Error,
+                    "This field does not allow " + name + (kind == BlockFeatures.Tables ? ". Its rows are plain paragraphs here." : kind == BlockFeatures.Lists ? ". Its items are plain paragraphs here." : ". It is a plain paragraph here."),
+                    Map(map, start), MapEnd(map, start, end), fix);
+                i = j;
+            }
+        }
+
+        /// <summary>The paragraphs as FieldWorks Markdown for the lines of a literal block at <paramref name="indent"/> spaces, or null when they would not read back as they are.</summary>
+        string? FlatBlockText(IReadOnlyList<Paragraph> flat, MarkdownOptions options, int indent)
+        {
+            try
+            {
+                string text = RecordScalar.Rich(flat, options).Text;
+                if (RecordProfile.LiteralProblem(text) != null) return null;
+                if (!MarkdownConverter.AreEquivalent(flat, MarkdownConverter.Parse(text, options).Document.Paragraphs)) return null;
+                int firstBreak = _text.IndexOf('\n');   // the file's line ends: CR LF in the file gives CR LF in the replacement, not a mix
+                bool crlf = firstBreak > 0 && _text[firstBreak - 1] == '\r';
+                var lines = text.Split('\n');
+                var sb = new System.Text.StringBuilder(text.Length + lines.Length * indent);
+                for (int k = 0; k < lines.Length; k++)
+                {
+                    if (k > 0) sb.Append(crlf ? "\r\n" : "\n");
+                    if (k > 0 && lines[k].Length > 0) sb.Append(' ', indent);
+                    sb.Append(lines[k]);
+                }
+                return sb.ToString();
+            }
+            catch (MarkdownWriteException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>The column of a file offset: its distance from the start of its line.</summary>
+        int ColumnOf(int offset)
+        {
+            offset = Math.Max(0, Math.Min(offset, _text.Length));
+            int i = offset;
+            while (i > 0 && _text[i - 1] != '\n' && _text[i - 1] != '\r') i--;
+            return offset - i;
         }
 
         Guid? ReadReference(string value, YamlFrameNode node, int[] map)
@@ -1116,7 +1187,7 @@ namespace SIL.TextEditing.Markdown.Records
                 return;
             }
             var scalar = new RecordScalar(text) { Path = bodyField.Name + (root.WritingSystem != null ? "." + root.WritingSystem : string.Empty), Range = new[] { map[0], map[text.Length] } };
-            scalar.Paragraphs = ReadRich(text, bodyField, root.WritingSystem, map);
+            scalar.Paragraphs = ReadRich(text, bodyField, root.WritingSystem, map, true);
             string? problem = RecordProfile.LiteralProblem(text);
             if (problem != null)
             {

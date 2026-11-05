@@ -85,6 +85,10 @@ namespace SIL.TextEditing.Markdown.Records
         public const string UnexpectedBody = "fwmd.record.unexpected-body";
         /// <summary>Error: the body field written in <c>record-data:</c>; its value is the body (owner decision R-6).</summary>
         public const string BodyInFrame = "fwmd.record.body-in-frame";
+        /// <summary>Error: a table, list or heading in a rich field whose block features (<see cref="RecordField.BlockFeatures"/>) do not allow it (ADR 0033, owner
+        /// decision Q79). One finding for each block, on its lines. Fix: the block as plain paragraphs, exactly as a paste into a field that does not allow it
+        /// (<see cref="BlockFlattener"/>); none where the value is not a literal block.</summary>
+        public const string BlockNotAllowed = "fwmd.record.block-not-allowed";
         /// <summary>The default id of a host notation checker's finding that gives no code of its own.</summary>
         public const string Notation = "fwmd.record.notation";
 
@@ -93,7 +97,7 @@ namespace SIL.TextEditing.Markdown.Records
         {
             YamlSyntax, Tab, LineSeparator, DuplicateKey, Anchor, Alias, Tag, MergeKey, Folded, SecondDocument, TooDeep, CommentDropped, Unquoted, ScalarStyle,
             Flow, Empty, KeyOrder, NotARecord, UnknownKey, UnknownKind, SchemaMismatch, UnknownField, WrongShape, NotAnInteger, NotABoolean, BadGuid,
-            DuplicateGuid, NotAReference, PlainFieldMarkup, Unwritable, BadRoot, OutsideRoot, UnexpectedBody, BodyInFrame, Notation,
+            DuplicateGuid, NotAReference, PlainFieldMarkup, Unwritable, BadRoot, OutsideRoot, UnexpectedBody, BodyInFrame, BlockNotAllowed, Notation,
         };
     }
 

@@ -21,7 +21,7 @@ internal static class RecordCheck
         var builder = new RecordSchemaBuilder("aot.schema.json");
         builder.ObjectType("entry").MultiText("citation-form").Objects("senses", "sense").Integer("homograph-number").Boolean("do-not-use-for-parsing");
         builder.ObjectType("sense").MultiText("gloss").MultiRich("definition").Notation("features", "feature-structure").References("semantic-domains");
-        builder.ObjectType("record").Rich("title").Rich("description", paragraphs: true);
+        builder.ObjectType("record").Rich("title").Rich("description", paragraphs: true).Rich("notes", paragraphs: true, blocks: BlockFeatures.None);
         builder.Kind("lexicon/entry", "entry", 2).Kind("notebook/record", "record", 2, "description");
         var schema = builder.Build();
 
@@ -53,6 +53,17 @@ internal static class RecordCheck
         Check(withBody.Contains("---\n\nA "), "record: the description is the body: " + withBody);
         var back = RecordFileReader.Read(withBody, schema);
         Check(!back.HasErrors && back.Document != null && RecordDocument.AreEquivalent(notebook, back.Document), "record: the body reads back");
+
+        // Block features (ADR 0033): a heading in a field that allows none is found and fixed, and a paste flattens a table the same way.
+        var blocked = RecordFileReader.Read("---\nfwmd: 1\nrecord: \"notebook/record\"\nrecord-data:\n  notes: |\n    # Title\n---\n", schema);
+        Check(blocked.Diagnostics.Any(x => x.Id == RecordDiagnosticIds.BlockNotAllowed && x.Replacement == "Title"), "record: a heading in a field that allows no blocks: " + string.Join("; ", blocked.Diagnostics.Select(x => x.ToString())));
+        var pasted = new Document();
+        pasted.Paragraphs.Add(Para("x"));
+        var editor = new DocumentEditor(pasted) { BlockFeatures = BlockFeatures.None, BlockRecognizer = new StyleBlockRecognizer(null, null, new[] { "Table Row" }) };
+        var row = Para("a\tb");
+        row.Style = "Table Row";
+        editor.Paste(new List<Paragraph> { Para("lead"), row });
+        Check(pasted.Paragraphs.Count == 2 && pasted.Paragraphs[1].Text == "a | bx" && pasted.Paragraphs[1].Style == "Normal", "record: a pasted table row becomes a plain paragraph");
 
         string json = schema.ToJsonSchema();
         Check(json.Contains("\"contentMediaType\": \"text/x-fieldworks-feature-structure\"") && json.Contains("\"$id\": \"aot.schema.json\""), "record: the JSON Schema");

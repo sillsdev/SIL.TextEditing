@@ -26,6 +26,9 @@ The rest is **defaults**: how this version does it where the owner has not decid
   `BodyField`), field kinds `Text`, `Rich` (one paragraph, or `Paragraphs`), `Notation(name)`, `Integer`, `Boolean`, `Guid`, `Reference`, `Sequence`,
   `Object`, any text kind optionally per writing system, and a default writing system for a field in one. `Id` is what `schema:` says and the JSON Schema's
   `$id`. `ToJsonSchema()` writes draft-07. A field name has no `.`, `/`, `#`, space or control character (they delimit field paths).
+- **Block features** (ADR 0033, owner decision Q79): a rich field of paragraphs says which of tables, lists and headings it allows (`RecordField.BlockFeatures`; all by
+  default, none for a field of one paragraph). The reader reports `fwmd.record.block-not-allowed` for a block it does not allow, with a fix that flattens the block
+  as paste does, and the JSON Schema gives such a field `x-fieldworks-blocks`.
 - `RecordDocument`: the front-matter keys and `Data`, a tree of `RecordObject` (with `Guid`), `RecordAlternatives`, `RecordList` and `RecordScalar` (the
   value as text; a rich value read from a file also has its `Paragraphs`, a reference its `Target`). Values carry their field path
   (`senses/1/definition.en`) and range. `Find(path)`, `Objects()`, `AreEquivalent`.

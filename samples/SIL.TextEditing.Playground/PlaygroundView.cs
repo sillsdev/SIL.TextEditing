@@ -42,6 +42,9 @@ namespace SIL.TextEditing.Playground
             public const string Paste = "PasteButton";
             public const string ReadOnly = "ReadOnlyCheck";
             public const string SingleParagraph = "SingleParagraphCheck";
+            public const string AllowTables = "AllowTablesCheck";
+            public const string AllowLists = "AllowListsCheck";
+            public const string AllowHeadings = "AllowHeadingsCheck";
             public const string HostHandlesLeave = "HostHandlesLeaveCheck";
             public const string SpellCheck = "SpellCheckBox";
             public const string SpellShow = "SpellShowButton";
@@ -107,6 +110,8 @@ namespace SIL.TextEditing.Playground
         readonly ComboBox _countPicker;
         CheckBox _readOnlyCheck = null!;
         CheckBox _singleParagraphCheck = null!;
+        CheckBox _allowTables = null!, _allowLists = null!, _allowHeadings = null!;
+        ComboBox _paraStyleBox = null!;
         CheckBox _leaveHandled = null!;
         CheckBox _spellCheck = null!;
         SampleSpelling? _spelling;
@@ -206,7 +211,8 @@ namespace SIL.TextEditing.Playground
             toolbar.Children.Add(Label("Character style:"));
             toolbar.Children.Add(StyleBox(Names.CharStyle, SampleStyles.CharacterStyles, "Apply a character style to the selection (the host's stylesheet decides how it looks)", name => ApplyCharacterStyle(name)));
             toolbar.Children.Add(Label("Paragraph style:"));
-            toolbar.Children.Add(StyleBox(Names.ParaStyle, SampleStyles.ParagraphStyles, "Apply a paragraph style to the paragraphs of the selection", name => ApplyParagraphStyle(name)));
+            _paraStyleBox = StyleBox(Names.ParaStyle, SampleStyles.ParagraphStyles, "Apply a paragraph style to the paragraphs of the selection", name => ApplyParagraphStyle(name));
+            toolbar.Children.Add(_paraStyleBox);
             toolbar.Children.Add(Spacer());
             toolbar.Children.Add(Tool(Names.Undo, "Undo", "Ask the host's undo stack to undo (Ctrl+Z)", () => UndoLast("button")));
             toolbar.Children.Add(Tool(Names.Redo, "Redo", "Redo (Ctrl+Y)", () => RedoLast("button")));
@@ -234,6 +240,9 @@ namespace SIL.TextEditing.Playground
                 Log("single paragraph: " + (_active.Field.SingleParagraph ? "on" : "off"));
             };
             toolbar.Children.Add(_singleParagraphCheck);
+            _allowTables = BlockCheck(Names.AllowTables, "Tables", BlockFeatures.Tables);
+            _allowLists = BlockCheck(Names.AllowLists, "Lists", BlockFeatures.Lists);
+            _allowHeadings = BlockCheck(Names.AllowHeadings, "Headings", BlockFeatures.Headings);
             _leaveHandled = new CheckBox { Name = Names.HostHandlesLeave, Content = "Host takes leave requests", Focusable = false, Margin = new Thickness(2) };
             ToolTip.SetTip(_leaveHandled, "Tab, Shift+Tab, Ctrl+Tab and arrows at the field's edge raise LeaveRequested; when ticked the host marks it handled, so Tab does not move focus");
             toolbar.Children.Add(_leaveHandled);
@@ -395,6 +404,9 @@ namespace SIL.TextEditing.Playground
             bar.Children.Add(Tool(Names.Replace, "Replace", "Replace the selected match, then find the next", () => DoReplace()));
             bar.Children.Add(Tool(Names.ReplaceAll, "Replace All", "Replace every match in the field as one undo step", () => DoReplaceAll()));
             _findStatus = new TextBlock { Name = Names.FindStatus, Foreground = Brushes.DimGray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 2) };
+            bar.Children.Add(_allowTables);
+            bar.Children.Add(_allowLists);
+            bar.Children.Add(_allowHeadings);
             bar.Children.Add(_findStatus);
             return bar;
         }
@@ -561,6 +573,39 @@ namespace SIL.TextEditing.Playground
             _contextMenu.Open(field);
         }
 
+        /// <summary>One of the block-feature switches (ADR 0033): off hides the paragraph styles of that kind from the style box, refuses them in
+        /// <see cref="ApplyParagraphStyle"/>, and turns a pasted block of that kind into plain paragraphs.</summary>
+        CheckBox BlockCheck(string name, string caption, BlockFeatures feature)
+        {
+            var box = new CheckBox { Name = name, Content = caption, IsChecked = true, Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(box, caption + " allowed in this field (RichTextField.BlockFeatures). Off: the commands for it are hidden, and a paste or Markdown import turns it into plain paragraphs");
+            box.IsCheckedChanged += (s, e) =>
+            {
+                if (_syncing) return;
+                var field = _active.Field;
+                field.BlockFeatures = box.IsChecked == true ? field.BlockFeatures | feature : field.BlockFeatures & ~feature;
+                Log("block features: " + (field.BlockFeatures == BlockFeatures.All ? "all" : field.BlockFeatures == BlockFeatures.None ? "none" : field.BlockFeatures.ToString()));
+                UpdateParagraphStyles();
+            };
+            return box;
+        }
+
+        /// <summary>Shows in the paragraph-style box only the styles the active field can take (a style of a feature that is off is hidden).</summary>
+        void UpdateParagraphStyles()
+        {
+            var field = _active.Field;
+            _paraStyleBox.ItemsSource = SampleStyles.ParagraphStyles.Where(s => s == SampleStyles.None || field.IsParagraphStyleAllowed(s)).ToList();
+        }
+
+        void SyncBlockChecks()
+        {
+            var features = _active.Field.BlockFeatures;
+            _allowTables.IsChecked = (features & BlockFeatures.Tables) != 0;
+            _allowLists.IsChecked = (features & BlockFeatures.Lists) != 0;
+            _allowHeadings.IsChecked = (features & BlockFeatures.Headings) != 0;
+            UpdateParagraphStyles();
+        }
+
         static TextBlock Label(string text) => new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 2, 2, 2) };
 
         static Border Spacer() => new Border { Width = 12 };
@@ -609,6 +654,7 @@ namespace SIL.TextEditing.Playground
             _syncing = true;
             _readOnlyCheck.IsChecked = false;
             _singleParagraphCheck.IsChecked = scenario.Name == Scenarios.Environment;
+            SyncBlockChecks();
             _spellCheck.IsChecked = scenario.Name == Scenarios.Spelling;
             _hyphenLetter.IsChecked = false;
             _syncing = false;
@@ -629,6 +675,7 @@ namespace SIL.TextEditing.Playground
                 WritingSystems = _registry,
                 ObjectImage = _pictures.Get,
                 StyleResolver = SampleStyles.Instance,
+                BlockRecognizer = SampleStyles.Recognizer,
                 ShowCaretAlways = !many,
                 PreferredWidth = many ? 300 : 500,
                 Margin = new Thickness(many ? 2 : 6),
@@ -639,6 +686,7 @@ namespace SIL.TextEditing.Playground
             field.ClipboardForms.Add(dump).PasteOrder.Insert(0, dump.Id);
             field.WritingSystemsMapped += (o, mapped) => Log("clipboard: notice, writing system(s) " + string.Join(", ", mapped.Missing.Select(m => m.Length == 0 ? "(none)" : m))
                 + " are not in this project; pasted text is now " + mapped.Target);
+            field.BlocksFlattened += (o, flat) => Log("clipboard: notice, " + flat + " pasted into a field that does not allow them are now plain paragraphs");
             global::Avalonia.Automation.AutomationProperties.SetName(field, many ? "Text field " + number.ToString(CultureInfo.InvariantCulture) : "Text field");
             var session = new Session(field, number);
             session.Undo.Attach(field.Editor);
@@ -711,6 +759,7 @@ namespace SIL.TextEditing.Playground
             _syncing = true;
             _readOnlyCheck.IsChecked = session.Field.IsReadOnly;
             _singleParagraphCheck.IsChecked = session.Field.SingleParagraph;
+            SyncBlockChecks();
             _spellCheck.IsChecked = session.Field.SpellChecking != null;
             _syncing = false;
             Log("focus: field " + session.Number);
@@ -933,6 +982,11 @@ namespace SIL.TextEditing.Playground
         {
             var session = _active;
             var editor = session.Field.Editor;
+            if (style != SampleStyles.None && !session.Field.IsParagraphStyleAllowed(style))
+            {
+                Log("format: paragraph style " + style + " refused: " + session.Field.BlockRecognizer.RecognizeStyle(style) + " are off in this field");
+                return false;
+            }
             editor.Ordered(out var a, out var b);
             var before = new List<Paragraph>();
             var after = new List<Paragraph>();

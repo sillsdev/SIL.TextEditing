@@ -108,6 +108,7 @@ every rich value and, for a record kind that has one, the body. `SIL.TextEditing
 - `records/test.schema.json`: the JSON Schema (draft-07) the `test` schema publishes, byte for byte.
 - `records/NN-name.json`: arrays of cases: `01-frame.json` canonical files (a whole entry, a notebook record with its body, partial files), `02-traps.json` YAML's
   traps and the profile's errors, `03-schema.json` what the schema refuses, `04-unwritable.json` values that read but cannot be written as they are.
+- `records/05-blocks.json` `fwmd.record.block-not-allowed` (ADR 0033), against the schema `blocks` (fields that restrict their blocks) and the project `records-tables` (`records` with table styles, so a pipe table is read as table rows).
 - A case runs against the `records` project of `projects.json` (its writing systems: `en`, `fr`, `ceb`, `no`, `ar`) unless it names another.
 
 ### A schema
@@ -127,6 +128,7 @@ every rich value and, for a record kind that has one, the body. `SIL.TextEditing
 | field `kind` | `text` (plain, double-quoted), `rich` (FieldWorks Markdown: a `\|` block for a field of `paragraphs`, otherwise `\|-`), `notation` (text the host's checker reads; `notation` names it), `integer`, `boolean`, `guid`, `reference` (one link with `guid=`), `object` (`type`) or `sequence` (`item`: a field with no name). |
 | field `multi` | One value per writing system: a mapping from writing-system id to value (`text`, `rich` and `notation` only). |
 | field `paragraphs` | For `rich`: several paragraphs (an StText), read as a document; otherwise one paragraph of inline text (block syntax is `fwmd.field.block-syntax`). |
+| field `blocks` | For `rich` with `paragraphs`: the block kinds the field allows, a list of `tables`, `lists` and `headings` (`[]`: none). Absent: all (a field of one paragraph allows none, and may not list any). ADR 0033. |
 | field `ws` | For a field in one writing system: `analysis` (default) or `vernacular`, what unmarked text means. In an alternative of a `multi` field, unmarked text means that alternative's writing system. |
 | `kinds` | Record kinds: `name` (the file's `record:`), `root` (the root object type), `pathSegments` (how many segments of a `root:` path name the record) and `body` (the root type's rich field of paragraphs written below the front matter, or none). |
 

@@ -43,5 +43,17 @@
       "no": { "lang": "no", "dir": "ltr", "font": "Charis SIL" },
       "ar": { "lang": "ar", "dir": "rtl", "font": "Scheherazade New" }
     }
+  },
+  "records-tables": {
+    "analysis": "en",
+    "vernacular": "ceb",
+    "writingSystems": {
+      "en": { "lang": "en", "dir": "ltr", "font": "Charis SIL" },
+      "fr": { "lang": "fr", "dir": "ltr", "font": "Charis SIL" },
+      "ceb": { "lang": "ceb", "dir": "ltr", "font": "Charis SIL" },
+      "no": { "lang": "no", "dir": "ltr", "font": "Charis SIL" },
+      "ar": { "lang": "ar", "dir": "rtl", "font": "Scheherazade New" }
+    },
+    "tableStyles": { "header": "Table Header", "row": "Table Row" }
   }
 }

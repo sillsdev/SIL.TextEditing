@@ -103,8 +103,24 @@ namespace SIL.TextEditing.Markdown.Records
                 case RecordFieldKind.Boolean: return new J.Obj().Add("type", "boolean");
                 case RecordFieldKind.Guid: return new J.Obj().Add("type", "string").Add("pattern", GuidPattern);
                 case RecordFieldKind.Object: return Ref(field.ObjectType!.Name);
-                default: return new J.Obj().Add("type", "string").Add("contentMediaType", field.ContentMediaType!);
+                default:
+                {
+                    var text = new J.Obj().Add("type", "string").Add("contentMediaType", field.ContentMediaType!);
+                    // The block kinds a rich field of paragraphs allows (ADR 0033), only where they are not all of them, so a schema that restricts nothing is unchanged.
+                    if (field.Kind == RecordFieldKind.Rich && field.Paragraphs && field.BlockFeatures != BlockFeatures.All) text.Add("x-fieldworks-blocks", AllowedBlocks(field.BlockFeatures));
+                    return text;
+                }
             }
+        }
+
+        /// <summary>The allowed block kinds as lowercase names, in the order tables, lists, headings.</summary>
+        static J.Arr AllowedBlocks(BlockFeatures features)
+        {
+            var names = new J.Arr();
+            if ((features & BlockFeatures.Tables) != 0) names.Items.Add(new J.Str("tables"));
+            if ((features & BlockFeatures.Lists) != 0) names.Items.Add(new J.Str("lists"));
+            if ((features & BlockFeatures.Headings) != 0) names.Items.Add(new J.Str("headings"));
+            return names;
         }
 
         /// <summary>A small JSON writer: objects keep the order keys were added.</summary>

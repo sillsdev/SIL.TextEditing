@@ -73,6 +73,7 @@ namespace SIL.TextEditing.Avalonia
             WatchAll();
             Editor.DocumentChanged += OnDocumentChanged;
             Editor.IsReadOnlyChanged += OnEditorReadOnlyChanged;
+            Editor.BlocksFlattened += f => BlocksFlattened?.Invoke(this, f);
             Editor.TextEdited += OnTextEdited;
             Editor.DocumentChanged += (a, b, c) => RaiseAutomationValueChanged();
             Editor.ActiveWsChanged += (o, n) => { if (IsFocused) ActiveWsChanged?.Invoke(o, n); };   // a view without focus does not set the keyboard (#59)
@@ -228,6 +229,25 @@ namespace SIL.TextEditing.Avalonia
             get => Editor.SingleParagraph;
             set => Editor.SingleParagraph = value;
         }
+        /// <summary>The block kinds this field may hold (ADR 0033; forwards to <see cref="DocumentEditor.BlockFeatures"/>): tables, lists and headings, all on by
+        /// default. The field draws no block UI of its own; the host's commands ask <see cref="IsParagraphStyleAllowed"/> and hide or refuse what is off,
+        /// and a paste turns a disallowed block into plain paragraphs and raises <see cref="BlocksFlattened"/>.</summary>
+        public BlockFeatures BlockFeatures
+        {
+            get => Editor.BlockFeatures;
+            set => Editor.BlockFeatures = value;
+        }
+        /// <summary>How a paragraph is recognised as a table row, a list item or a heading (forwards to <see cref="DocumentEditor.BlockRecognizer"/>); a host with its own style names sets it.</summary>
+        public IBlockRecognizer BlockRecognizer
+        {
+            get => Editor.BlockRecognizer;
+            set => Editor.BlockRecognizer = value;
+        }
+        /// <summary>True when the host may give paragraphs this style (<see cref="DocumentEditor.IsParagraphStyleAllowed"/>): false for a table, list or heading style whose feature is off.</summary>
+        public bool IsParagraphStyleAllowed(string styleName) => Editor.IsParagraphStyleAllowed(styleName);
+        /// <summary>Raised after a paste (a Markdown paste included) that turned blocks the field does not allow into plain paragraphs, so the host can tell the user.
+        /// Not raised when nothing was flattened.</summary>
+        public event EventHandler<BlockFlattening>? BlocksFlattened;
         /// <summary>The wrap width used when the available width is unbounded.</summary>
         public double PreferredWidth { get; set; } = 400;
         /// <summary>The number of paragraph layouts built so far, for measuring relayout cost.</summary>

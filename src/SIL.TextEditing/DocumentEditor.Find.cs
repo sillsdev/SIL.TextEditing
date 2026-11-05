@@ -236,7 +236,9 @@ namespace SIL.TextEditing
             var slice = para.Slice(hit.Start, hit.End);
             var model = slice.FirstOrDefault(r => !r.IsObject) ?? slice.FirstOrDefault();
             var text = hit.Expansion ?? replacement;
-            var frag = new Paragraph { Style = para.Style, Rtl = para.Rtl, DefaultWs = para.DefaultWs, Props = para.Props.Clone() };
+            // A plain fragment: a one-paragraph fragment's style and properties are discarded (the paragraph under the replaced text keeps its own), and a styled one
+            // would be taken for a pasted block and flattened (ADR 0033), raising a false BlocksFlattened inside a block the field keeps.
+            var frag = new Paragraph { DefaultWs = para.DefaultWs };
             void Restyle(Run r)
             {
                 if (writingSystem != null) r.Ws = writingSystem;
