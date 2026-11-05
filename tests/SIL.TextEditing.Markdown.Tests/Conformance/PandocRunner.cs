@@ -67,7 +67,11 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 process.StandardInput.Close();
                 if (!process.WaitForExit(30000))
                 {
+                    #if NET5_0_OR_GREATER
                     process.Kill(true);
+#else
+                    process.Kill();
+#endif
                     string shown = input.Length > 200 ? input.Substring(0, 200) + "..." : input;
                     throw new TimeoutException("pandoc did not finish in 30 seconds on " + input.Length + " characters of input, which starts: " + shown);
                 }
