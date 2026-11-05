@@ -56,10 +56,21 @@ namespace SIL.TextEditing.Markdown.Reader
                 return (c == ':' || c == '~') && line.Length > 1 && (line[1] == ' ' || line[1] == '\t') ? 0 : -1;
             }
             if (nearTable && (line.StartsWith("Table:", StringComparison.OrdinalIgnoreCase) || (c == ':' && line.Length > 1 && (line[1] == ' ' || line[1] == '\t')))) return c == ':' ? 0 : 5;
-            if (c == '[') { int close = line.IndexOf(']'); return close > 1 && close + 1 < line.Length && line[close + 1] == ':' ? 0 : -1; } // a reference or note definition, which Pandoc takes out of the text
+            if (c == '[') { int close = FirstUnescapedBracket(line); return close > 1 && close + 1 < line.Length && line[close + 1] == ':' ? 0 : -1; } // a reference or note definition, which Pandoc takes out of the text
             if (c == '|') return line.Length == 1 || line[1] == ' ' || line[1] == '\t' ? 0 : -1;
             if (c == '+') return line.Length == 1 || IsGridTop(text, from, lineEnd, line) ? 0 : -1;
             return ListMarkerAt(line);
+        }
+
+        static int FirstUnescapedBracket(string line)
+        {
+            for (int i = 1; i < line.Length; i++)
+            {
+                if (line[i] == '\\') { i++; continue; }
+                if (line[i] == ']') return i;
+                if (line[i] == '[') return -1; // a label holds no bracket of its own, so a span that starts with one is not a definition
+            }
+            return -1;
         }
 
         /// <summary>A grid table's top border (<c>+---+---+</c>) with a row of the table under it.</summary>
