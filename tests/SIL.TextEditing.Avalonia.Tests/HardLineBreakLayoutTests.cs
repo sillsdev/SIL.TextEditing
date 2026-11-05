@@ -688,7 +688,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             try
             {
                 field.Editor.SetCaret(new TextPosition(0, 2));
-                await ClipboardCompat.SetAsync(global::Avalonia.Controls.TopLevel.GetTopLevel(field), "x" + Break + "y", "");
+                await ClipboardCompat.SetAsync(global::Avalonia.Controls.TopLevel.GetTopLevel(field), "x" + Break + "y");
                 await field.PasteAsync();
                 Assert.Equal("abx" + Break + "y", Text(field));
                 AssertRecoveredByDelete(field, "abxy", field.Editor.Caret.Offset);

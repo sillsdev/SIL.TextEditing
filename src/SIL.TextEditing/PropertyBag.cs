@@ -129,6 +129,9 @@ namespace SIL.TextEditing
         /// <summary>For a test: how many holders the bag remembers (the dead ones among the weak ones until they are pruned).</summary>
         internal int OwnerCount => (_owner == null ? 0 : 1) + (_otherOwners?.Count ?? 0);
 
+        /// <summary>For a test: holders this says are gone are swept like holders the garbage collector took, so the sweep can be tested without the collector.</summary>
+        internal Predicate<IBagOwner>? TreatAsGone { get; set; }
+
         internal void Attach(IBagOwner owner)
         {
             if (_owner == null) _owner = owner;
@@ -149,15 +152,20 @@ namespace SIL.TextEditing
         {
             if (_otherOwners != null)
             {
+                // One pass over the weak holders: the first match goes, and so does every holder that is gone, so a bag nothing attaches to any
+                // more still sheds its dead holders when a live one lets go.
+                bool removed = false;
+                int keep = 0;
                 for (int i = 0; i < _otherOwners.Count; i++)
                 {
-                    if (_otherOwners[i].TryGetTarget(out var other) && ReferenceEquals(other, owner))
-                    {
-                        _otherOwners.RemoveAt(i);
-                        if (_otherOwners.Count == 0) _otherOwners = null;
-                        return;
-                    }
+                    var entry = _otherOwners[i];
+                    if (!entry.TryGetTarget(out var other) || TreatAsGone?.Invoke(other) == true) continue;
+                    if (!removed && ReferenceEquals(other, owner)) { removed = true; continue; }
+                    _otherOwners[keep++] = entry;
                 }
+                _otherOwners.RemoveRange(keep, _otherOwners.Count - keep);
+                if (_otherOwners.Count == 0) _otherOwners = null;
+                if (removed) return;
             }
             if (!ReferenceEquals(_owner, owner)) return;
             _owner = null;
@@ -273,6 +281,8 @@ namespace SIL.TextEditing
         public const int LineHeight = 24;
         /// <summary>Paragraph background colour (ktptParaColor; FieldWorks treats it as the back colour).</summary>
         public const int ParaColor = 25;
+        /// <summary>ktptWs (1): the writing system handle, as a style or a run carries it.</summary>
+        public const int WritingSystem = 1;
         /// <summary>ktptSpellCheck (26): <see cref="SpellCheckNormal"/>, <see cref="SpellCheckDoNot"/> or <see cref="SpellCheckForce"/> (ADR 0020). Absent means normal.</summary>
         public const int SpellCheck = 26;
         public const int SpellCheckNormal = 0, SpellCheckDoNot = 1, SpellCheckForce = 2;

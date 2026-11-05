@@ -20,11 +20,12 @@ namespace SIL.TextEditing.Avalonia
         SpellBatch? _spellBatchOut;
 
         /// <summary>Tells the worker of the batch that is out to ask no further word (one question already running cannot be interrupted). The answer that
-        /// comes back is dropped; the in-flight flag is cleared when it does.</summary>
+        /// comes back is dropped; the in-flight flag is cleared when it does. A batch whose answers have all arrived is left alone: they only wait to be applied
+        /// on the field's thread, and throwing them away would make the field ask the same words again.</summary>
         void CancelBatch()
         {
             var batch = _spellBatchOut;
-            if (batch != null) batch.Cancelled = true;
+            if (batch != null && batch.Answers == null) batch.Cancelled = true;
         }
 
         /// <summary>The field has a new host (or none): the batch that is out is cancelled and no longer waited for, so a checker that never returns cannot stop
@@ -34,6 +35,16 @@ namespace SIL.TextEditing.Avalonia
             CancelBatch();
             _spellBatchOut = null;
             _spellInFlight = false;
+        }
+
+        /// <summary>Checking starts over with the same host. A batch whose worker is still asking is cancelled and no longer waited for (its late answer is
+        /// dropped, a new epoch), so a checker that hangs cannot stop the checking that follows; the worker may then still be inside that question while the
+        /// next batch is asked, which a checker that is fully thread-safe (<see cref="IBackgroundSpellChecker"/>) allows. A batch whose worker has finished is
+        /// kept: nothing is running for it, only its answer waits to be thrown away on the field's thread, and the next batch waits for that.</summary>
+        void ReleaseBatchOnRestart()
+        {
+            if (_spellBatchOut?.Answers == null) ReleaseBatch();
+            else CancelBatch();
         }
 
         /// <summary>The words of one step whose dictionary questions went to the worker, with what is needed to apply the answers: only if the paragraph's
@@ -53,7 +64,7 @@ namespace SIL.TextEditing.Avalonia
             public List<SpellingMark> Fresh = null!;
             public List<SpellScanner.Judged> Asked = null!;
             /// <summary>For each asked word, whether the dictionary has it; null until the worker has run.</summary>
-            public bool[]? Answers;
+            public volatile bool[]? Answers;
             public readonly List<(string Ws, Exception Error)> Failures = new List<(string, Exception)>();
         }
 

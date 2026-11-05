@@ -29,7 +29,8 @@ namespace SIL.TextEditing
     /// an answer for text that has changed since is dropped and the text is asked again. The checker must be fully thread-safe: <see cref="ISpellChecker.Check"/>
     /// can run on the UI thread (a context menu or request judges its word there) and on the worker at the same time, and its other members
     /// (<see cref="ISpellChecker.Suggest"/>, <see cref="ISpellChecker.Add"/>) stay on the UI thread meanwhile. A <c>Check</c> that is running cannot be
-    /// interrupted, but no further word is asked once the field has let go of the host. A checker that throws on the
+    /// interrupted, but no further word is asked once the field has let go of the host. When checking starts over (<c>RestartSpelling</c>) while a
+    /// <c>Check</c> is still running, the field does not wait for it: the next batch may be asked while the old question is still out. A checker that throws on the
     /// worker is reported through <c>RichTextField.SpellCheckerFailed</c>, on the UI thread, as before. A checker without this interface is asked on the
     /// UI thread, one step at a time, as it always was.</summary>
     public interface IBackgroundSpellChecker : ISpellChecker

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -10,57 +11,60 @@ namespace SIL.TextEditing.Avalonia
     /// Everything else compiles unchanged for both.</summary>
     public static class ClipboardCompat
     {
-        /// <summary>Decodes a custom-format clipboard payload: UTF-16LE (how Avalonia 11 writes strings) or UTF-8
-        /// (a typical external writer).</summary>
-        public static string Decode(byte[] bytes)
-        {
-            int n = bytes.Length;
-            while (n > 0 && bytes[n - 1] == 0) n--;
-            bool utf16 = bytes.Length >= 2 && bytes[1] == 0 && bytes[0] != 0;
-            return utf16
-                ? System.Text.Encoding.Unicode.GetString(bytes, 0, n + (n % 2))
-                : System.Text.Encoding.UTF8.GetString(bytes, 0, n);
-        }
+        // One pair of format objects per clipboard format name: a string reader (how our own writer round-trips) and a byte reader (how
+        // a native writer on Windows hands a custom payload over).
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DataFormat<string> Text, DataFormat<byte[]> Bytes)> Formats =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, (DataFormat<string>, DataFormat<byte[]>)>();
 
-        static readonly DataFormat<string> Format = DataFormat.CreateStringPlatformFormat(Interchange.ClipboardFormat);
-        static readonly DataFormat<byte[]> FormatBytes = DataFormat.CreateBytesPlatformFormat(Interchange.ClipboardFormat);
+        static (DataFormat<string> Text, DataFormat<byte[]> Bytes) FormatsFor(string name) =>
+            Formats.GetOrAdd(name, n => (DataFormat.CreateStringPlatformFormat(n), DataFormat.CreateBytesPlatformFormat(n)));
 
-        public static async Task SetAsync(TopLevel? topLevel, string plain, string xml)
+        /// <summary>Puts plain text and any number of named formats on the clipboard together: a string goes in as text, a <c>byte[]</c> as raw bytes. A host
+        /// object cannot go through Avalonia's clipboard (a host with such objects plugs in its own <see cref="IClipboardBackend"/>); it is left out and its format name returned.</summary>
+        public static async Task<IReadOnlyList<string>> SetAsync(TopLevel? topLevel, string plain, IEnumerable<KeyValuePair<string, object>>? forms = null)
         {
+            var refused = new List<string>();
             var clipboard = topLevel?.Clipboard;
-            if (clipboard == null) return;
+            if (clipboard == null) return refused;
             var transfer = new DataTransfer();
             var item = new DataTransferItem();
             item.SetText(plain);
-            item.Set(Format, xml);
+            if (forms != null)
+            {
+                foreach (var form in forms)
+                {
+                    if (form.Value is string text) item.Set(FormatsFor(form.Key).Text, text);
+                    else if (form.Value is byte[] bytes) item.Set(FormatsFor(form.Key).Bytes, bytes);
+                    else
+                    {
+                        System.Diagnostics.Trace.TraceWarning("Clipboard format " + form.Key + " holds a host object, which Avalonia's clipboard cannot store; left out");
+                        refused.Add(form.Key);
+                    }
+                }
+            }
             transfer.Add(item);
             await clipboard.SetDataAsync(transfer).ConfigureAwait(true);
+            return refused;
         }
 
-        public static async Task<string?> GetXmlAsync(TopLevel? topLevel)
+        /// <summary>The payload under a format name, read as the kind the form says it is: a string for text, a <c>byte[]</c> for bytes (the raw bytes, never decoded as text),
+        /// null for an object (Avalonia's clipboard cannot hold one) or when there is none. Never throws.</summary>
+        public static async Task<object?> GetAsync(TopLevel? topLevel, string formatName, ClipboardPayloadKind kind)
         {
             var clipboard = topLevel?.Clipboard;
-            if (clipboard == null) return null;
-            // Our own writer round-trips as a string; a native writer on Windows hands the payload over as bytes.
+            if (clipboard == null || kind == ClipboardPayloadKind.Object) return null;
+            var (format, formatBytes) = FormatsFor(formatName);
             try
             {
-                var text = await clipboard.TryGetValueAsync(Format).ConfigureAwait(true);
-                if (text != null) return text;
+                if (kind == ClipboardPayloadKind.Text) return await clipboard.TryGetValueAsync(format).ConfigureAwait(true);
+                return await clipboard.TryGetValueAsync(formatBytes).ConfigureAwait(true);
             }
-            catch (Exception)
-            {
-                // fall through to the byte reader
-            }
-            try
-            {
-                var bytes = await clipboard.TryGetValueAsync(FormatBytes).ConfigureAwait(true);
-                return bytes == null ? null : Decode(bytes);
-            }
-            catch (Exception)
-            {
-                return null;
-            }
+            catch (Exception) { return null; }
         }
+
+        /// <summary>The text stored under a format name, or null.</summary>
+        public static async Task<string?> GetStringAsync(TopLevel? topLevel, string formatName) =>
+            await GetAsync(topLevel, formatName, ClipboardPayloadKind.Text).ConfigureAwait(true) as string;
 
         public static async Task<string?> GetTextAsync(TopLevel? topLevel)
         {

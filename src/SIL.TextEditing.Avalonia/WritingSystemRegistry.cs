@@ -7,16 +7,20 @@ namespace SIL.TextEditing.Avalonia
     /// <see cref="WritingSystemDefinition"/> (ADR 0002).</summary>
     public sealed class WritingSystemInfo
     {
-        WritingSystemInfo(string id)
+        /// <summary>The size, in points, of a writing system that is not registered: FieldWorks' own default.</summary>
+        internal const double DefaultFallbackSize = 10;
+
+        WritingSystemInfo(string id, double size)
         {
             Tag = id;
             Font = "Segoe UI";
-            Size = 16;
+            Size = size;
         }
 
-        /// <summary>Plain 16 point fallback. It touches no libpalaso type, so a field needs no SLDR to show text. Provenance: our own readable default, not a
-        /// FieldWorks value (FieldWorks' view engine starts from 10 pt, and a libpalaso writing system gives at least 10 pt); a host registers its writing systems.</summary>
-        internal static WritingSystemInfo Fallback(string id) => new WritingSystemInfo(id);
+        /// <summary>Plain 10 point fallback. It touches no libpalaso type, so a field needs no SLDR to show text. Provenance: FieldWorks' view engine
+        /// starts every writing system from a 10 point default (owner decision, 2026-11-04), and a libpalaso writing system gives at least 10 point
+        /// too; a host registers its writing systems.</summary>
+        internal static WritingSystemInfo Fallback(string id, double size = DefaultFallbackSize) => new WritingSystemInfo(id, size);
 
         internal WritingSystemInfo(WritingSystemDefinition ws)
         {
@@ -49,11 +53,20 @@ namespace SIL.TextEditing.Avalonia
             return this;
         }
 
-        /// <summary>The registered writing system, or a plain 16 point fallback for an unknown id.</summary>
+        /// <summary>The size of the fallback for an unknown id. Tests that pin a layout to larger text set it; a host registers its writing systems.</summary>
+        internal double FallbackSize { get; set; } = WritingSystemInfo.DefaultFallbackSize;
+
+        /// <summary>How many writing systems are registered.</summary>
+        public int Count => _byId.Count;
+
+        /// <summary>True when the id is registered (a fallback for an unknown id does not count).</summary>
+        public bool Contains(string? id) => id != null && _byId.ContainsKey(id);
+
+        /// <summary>The registered writing system, or a plain 10 point fallback for an unknown id.</summary>
         public WritingSystemInfo Get(string? id)
         {
             if (id != null && _byId.TryGetValue(id, out var info)) return info;
-            return WritingSystemInfo.Fallback(id ?? "en");
+            return WritingSystemInfo.Fallback(id ?? "en", FallbackSize);
         }
 
         /// <summary>A definition with a default font, for samples and tests that have no writing-system store. Every

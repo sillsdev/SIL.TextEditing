@@ -304,7 +304,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             try
             {
                 var top = global::Avalonia.Controls.TopLevel.GetTopLevel(field);
-                await ClipboardCompat.SetAsync(top, "sentinel", "");
+                await ClipboardCompat.SetAsync(top, "sentinel");
                 field.Editor.Anchor = new TextPosition(0, 1);
                 field.Editor.SetCaret(new TextPosition(0, 5), true);     // crosses the locked run
                 await field.CopyAsync(true);
@@ -314,7 +314,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 await field.CopyAsync(false);
                 Assert.Equal("bloc", await ClipboardCompat.GetTextAsync(top));
 
-                await ClipboardCompat.SetAsync(top, "sentinel", "");
+                await ClipboardCompat.SetAsync(top, "sentinel");
                 field.IsReadOnly = true;
                 field.Editor.Anchor = new TextPosition(0, 0);
                 field.Editor.SetCaret(new TextPosition(0, 2), true);
@@ -362,7 +362,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 undo.Attach(field.Editor);
                 field.Editor.SetCaret(new TextPosition(0, 2));
                 field.Type("x");
-                await ClipboardCompat.SetAsync(global::Avalonia.Controls.TopLevel.GetTopLevel(field), "l1\nl2\nl3", "");
+                await ClipboardCompat.SetAsync(global::Avalonia.Controls.TopLevel.GetTopLevel(field), "l1\nl2\nl3");
                 await field.PasteAsync();
                 field.Type("y");
                 Assert.Equal(3, field.Editor.Document.Paragraphs.Count);

@@ -60,6 +60,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             p.Runs.Add(r);
             p.Runs.Add(new Run { Ws = "en", Text = " tail" });
             var (window, field) = Fixtures.InWindow(Doc(p));
+            field.ClipboardForms.Add(new InterchangeClipboardForm()).PasteOrder.Insert(0, new InterchangeClipboardForm().Id);
             try
             {
                 field.Editor.Anchor = new TextPosition(0, 6);
@@ -91,12 +92,5 @@ namespace SIL.TextEditing.Avalonia.Tests
             }
             finally { window.Close(); }
         });
-
-        [Fact]
-        public void Decode_reads_utf8_and_utf16_payloads()
-        {
-            Assert.Equal("aé", ClipboardCompat.Decode(System.Text.Encoding.UTF8.GetBytes("aé")));
-            Assert.Equal("aé", ClipboardCompat.Decode(System.Text.Encoding.Unicode.GetBytes("aé")));
-        }
     }
 }

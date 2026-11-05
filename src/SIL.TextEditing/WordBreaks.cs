@@ -129,7 +129,61 @@ namespace SIL.TextEditing
         /// <summary>As <see cref="WordAt(string, int, out int, out int)"/>, by the host's word rule (<paramref name="rules"/>, null for the default) for the
         /// writing system of each character of the paragraph.</summary>
         public static void WordAt(Paragraph paragraph, int charIndex, IWordRules? rules, out int start, out int end)
-            => WordAt(paragraph.Text, charIndex, rules, WsOf(paragraph), out start, out end);
+            => WordAt(paragraph, charIndex, rules, null, out start, out end);
+
+        /// <summary>As <see cref="WordAt(Paragraph, int, IWordRules, out int, out int)"/>, with the host's styles, so that a change of character style stops the
+        /// word when the two resolved styles differ in writing system or spell-check property (without a resolver a style change never does).</summary>
+        public static void WordAt(Paragraph paragraph, int charIndex, IWordRules? rules, IStyleResolver? styles, out int start, out int end)
+        {
+            WordAt(paragraph.Text, charIndex, rules, WsOf(paragraph), out start, out end);
+            ClipToFormat(paragraph, charIndex, styles, ref start, ref end);
+        }
+
+        /// <summary>FieldWorks' double-click stops at a change of writing system or spell-check property (or a character style that differs in those), so a word that runs on across
+        /// such a change is selected a piece at a time (issue 116). Only the double-click does it: Ctrl+arrows, the whole-word find, the word of a context
+        /// request and the spell checker, which has its own answer for a word of several writing systems, take the whole word. Other properties (bold, size,
+        /// colour) do not stop it. The run's own properties are compared, and two different style names through the host's style resolver.</summary>
+        static void ClipToFormat(Paragraph paragraph, int charIndex, IStyleResolver? styles, ref int start, ref int end)
+        {
+            var runs = paragraph.Runs;
+            if (runs.Count < 2 || start >= end) return;
+            charIndex = Math.Max(0, Math.Min(paragraph.Length - 1, charIndex));
+            int pos = 0, at = -1, atStart = 0;
+            for (int i = 0; i < runs.Count; i++)
+            {
+                int next = pos + runs[i].Text.Length;
+                if (charIndex < next) { at = i; atStart = pos; break; }
+                pos = next;
+            }
+            if (at < 0) return;
+            int from = atStart, to = atStart + runs[at].Text.Length;
+            for (int i = at - 1, p = atStart; i >= 0 && SameWordFormat(runs[i], runs[at], styles); i--) { p -= runs[i].Text.Length; from = p; }
+            for (int i = at + 1; i < runs.Count && SameWordFormat(runs[i], runs[at], styles); i++) to += runs[i].Text.Length;
+            start = Math.Max(start, from);
+            end = Math.Min(end, to);
+        }
+
+        static bool SameWordFormat(Run a, Run b, IStyleResolver? styles)
+        {
+            if (a.Ws != b.Ws || SpellCheckOf(a) != SpellCheckOf(b)) return false;
+            string sa = StyleOf(a), sb = StyleOf(b);
+            if (sa == sb || styles == null) return true;
+            // Two different styles stop the word only where they differ in what the double-click cares about: the writing system and the spell-check property.
+            var ba = sa.Length == 0 ? null : styles.Resolve(sa, a.Ws);
+            var bb = sb.Length == 0 ? null : styles.Resolve(sb, b.Ws);
+            // The writing system is compared only when both runs have a style, as FieldWorks does; an undefined spell-check is the normal one.
+            if (ba != null && bb != null && StyleInt(ba, TextPropertyNumbers.WritingSystem) != StyleInt(bb, TextPropertyNumbers.WritingSystem)) return false;
+            return StyleSpell(ba) == StyleSpell(bb);
+        }
+
+        static int StyleSpell(PropertyBag? bag) => bag != null && bag.TryGetInt(TextPropertyNumbers.SpellCheck, out var v) ? v : TextPropertyNumbers.SpellCheckNormal;
+
+        static int StyleInt(PropertyBag? bag, int number) => bag != null && bag.TryGetInt(number, out var v) ? v : -1;
+
+        // An absent property is the normal spell checking and no character style.
+        static int SpellCheckOf(Run r) => r.Props.TryGetInt(TextPropertyNumbers.SpellCheck, out var v) ? v : TextPropertyNumbers.SpellCheckNormal;
+
+        static string StyleOf(Run r) => r.Props.TryGetStr(TextPropertyNumbers.NamedStyle, out var s) ? s : string.Empty;
 
         /// <summary>For each offset 0 to the text length, whether a word starts or ends there: the start and end of the text, and
         /// every cluster boundary where the class changes (word, white space, other) or an object sits. Offsets inside a cluster

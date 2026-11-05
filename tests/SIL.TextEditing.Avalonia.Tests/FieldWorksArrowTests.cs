@@ -229,7 +229,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 Assert.Equal(3, field.Editor.Caret.Offset);
 
                 var top = global::Avalonia.Controls.TopLevel.GetTopLevel(field);
-                await ClipboardCompat.SetAsync(top, "\u00E9\u00E9", "");
+                await ClipboardCompat.SetAsync(top, "\u00E9\u00E9");
                 field.Editor.SetCaret(new TextPosition(0, 4));
                 await field.PasteAsync();
                 Assert.Equal("ae\u0301be\u0301e\u0301", field.Editor.Document.Paragraphs[0].Text);

@@ -30,6 +30,20 @@ namespace SIL.TextEditing.Avalonia
         ParagraphWatcher? _watcher;
         bool _hostEditNoticed;
 
+        /// <summary>Set by any change to a paragraph the field shows (on any thread): the next question about a paragraph first compares every
+        /// paragraph's stamp, so a change to an earlier paragraph (its bullet scheme moves the numbers after it) is seen by a direct
+        /// <see cref="ParagraphLayoutFor"/>, not only by the measure that visits the paragraphs in order.</summary>
+        volatile bool _stampsStale;
+
+        /// <summary>Counts the changes to the shown paragraphs, so what was worked out from the text (the find highlight) can tell it is out of date.</summary>
+        int _docVersion;
+
+        void SweepStamps()
+        {
+            _stampsStale = false;   // a change made while the sweep runs sets it again
+            for (int i = 0; i < _info.Count; i++) Current(i);
+        }
+
         ParagraphWatcher Watcher => _watcher ??= new ParagraphWatcher(this);
 
         void Watch(ParaInfo info, Paragraph paragraph)
@@ -62,6 +76,10 @@ namespace SIL.TextEditing.Avalonia
         /// row, a paragraph of thousands of runs built, cost one flag each until the next measure.</summary>
         void OnParagraphTouched()
         {
+            // Every change counts, even those the guard below lets pass without a second invalidation: the stamps are swept again before the next
+            // layout question, and what the find highlight was worked out from is dropped when it is next used (issue 117).
+            _stampsStale = true;
+            System.Threading.Interlocked.Increment(ref _docVersion);
             if (_hostEditNoticed) return;
             _hostEditNoticed = true;
             if (CheckAccess()) NoticeHostEdit();

@@ -45,13 +45,21 @@ namespace SIL.TextEditing.Avalonia.Tests
 
         static string DoubleClick(Window w, RichTextField f, int index)
         {
-            var far = new Point(w.Width - 3, w.Height - 3);
-            w.MouseDown(far, MouseButton.Left);                // a click somewhere else (and a moment later in effect) ends any click count in progress
-            w.MouseUp(far, MouseButton.Left);
-            var p = Center(f, index);
-            for (int i = 0; i < 2; i++) { w.MouseDown(p, MouseButton.Left); w.MouseUp(p, MouseButton.Left); }
-            Headless.Pump();
-            return string.Join("\n", f.Editor.HasSelection ? f.Editor.GetFragment().Select(x => x.Text) : Enumerable.Empty<string>());
+            // Avalonia counts clicks by the real time between them (the system's double-click interval), so a busy machine can make the two presses
+            // of one attempt look like two single clicks, which leave no selection. Such an attempt is simply made again (a failed attempt changes
+            // nothing but the caret); a double click that is wrong in another way still fails the test.
+            for (int attempt = 0; ; attempt++)
+            {
+                var far = new Point(w.Width - 3, w.Height - 3);
+                w.MouseDown(far, MouseButton.Left);                // a click somewhere else (and a moment later in effect) ends any click count in progress
+                w.MouseUp(far, MouseButton.Left);
+                var p = Center(f, index);
+                for (int i = 0; i < 2; i++) { w.MouseDown(p, MouseButton.Left); w.MouseUp(p, MouseButton.Left); }
+                Headless.Pump();
+                if (f.Editor.HasSelection || attempt >= 4)
+                    return string.Join("\n", f.Editor.HasSelection ? f.Editor.GetFragment().Select(x => x.Text) : Enumerable.Empty<string>());
+                System.Threading.Thread.Sleep(600);                // past the double-click interval, so the next attempt starts a fresh count
+            }
         }
 
         static (Window, RichTextField) Open(string text = Text)
@@ -177,6 +185,27 @@ namespace SIL.TextEditing.Avalonia.Tests
             rules.Asked = 0;
             f.MoveByWord(true, false);
             Assert.True(rules.Asked < 50, rules.Asked + " questions for one Ctrl+Left in " + text.Length + " characters");
+        });
+
+        sealed class CodeStyle : IStyleResolver
+        {
+            public PropertyBag? Resolve(string styleName, string ws) =>
+                styleName == "Code" ? new PropertyBag().SetInt(TextPropertyNumbers.SpellCheck, TextPropertyNumbers.SpellCheckDoNot) : null;
+        }
+
+        [Fact]
+        public void A_double_click_stops_at_a_change_of_writing_system_and_of_a_style_that_changes_spell_checking_and_the_drag_goes_by_the_same_words() => Headless.Run(() =>
+        {
+            var p = Para("en", "en", "ab", "fr", "cd", "fr", "ef gh");
+            p.Runs[2].Props.SetStr(TextPropertyNumbers.NamedStyle, "Code");
+            var (w, f) = Fixtures.InWindow(Doc(p), 400);
+            f.StyleResolver = new CodeStyle();
+            Headless.Pump();
+            Assert.Equal("ab", DoubleClick(w, f, 1));
+            Assert.Equal("cd", DoubleClick(w, f, 3));
+            Assert.Equal("ef", DoubleClick(w, f, 5));
+            Assert.Equal("gh", DoubleClick(w, f, 8));
+            w.Close();
         });
     }
 }

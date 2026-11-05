@@ -7,29 +7,18 @@ using SIL.LCModel.Core.Text;
 
 namespace SIL.TextEditing.LCModel
 {
-    /// <summary>What a host puts on the clipboard for a selection: FieldWorks' "TsString" XML, written by LCModel's own
-    /// serializer, next to plain text in NFC for other programs (ADR 0018).</summary>
-    public sealed class TsStringClipboardPayload
-    {
-        public TsStringClipboardPayload(string tsStringXml, string plainTextNfc)
-        {
-            TsStringXml = tsStringXml;
-            PlainTextNfc = plainTextNfc;
-        }
-
-        public string TsStringXml { get; }
-        public string PlainTextNfc { get; }
-    }
-
-    /// <summary>The "TsString" clipboard format, through <see cref="TsStringSerializer"/>. The XML holds one ITsString.
+    /// <summary>The XML of one ITsString, through <see cref="TsStringSerializer"/>: the payload of <see cref="TsStringClipboardForm"/>, under the field's own
+    /// format name <see cref="XmlFormatName"/>. This is NOT FieldWorks' "TsString" clipboard format: FieldWorks stores a .NET-serialised TsStringWrapper (a class in its
+    /// own SimpleRootSite assembly, which this package neither references nor copies) under that name. A FieldWorks host registers its own form under the id and format
+    /// name "TsString" that wraps and unwraps this XML (<c>FragmentToXml</c> and <c>FromXmlToFragment</c>) with its wrapper (ADR 0029).
     /// A selection over several paragraphs is joined with <see cref="FieldWorksParagraphSeparator"/> first, in the XML and in
     /// the plain text, as FieldWorks' EditingHelper.CopySelection does (its GetSelectionString fallback), so a FieldWorks
-    /// paste of the payload agrees with its own copy. The paragraph keys stay out of the clipboard. The field's own
-    /// copy inside itself uses <see cref="Interchange"/>, which keeps real paragraphs.</summary>
+    /// paste of the payload agrees with its own copy. The paragraph keys stay out of the clipboard.
+    /// <see cref="TsStringClipboardForm"/> registers it on a field.</summary>
     public static class TsStringClipboard
     {
-        /// <summary>The clipboard format name FieldWorks registers for this payload.</summary>
-        public const string FormatName = "TsString";
+        /// <summary>The clipboard format name of the field's own TsString-XML form. Never "TsString", which belongs to FieldWorks' wrapper.</summary>
+        public const string XmlFormatName = "SIL.TextEditing.TsStringXml";
 
         /// <summary>What FieldWorks puts between paragraphs of a copied selection.</summary>
         public const string FieldWorksParagraphSeparator = "; ";
@@ -40,8 +29,8 @@ namespace SIL.TextEditing.LCModel
         public static ITsString FromXml(string xml, IWritingSystemHandles writingSystems)
             => TsStringSerializer.DeserializeTsStringFromXml(xml, new HandlesFactory(writingSystems));
 
-        /// <summary>The payload for a fragment, as <c>DocumentEditor.GetFragment</c> returns it.</summary>
-        public static TsStringClipboardPayload ToPayload(IReadOnlyList<Paragraph> fragment, IWritingSystemHandles writingSystems,
+        /// <summary>The XML for a fragment, as <c>DocumentEditor.GetFragment</c> returns it, paragraphs joined with the separator.</summary>
+        public static string FragmentToXml(IReadOnlyList<Paragraph> fragment, IWritingSystemHandles writingSystems,
             string paragraphSeparator = FieldWorksParagraphSeparator)
         {
             var joined = new List<Run>();
@@ -51,9 +40,7 @@ namespace SIL.TextEditing.LCModel
                 joined.AddRange(fragment[i].Runs);
             }
             string defaultWs = fragment.Count > 0 ? fragment[0].DefaultWs : "en";
-            var text = TsStringConversion.ToTsString(joined, writingSystems, defaultWs);
-            string plain = string.Join(paragraphSeparator, fragment.Select(p => p.Text)).Normalize(NormalizationForm.FormC);
-            return new TsStringClipboardPayload(ToXml(text, writingSystems), plain);
+            return ToXml(TsStringConversion.ToTsString(joined, writingSystems, defaultWs), writingSystems);
         }
 
         /// <summary>The paragraphs a pasted payload holds, ready for <c>DocumentEditor.Paste</c>; none carries a key. With the

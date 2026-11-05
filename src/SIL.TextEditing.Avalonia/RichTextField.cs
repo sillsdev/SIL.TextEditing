@@ -296,6 +296,7 @@ namespace SIL.TextEditing.Avalonia
         /// after it are worked out again. Comparing a number is cheap, so every use asks (issue 101).</summary>
         ParaInfo Current(int index)
         {
+            if (_stampsStale) SweepStamps();
             var info = _info[index];
             var paragraphs = Editor.Document.Paragraphs;
             if (index >= paragraphs.Count) return info;
@@ -993,7 +994,7 @@ namespace SIL.TextEditing.Avalonia
                 start = end = new TextPosition(loc.Character.Paragraph, para.Length);
                 return;
             }
-            WordBreaks.WordAt(para, loc.Character.Offset, Editor.WordRules, out int s, out int en);
+            WordBreaks.WordAt(para, loc.Character.Offset, Editor.WordRules, _styles, out int s, out int en);
             start = new TextPosition(loc.Character.Paragraph, s);
             end = new TextPosition(loc.Character.Paragraph, en);
         }
@@ -1033,29 +1034,137 @@ namespace SIL.TextEditing.Avalonia
 
         // ------------------------------------------------ clipboard
 
+        /// <summary>The forms a copy writes and a paste reads, registered by the host (ADR 0029). Plain text is built in. A new field has
+        /// none registered, so copy writes plain text only until the host adds its forms: TsString through the LCModel adapter and FieldWorks
+        /// Markdown through the Markdown library. <see cref="ClipboardForms.PasteOrder"/> is the order paste prefers them.</summary>
+        public ClipboardForms ClipboardForms
+        {
+            get => _clipboardForms;
+            set => _clipboardForms = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        ClipboardForms _clipboardForms = new ClipboardForms();
+
+        /// <summary>Raised after a copy when the backend could not store some forms (the default backend cannot store a host object): the format names. The other forms and
+        /// the plain text were stored. A host that writes object payloads sets its own <see cref="ClipboardBackend"/>.</summary>
+        public event EventHandler<IReadOnlyList<string>>? ClipboardFormsNotStored;
+
+        IClipboardBackend? _clipboardBackend;
+
+        /// <summary>Where copy, cut and paste keep the clipboard (ADR 0029). The default is Avalonia's clipboard of the window the field is in; a host with its own
+        /// (FieldWorks' WinForms host, which puts a serialised object under "TsString") sets one. Payloads of the forms pass through it untouched.</summary>
+        public IClipboardBackend ClipboardBackend
+        {
+            get => _clipboardBackend ??= new AvaloniaClipboardBackend(() => TopLevel.GetTopLevel(this));
+            set => _clipboardBackend = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        /// <summary>Whether the target has a writing system, asked when text is pasted (ADR 0029). With none set, the field asks its
+        /// <see cref="WritingSystems"/> registry, and a registry with no writing systems in it (no project) accepts every one. Pasted text
+        /// in a writing system this refuses takes the writing system of the selection it replaces, as FieldWorks does.</summary>
+        public Func<string, bool>? KnowsWritingSystem { get; set; }
+
+        /// <summary>Raised after a paste that mapped writing systems the target lacks to the selection's writing system, so the host can
+        /// tell the user. Not raised when every writing system was known.</summary>
+        public event EventHandler<WritingSystemMapping>? WritingSystemsMapped;
+
+        bool IsWritingSystemKnown(string id) => KnowsWritingSystem != null ? KnowsWritingSystem(id) : WritingSystems.Count == 0 || WritingSystems.Contains(id);
+
+        static string PlainText(IReadOnlyList<Paragraph> fragment) =>
+            TextNormalizer.Normalize(string.Join("\n", fragment.Select(p => p.Text)), System.Text.NormalizationForm.FormC);
+
+        /// <summary>Copies the selection, or cuts it: every registered form goes on the clipboard, with the plain text in NFC (ADR 0029).
+        /// A form that throws or has nothing to say is left out and the others still go.</summary>
         public async Task CopyAsync(bool cut)
         {
             if (!Editor.HasSelection) return;
             if (cut && !Editor.CanEdit) return;   // Cut is disabled where Delete is: it must not leave the text on the clipboard either
             var fragment = Editor.GetFragment();
-            var xml = Interchange.ToXml(fragment);
-            var plain = TextNormalizer.Normalize(string.Join("\n", fragment.Select(p => p.Text)), System.Text.NormalizationForm.FormC);
-            await ClipboardCompat.SetAsync(TopLevel.GetTopLevel(this), plain, xml);
+            var written = new List<KeyValuePair<string, object>>();
+            foreach (var form in ClipboardForms)
+            {
+                try
+                {
+                    var payload = form.Write(fragment);
+                    if (payload != null && !(payload is string empty && empty.Length == 0)) written.Add(new KeyValuePair<string, object>(form.FormatName, payload));
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.TraceWarning("Clipboard form " + form.Id + " could not write the selection: " + ex.Message);
+                }
+            }
+            var refused = await ClipboardBackend.SetAsync(PlainText(fragment), written);
+            if (refused.Count > 0) ClipboardFormsNotStored?.Invoke(this, refused);
             if (cut) Editor.DeleteSelection("cut");
         }
 
+        /// <summary>"Copy as": puts one form on the clipboard, as text, for a program that reads text (so it returns false for a form whose payload is not a string): the plain text in NFC (the id
+        /// <see cref="ClipboardForms.PlainTextId"/>) or a registered form's payload, such as FieldWorks Markdown. Pasting it back into a
+        /// field reads it as text. False when nothing was copied: no selection, an unknown form, or a form with nothing to say.</summary>
+        public async Task<bool> CopyAsAsync(string formId)
+        {
+            if (!Editor.HasSelection) return false;
+            var fragment = Editor.GetFragment();
+            string? text;
+            if (formId == ClipboardForms.PlainTextId) text = PlainText(fragment);
+            else
+            {
+                var form = ClipboardForms.Find(formId);
+                if (form == null) return false;
+                try { text = form.Write(fragment) as string; }   // as text: a form whose payload is not a string cannot be copied as
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.TraceWarning("Clipboard form " + form.Id + " could not write the selection: " + ex.Message);
+                    return false;
+                }
+            }
+            if (string.IsNullOrEmpty(text)) return false;
+            await ClipboardBackend.SetAsync(text!, new List<KeyValuePair<string, object>>());
+            return true;
+        }
+
+        /// <summary>Pastes the first form of <see cref="ClipboardForms.PasteOrder"/> that the clipboard holds and that reads. Text in a
+        /// writing system the target lacks takes the selection's writing system and raises <see cref="WritingSystemsMapped"/> when the paste changed something.</summary>
         public async Task PasteAsync()
         {
-            if (AtHiddenEdge()) return;
-            var topLevel = TopLevel.GetTopLevel(this);
-            var xml = await ClipboardCompat.GetXmlAsync(topLevel);
-            if (!string.IsNullOrEmpty(xml))
+            if (AtHiddenEdge() || !Editor.CanEdit) return;   // a read-only field or text that may not be edited reads nothing and tells nobody
+            foreach (var id in ClipboardForms.PasteOrder.ToList())
             {
-                Editor.Paste(Interchange.FromXml(xml!));
+                if (id == ClipboardForms.PlainTextId)
+                {
+                    var text = await ClipboardBackend.GetTextAsync();
+                    if (string.IsNullOrEmpty(text)) continue;
+                    Editor.PasteText(text ?? string.Empty);
+                    return;
+                }
+                var form = ClipboardForms.Find(id);
+                if (form == null) continue;
+                object? payload;
+                try { payload = await ClipboardBackend.GetAsync(form.FormatName, form.PayloadKind); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.TraceWarning("The clipboard could not be read as " + form.FormatName + ": " + ex.Message);
+                    continue;
+                }
+                if (payload == null || (payload is string none && none.Length == 0)) continue;
+                IReadOnlyList<Paragraph>? read;
+                try { read = form.Read(payload); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.TraceWarning("Clipboard form " + form.Id + " could not read the clipboard: " + ex.Message);
+                    read = null;
+                }
+                if (read == null || read.Count == 0) continue;
+                var fragment = read.ToList();
+                var mapping = ClipboardWritingSystems.MapMissing(fragment, IsWritingSystemKnown, Editor.SelectionWs);
+                bool changed = false;
+                void Saw(EditDelta d) => changed = true;
+                Editor.Committed += Saw;
+                try { Editor.Paste(fragment); }
+                finally { Editor.Committed -= Saw; }
+                if (changed && mapping.Any) WritingSystemsMapped?.Invoke(this, mapping);
                 return;
             }
-            var text = await ClipboardCompat.GetTextAsync(topLevel);
-            if (!string.IsNullOrEmpty(text)) Editor.PasteText(text ?? string.Empty);
         }
 
         // ------------------------------------------------ IME

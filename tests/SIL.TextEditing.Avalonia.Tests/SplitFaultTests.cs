@@ -86,27 +86,40 @@ namespace SIL.TextEditing.Avalonia.Tests
         }
 
         [Theory]
-        [InlineData(0x300)]
-        [InlineData(0x301)]
-        [InlineData(0x20DD)]
-        public void A_mark_after_a_space_in_a_paragraph_with_Arabic_is_drawn_though_the_formatter_is_given_it_on_another_base(int mark) => Headless.Run(() =>
+        [InlineData(0x300, 0x323)]
+        [InlineData(0x301, 0x323)]
+        [InlineData(0x20DD, 0x323)]
+        public void A_mark_after_a_space_in_a_paragraph_with_Arabic_is_drawn_though_the_formatter_is_given_it_on_another_base(int mark, int other) => Headless.Run(() =>
         {
             for (double width = 100; width <= 300; width += 20)
             {
-                long Ink(string markText)
+                bool[,] Ink(string markText)
                 {
                     var p = Para("ar", "ar", Arabic + markText + "x");
                     p.Rtl = true;
-                    var field = Fixtures.Field(Doc(p), width);
-                    var shot = Fixtures.Render(field, 2);
-                    long n = 0;
+                    var shot = Fixtures.Render(Fixtures.Field(Doc(p), width), 2);
+                    var ink = new bool[shot.Width, shot.Height];
                     for (int y = 0; y < shot.Height; y++)
                         for (int x = 0; x < shot.Width; x++)
-                            if (shot.IsInk(x, y, 200)) n++;
+                            ink[x, y] = shot.IsInk(x, y, 200);
+                    return ink;
+                }
+                int Differ(bool[,] a, bool[,] b)
+                {
+                    int n = 0;
+                    for (int y = 0; y < a.GetLength(1); y++)
+                        for (int x = 0; x < a.GetLength(0); x++)
+                            if (a[x, y] != b[x, y]) n++;
                     return n;
                 }
-                // The control has a word joiner, which has no glyph, where the mark is (the old way out of the fault hid the mark so): the mark's ink is what is missing.
-                Assert.True(Ink(" " + C(mark)) > Ink(" ⁠"), "width " + width + ": the mark's ink is drawn");
+                // Two different marks on the same space: if a mark is drawn the pictures differ, and only by the marks' own ink, because whatever stands in for the
+                // space (a no-break space, or on 11.3 a dotted circle) is the same in both. A mark that is not drawn leaves the two pictures alike (the old way out of the
+                // fault put a word joiner, which has no glyph, where the mark is, and hid it so).
+                // Three different marks must all give different pictures: two that are not drawn would give the same one (the bare stand-in for the space).
+                var a = Ink(" " + C(mark)); var b = Ink(" " + C(other)); var c = Ink(" " + C(0x20DD == mark ? 0x301 : 0x20DD));
+                Assert.True(Differ(a, b) > 0 && Differ(a, c) > 0 && Differ(b, c) > 0, "width " + width + ": each mark's own ink is drawn");
+                var bare = Ink(" ");     // and none of them is just the bare space
+                Assert.True(Differ(a, bare) > 0 && Differ(b, bare) > 0 && Differ(c, bare) > 0, "width " + width + ": each mark differs from the bare space");
             }
         });
     }
