@@ -90,6 +90,7 @@ namespace SIL.TextEditing.Avalonia
                 _lang = value;
                 _langState = null;
                 _langFailed = false;
+                _langCancelledRuns = 0;
                 _langEpoch++;
                 if (_onScreen) StartLanguageListening();
                 RefreshLanguageLayout();
@@ -139,6 +140,7 @@ namespace SIL.TextEditing.Avalonia
         {
             _langEpoch++;
             _langFailed = false;
+            _langCancelledRuns = 0;
             CancelLanguageRequest();
             if (_langState != null) _langState.Provisional = true;
             ScheduleLanguageIfWanted();
@@ -353,7 +355,7 @@ namespace SIL.TextEditing.Avalonia
 
         void ScheduleLanguageIfWanted()
         {
-            if (!LanguageActive || _langPosted || !_onScreen || _langFailed) return;
+            if (!LanguageActive || _langPosted || !_onScreen || _langFailed || _langCancelledRuns > MaxCancelledRetries) return;   // a service that gave up is not asked again by a repaint or a stray notice
             var live = LiveLanguage();
             if (live != null && !live.Provisional) return;
             _langPosted = true;
@@ -513,6 +515,7 @@ namespace SIL.TextEditing.Avalonia
 
         void LanguageAttached()
         {
+            _langCancelledRuns = 0;       // the field is back: a service that gave up while it was away is asked again
             StartLanguageListening();
             ScheduleLanguageIfWanted();
         }

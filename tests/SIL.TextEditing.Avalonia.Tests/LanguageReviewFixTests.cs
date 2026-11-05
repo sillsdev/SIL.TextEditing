@@ -252,9 +252,30 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal(4, r.Service.AnalyzedTexts.Count);      // once, and three more
             r.Idle();
             Assert.Equal(4, r.Service.AnalyzedTexts.Count);
+            // A repaint is not a reason to ask again. The test paints on purpose: when the headless renderer paints by itself is a matter of timing (issue 145).
+            for (int i = 0; i < 3; i++)
+            {
+                Fixtures.Render(r.Field);
+                r.Idle();
+            }
+            Assert.Equal(4, r.Service.AnalyzedTexts.Count);
             r.Service.CancelsItself = false;
             r.Field.Editor.SetCaret(new TextPosition(0, 3));
             r.Field.Editor.TypeText("c");
+            r.Idle();
+            Assert.Equal(5, r.Service.AnalyzedTexts.Count);
+            Assert.Equal(2, r.Field.LanguageTokens.Count);
+            r.Close();
+        });
+
+        [Fact]
+        public void A_service_that_gave_up_is_asked_again_when_it_says_it_changed_and_when_the_field_is_restarted() => Headless.Run(() =>
+        {
+            var r = new LanguageRig("a b", new FakeLanguageService { CancelsItself = true, Analysis = FakeLanguageService.Words("word") });
+            r.Idle();
+            Assert.Equal(4, r.Service.AnalyzedTexts.Count);
+            r.Service.CancelsItself = false;
+            r.Service.RaiseChanged();
             r.Idle();
             Assert.Equal(5, r.Service.AnalyzedTexts.Count);
             Assert.Equal(2, r.Field.LanguageTokens.Count);
