@@ -138,6 +138,9 @@ namespace SIL.TextEditing.Markdown
         public const string PictureUnknown = "fwmd.picture.unknown";
         public const string FieldBlockSyntax = "fwmd.field.block-syntax";
         public const string PropUnknownNumber = "fwmd.prop.unknown-number";
+        /// <summary>Added (owner decision R-9, ADR 0032): the front matter has a top-level <c>record:</c> key, so the text is a record file, which
+        /// <c>RecordFileReader</c> reads. One error on that line; nothing else is read, so a host that writes the result back cannot drop the frame.</summary>
+        public const string RecordFile = "fwmd.record.record-file";
     }
 
     /// <summary>Raised by the writer when a paragraph cannot be written so that it reads back unchanged. It should not happen for

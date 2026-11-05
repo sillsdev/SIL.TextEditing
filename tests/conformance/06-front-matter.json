@@ -94,5 +94,7 @@
       { "text": "x", "ws": "en", "props": { "s133": "Hyperlink" }, "link": { "guid": "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa", "tool": "lexiconEdit" } }
     ] } ],
     "canonical": "[x](/objects/aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa){tool=lexiconEdit}\n"
-  }
+  },
+  {"name": "a record file is not read as FieldWorks Markdown: one finding on its record line, and nothing else (owner decision R-9)", "project": "standard", "frontMatter": "explicit", "markdown": "---\nfwmd: 1\nrecord: \"notebook/record\"\nrecord-data:\n  title: |-\n    A title\n  researchers:\n    - \"[J. Cruz](/lists/people/x){guid=6d7e8f9a-0b1c-4d2e-9f3a-4b5c6d7e8f9a}\"\n---\n\nThe body.\n", "paragraphs": [], "findings": [{"id": "fwmd.record.record-file", "line": 3, "column": 1, "endLine": 3, "endColumn": 26}]},
+  {"name": "ok: fwmd.record.record-file a record: in the body or nested in the front matter does not make a record file", "project": "standard", "frontMatter": "explicit", "markdown": "---\nfwmd: 1\nanalysis: \"en\"\nvernacular: \"ceb\"\nwritingSystems:\n  en:\n    record: \"x\"\n---\n\nrecord: x\n", "paragraphs": [{"style": "Normal", "runs": [{"text": "record: x", "ws": "en"}]}]}
 ]

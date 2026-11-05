@@ -34,6 +34,20 @@ namespace SIL.TextEditing.Markdown.Reader
         {
             if (!FrontMatterFormat.TryFind(source, start, out int end, out bool closed) || !closed) return source;
             var block = source.Substring(0, end);
+            int record = RecordKeyAt(block);
+            if (record >= 0)
+            {
+                // A record file (owner decision R-9): its frame is not this reader's, so it says so once and reads nothing, instead of reporting the frame's
+                // lines as malformed or reading only the body.
+                int lineEnd = record;
+                while (lineEnd < block.Length && block[lineEnd] != '\n' && block[lineEnd] != '\r') lineEnd++;
+                _context.Report(MarkdownDiagnosticIds.RecordFile, MarkdownSeverity.Error,
+                    "This is a record file (its front matter has record:); read it with RecordFileReader.", record, lineEnd);
+                _unsupportedVersion = true;
+                var whole = new StringBuilder(source);
+                Blank(whole, 0, end);
+                return whole.ToString();
+            }
             var fm = FrontMatterFormat.Parse(block, (a, b, message) => { if (block.IndexOf("fwmd", StringComparison.Ordinal) >= 0) _context.Report(MarkdownDiagnosticIds.MalformedAttribute, MarkdownSeverity.Error, message, a, b); });
             fm.Range = new[] { 0, end };
             var blanked = new StringBuilder(source);
@@ -56,6 +70,20 @@ namespace SIL.TextEditing.Markdown.Reader
             if (fm.Analysis != null) { _context.DefaultAnalysis = fm.Analysis; _context.CheckWritingSystem(fm.Analysis, fm.AnalysisAt![0], fm.AnalysisAt[1]); }
             if (fm.Vernacular != null) { _context.DefaultVernacular = fm.Vernacular; _context.CheckWritingSystem(fm.Vernacular, fm.VernacularAt![0], fm.VernacularAt[1]); }
             return blanked.ToString();
+        }
+
+        /// <summary>The offset of a top-level <c>record:</c> key in a front-matter block, or -1.</summary>
+        static int RecordKeyAt(string block)
+        {
+            int pos = 0;
+            while (pos < block.Length)
+            {
+                if (string.CompareOrdinal(block, pos, "record:", 0, 7) == 0 && (pos + 7 == block.Length || block[pos + 7] == ' ' || block[pos + 7] == '\n' || block[pos + 7] == '\r'))
+                    return pos;
+                while (pos < block.Length && block[pos] != '\n' && block[pos] != '\r') pos++;
+                while (pos < block.Length && (block[pos] == '\n' || block[pos] == '\r')) pos++;
+            }
+            return -1;
         }
 
         MarkdownStyleNames Names => _options.StyleNames;
