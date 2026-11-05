@@ -54,12 +54,16 @@ namespace SIL.TextEditing.Markdown
     {
         readonly Reader.ReaderContext _context;
 
-        internal MarkdownParseResult(Document document, IReadOnlyList<MarkdownDiagnostic> diagnostics, Reader.ReaderContext context)
+        internal MarkdownParseResult(Document document, IReadOnlyList<MarkdownDiagnostic> diagnostics, Reader.ReaderContext context, IReadOnlyList<ParagraphSource> sources)
         {
             Document = document;
             Diagnostics = diagnostics;
             _context = context;
+            ParagraphSources = sources;
         }
+
+        /// <summary>For each paragraph of <see cref="Document"/>, in order, where it was read from (the record reader places findings about a block with it).</summary>
+        internal IReadOnlyList<ParagraphSource> ParagraphSources { get; }
 
         /// <summary>The text the offsets, lines and columns of the findings and objects refer to (the text that was read; a byte order mark
         /// is a space here so that every offset stays the same).</summary>
@@ -148,5 +152,21 @@ namespace SIL.TextEditing.Markdown
     public sealed class MarkdownWriteException : InvalidOperationException
     {
         public MarkdownWriteException(string message) : base(message) { }
+    }
+
+    /// <summary>Where a paragraph was read from: the range of its source (end exclusive) and the number of the Markdown block it belongs to, which the paragraphs of one
+    /// table or one list share.</summary>
+    internal readonly struct ParagraphSource
+    {
+        public ParagraphSource(int start, int end, int block)
+        {
+            Start = start;
+            End = end;
+            Block = block;
+        }
+
+        public int Start { get; }
+        public int End { get; }
+        public int Block { get; }
     }
 }

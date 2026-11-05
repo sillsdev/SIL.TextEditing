@@ -288,5 +288,70 @@
         "body": "discussion"
       }
     ]
+  },
+  "blocks": {
+    "id": "blocks.schema.json",
+    "types": [
+      {
+        "name": "note",
+        "fields": [
+          {
+            "name": "title",
+            "kind": "rich"
+          },
+          {
+            "name": "plain",
+            "kind": "rich",
+            "paragraphs": true,
+            "blocks": []
+          },
+          {
+            "name": "lists-only",
+            "kind": "rich",
+            "paragraphs": true,
+            "blocks": [
+              "lists"
+            ]
+          },
+          {
+            "name": "no-tables",
+            "kind": "rich",
+            "paragraphs": true,
+            "blocks": [
+              "lists",
+              "headings"
+            ]
+          },
+          {
+            "name": "anything",
+            "kind": "rich",
+            "paragraphs": true
+          },
+          {
+            "name": "remarks",
+            "kind": "rich",
+            "multi": true,
+            "paragraphs": true,
+            "blocks": []
+          },
+          {
+            "name": "description",
+            "kind": "rich",
+            "paragraphs": true,
+            "blocks": [
+              "tables"
+            ]
+          }
+        ]
+      }
+    ],
+    "kinds": [
+      {
+        "name": "notebook/record",
+        "root": "note",
+        "pathSegments": 2,
+        "body": "description"
+      }
+    ]
   }
 }

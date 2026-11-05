@@ -209,6 +209,13 @@ namespace SIL.TextEditing.Markdown
         /// <summary>The character style a link run has unless the notation says otherwise (<c>.nostyle</c>, or <c>custom-style=</c>).</summary>
         public string Hyperlink { get => _hyperlink; set => _hyperlink = Name(value); }
 
+        /// <summary>The recogniser (ADR 0033) for these names: which paragraphs are headings, list items and table rows (the table styles when the host names them), and
+        /// <see cref="Normal"/> as the style a flattened block gets. A host gives it to <c>RichTextField.BlockRecognizer</c> so that pasted Markdown is recognised by the
+        /// names it was read with, and the record reader uses it to find the blocks a field does not allow.</summary>
+        public IBlockRecognizer ToBlockRecognizer() => new StyleBlockRecognizer(
+            new[] { Heading1, Heading2, Heading3 }, new[] { BulletedList, NumberedList },
+            TableHeader != null && TableRow != null ? new[] { TableHeader, TableRow } : null, Normal);
+
         internal string? Heading(int level) => level == 1 ? Heading1 : level == 2 ? Heading2 : level == 3 ? Heading3 : null;
     }
 
