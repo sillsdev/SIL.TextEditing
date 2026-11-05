@@ -210,9 +210,9 @@ drawn behind plain text, so copy, Markdown and undo see only text, and a high co
 spelling marks' drawing (red error, blue warning, grey information; a hint is not drawn) and are never written into the document: no run, bag or property 5
 changes. Hovering sets the tooltip from the diagnostics' messages and the service's help (`GetLanguageHoverAsync`); `ContextInfo.Diagnostics` and
 `ApplyDiagnosticFix` give the host's context menu a fix as one undo step; `CanInsert(kind)` enables a host's Insert commands. **Completion**: Ctrl+Space, or a
-trigger character the service names, opens a popup at the caret (plain named rows, no theme needed, the keyboard stays in the field); Up, Down, PageUp,
+trigger character the service names, opens a popup left-aligned under the caret (a `List` of named `ListItem` rows, no theme needed, the keyboard stays in the field, the wheel scrolls it; it closes when the word or class being completed is done, so Enter and Tab reach the host again); Up, Down, PageUp,
 PageDown, Enter or Tab (accepts, and neither reaches the host), Esc; typing asks again, and a caret move, a selection, losing focus, read-only or an input method
-composing closes it. Where no popup can be shown the state and `CompletionChanged` still work. The playground's **Environment** scenario is the sample
+composing closes it. Where no popup can be shown the state and `CompletionChanged` still work. **A host that routes keys itself** (WinForms `IsInputKey` and `ProcessCmdKey`, a dialog's default and cancel buttons) asks `RichTextField.WantsKey(key, modifiers)` and leaves the keys it wants (Ctrl+Space, and Enter, Tab, Esc and the arrows while the popup is open) to the field; `samples/Host48` shows it. The field's peer is an expand/collapse provider for the popup and gives the worst diagnostic as its item status. `LanguageDebounce` waits after the last edit before asking, and `BackgroundTextLanguageService` runs the analysis on the thread pool. The playground's **Environment** scenario is the sample
 (`SampleEnvironmentService`, over a made-up phonology; not shipped); the real service that reads a project's phonology comes later, in a project that
 references liblcm.
 

@@ -45,15 +45,35 @@ decisions and can change without superseding anything (as in ADR 0026).
 - **Hover.** The pointer resting on text sets the field's tooltip: the messages of the diagnostics there (worst first), then the service's
   help, one per line. `GetLanguageHoverAsync(position)` is the same answer for a host that shows its own, and is null when the text
   changed meanwhile. The tooltip's delay is Avalonia's.
-- **Completion.** Ctrl+Space, or typing one of the service's trigger characters, asks at the caret. The popup is one Avalonia `Popup` at
-  the caret rectangle (a native popup window where the platform has one, the overlay layer otherwise) holding plain bordered rows, at
-  most eight at a time, not a `ListBox`: it needs no theme and a row is a named element a screen reader finds. The keyboard stays in the
+- **Completion.** Ctrl+Space, or typing one of the service's trigger characters, asks at the caret. The popup is one Avalonia `Popup`, left-aligned
+  under the caret (a native popup window where the platform has one, the overlay layer otherwise), holding plain bordered rows, at
+  most eight at a time (the wheel scrolls the window; the row under the pointer is tinted), not a `ListBox`: it needs no theme. In a high
+  contrast theme the selected row is in the system's highlight colours. **The popup lives as long as its context**: the thing being completed
+  (the stretch the first answer's items replace, else the caret it was asked at). A refresh keeps it only while the new items replace a stretch
+  that starts where that began; typing a space or a closing bracket, or deleting back before the start, closes it, as does an empty answer. So
+  Enter and Tab reach the host again once the word or class is done. A trigger character typed with the popup open starts a new context and is
+  asked as `TriggerCharacter`. The keyboard stays in the
   field and the popup is never focused. Up, Down, PageUp and PageDown move; Enter or Tab accepts (so Enter does not reach
   `EnterRequested` and Tab does not leave the field while it is open); Esc closes (and goes to the host when it is closed); a click on a row
   accepts. Typing asks again once the edit's events are over (`Refresh`); a caret move, a selection, losing focus, a read-only field
   or an input method composing closes it. An item replaces its `ReplaceRange` (else the selection or the caret), as one undo step, and may
   put the caret inside what it inserted (`CaretOffset`: `()` leaves it between the parentheses). If no popup can be shown (a window
   with no theme has no overlay layer) the state and `CompletionChanged` still work, and a host can draw the list itself.
+- **UI Automation.** The popup is a `List` and its rows are `ListItem`s in the content view, each named with its label and detail
+  (`AutomationProperties.ControlTypeOverride` and `AccessibilityView`, on both Avalonia lines). The field's peer implements the expand/collapse
+  pattern (expanded while the popup is open; `Expand` and `Collapse` open and close it) and its item status says the worst diagnostic's message
+  and, while open, the popup's size and selected item. ADR 0017's bar for the field itself (name, edit role, value, read-only, bounds) is
+  unchanged. A change of the highlight is still not announced by itself (no live region in Avalonia).
+- **The host's side of the keys.** A host that routes keys itself (WinForms: `IsInputKey` and `ProcessCmdKey`, with a dialog's default and cancel
+  buttons and the Tab order) must leave Enter, Tab, Esc, Up, Down, PageUp and PageDown to the field while its popup is open, and Ctrl+Space
+  always. `RichTextField.WantsKey(key, modifiers)` answers exactly that; call it from both overrides. `samples/Host48` does. Without it
+  Esc cancels the dialog and Enter presses its default button with the popup on screen. An Avalonia-only host needs nothing.
+- **Cancellation, failure and cost.** `CompleteAsync` and `HoverAsync` get a token that is cancelled when the next request, an edit, closing or
+  leaving the tree supersedes them. A failed analysis holds off asking about that text only (the next edit asks again) and a service that cancels
+  what nobody cancelled is asked three more times for the same text; a failed completion or hover costs that answer only (it is still reported
+  through `LanguageServiceFailed`). `RichTextField.LanguageDebounce` (default zero) waits that long after the last edit before asking, for a
+  service in another process; the first answer for a new service or text is never held back. `BackgroundTextLanguageService` is a
+  `TextLanguageService` whose overrides run on the thread pool.
 - **Fixes.** `ApplyDiagnosticFix(diagnostic)` applies the diagnostic's fix as one undo step, only when the answer is for the text as it
   is, the field is not read-only and the range may be edited. Fixes with several edits replace the stretch they cover as one run in the
   formatting of its first character. The context request carries the diagnostics at the place (`ContextInfo.Diagnostics`); the host
@@ -84,12 +104,17 @@ written from that behaviour and not from its code (ADR 0010):
   replacing a closing bracket that is already there) and the phonemes that start with a word being typed. The natural classes and
   segments are a made-up list.
 
+**Clean room.** The sample's insert rules are written from the observed behaviour as tables (the word boundary rule is a table in
+`SampleEnvironment.cs`: existing boundaries against where the new one may go), with `EnvironmentServiceTests` as the oracle. Those tests use
+the notation's own examples, several of them in the order and with the phoneme and class names of liblcm's `PhonEnvRecognizerTests`: data
+that is behaviour, not code. Only empty text has nothing to describe: whitespace alone is a syntax problem, as in FieldWorks.
+
 **Where the sample deliberately differs** (not owner decisions):
 - Messages are written afresh (FieldWorks' wording is LGPL text); a phoneme error underlines from the first letter no split of the word
   can get past to the end of the word, where FieldWorks' position counts every split it tried; the diagnostic range is the offending
   item (the closing bracket's own item, the word, the class name), not a single position.
 - A closing parenthesis or bracket with nothing before it is reported as the missing opening one; FieldWorks reports a general syntax
-  error. An optional item with nothing in it, or a class with no abbreviation, is a syntax error with its own explanation.
+  error. An optional item with nothing in it, or a class with no abbreviation, is a syntax error with its own explanation. A lone `[` is a syntax problem, as in FieldWorks; a class of five words is a syntax problem where FieldWorks says a bracket is missing.
 - Exact fixes FieldWorks does not offer: insert the missing parenthesis or bracket; change a class to the one abbreviation that matches
   it but for case; insert a missing leading slash. Nothing is offered where there is no single right answer (an unknown phoneme).
 
@@ -97,10 +122,11 @@ written from that behaviour and not from its code (ADR 0010):
 - Phase 0 gates that need a person (scope report 18, section 5; `docs/manual-testing.md` steps 12.1 to 12.14): do the chips read as chips on a
   real screen in both themes; does completion work with an input method and Keyman active; does the popup place, focus and dismiss correctly
   on Avalonia 11.3 inside `WinFormsAvaloniaControlHost`. Headless tests cover the logic, the keys and the popup in the playground's window.
-- Accessibility (owner question Q59, open): the popup's rows are named, but a change of the highlight is not announced by itself (Avalonia 11 and
-  12 have no live region), and the field's peer does not say a popup is open. ADR 0017 limits the field to a name, a role and a value.
-- `CompleteAsync` and `HoverAsync` are given `CancellationToken.None`, so a completion or hover that has become stale is dropped by the field but
-  not cancelled in the service; only `AnalyzeAsync` is cancelled.
+- Accessibility (owner question Q59, open): a change of the highlight is not announced by itself (Avalonia 11 and 12 have no live region); the
+  popup and the field's state are exposed as above, to be checked with a screen reader (manual step 12.14).
+- API gaps for a second consumer, to decide before one exists: the trigger character is not passed to `CompleteAsync`; no `isIncomplete`,
+  `filterText` or additional edits; one fix per diagnostic; no document version; `CanInsert` is synchronous (a remote service answers from a
+  cache); no optional `Constrain` hook (scope report 3.2). The popup does not follow a WinForms form that is moved while it is open.
 - A tooltip a host sets on the field itself is replaced while a service is set (the field sets the tip as the pointer moves).
 - Fields of several paragraphs (Markdown source mode, a later box): the paragraphs would go to the service joined by line feeds, the line being the
   paragraph's index; not done.
