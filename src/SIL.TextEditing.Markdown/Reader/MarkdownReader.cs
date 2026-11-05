@@ -121,6 +121,7 @@ namespace SIL.TextEditing.Markdown.Reader
             string blanked = ScanFences(fences);
             var fenceStarts = new HashSet<int>();
             foreach (var fence in fences) fenceStarts.Add(fence.Start);
+            _context.FenceStarts = fenceStarts;
             var tooBig = new List<int[]>();
             var document = TryParse(blanked, NotationExtension.Document, _context);
             if (document == null)
@@ -447,6 +448,7 @@ namespace SIL.TextEditing.Markdown.Reader
             string text = _source.Substring(start, end - start);
             _context.Base = 0;
             if (TryEmptyMarker(text, start, style, props)) return;
+            CheckPandoc(start, end, true, false, false);
             _context.Base = start;
             int mark = _context.Count;
             var document = TryParse(text, NotationExtension.Document, _context);
@@ -549,7 +551,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 _context.RemoveParsed(block.Span.Start, block.Span.End + 1);
                 return;
             }
-            CheckPandoc(block.Span.Start, block.Span.End + 1);
+            CheckPandoc(block.Span.Start, block.Span.End + 1, true, NearTable(block));
             _paragraphs.Add(MakeParagraph(Names.Normal, new PropertyBag(), InlineReader.Read(block.Inline, _context), null));
         }
 
@@ -587,12 +589,20 @@ namespace SIL.TextEditing.Markdown.Reader
             return true;
         }
 
-        void CheckPandoc(int start, int end, bool lines = true)
+        /// <summary>True when a pipe table is the block before or after: Pandoc reads a <c>Table:</c> or <c>:</c> line next to a table as its caption.</summary>
+        static bool NearTable(Block block)
+        {
+            if (!(block.Parent is ContainerBlock parent)) return false;
+            int index = parent.IndexOf(block);
+            return (index > 0 && parent[index - 1] is Table) || (index >= 0 && index + 1 < parent.Count && parent[index + 1] is Table);
+        }
+
+        void CheckPandoc(int start, int end, bool lines = true, bool nearTable = false, bool fences = true)
         {
             if (start < 0) return;
             if (end > _source.Length) end = _source.Length;
             PandocConstructs.Find(_source, start, end, lines, (s, e, message, fix) =>
-                _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, message, s, e, fix));
+                _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, message, s, e, fix), nearTable, fences);
         }
 
         void CheckHeading(HeadingBlock heading)

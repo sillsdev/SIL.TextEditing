@@ -47,11 +47,17 @@ namespace SIL.TextEditing.Markdown.Reader
         public void Setup(MarkdownPipeline pipeline, Markdig.Renderers.IMarkdownRenderer renderer) { }
 
         /// <summary>The two pipelines: the document (blocks and pipe tables) and the inline-only one used for the text of a block known to be a paragraph.</summary>
-        public static readonly MarkdownPipeline Document = new MarkdownPipelineBuilder()
-            .UsePreciseSourceLocation()
-            .UsePipeTables(new PipeTableOptions { RequireHeaderSeparator = true })
-            .Use(new NotationExtension())
-            .Build();
+        public static readonly MarkdownPipeline Document = BuildDocument();
+
+        static MarkdownPipeline BuildDocument()
+        {
+            var builder = new MarkdownPipelineBuilder()
+                .UsePreciseSourceLocation()
+                .UsePipeTables(new PipeTableOptions { RequireHeaderSeparator = true })
+                .Use(new NotationExtension());
+            PandocInterrupts.Install(builder);
+            return builder.Build();
+        }
 
         public static readonly MarkdownPipeline InlineOnly = BuildInlineOnly();
 
@@ -199,6 +205,53 @@ namespace SIL.TextEditing.Markdown.Reader
             };
             slice.Start = block.End;
             return true;
+        }
+    }
+}
+
+namespace SIL.TextEditing.Markdown.Reader
+{
+    /// <summary>Pandoc keeps a line that starts like a heading, a list item, a quote or a thematic break in the paragraph above it unless a blank line comes between
+    /// (<c>blank_before_header</c> and its kin, and a list needs a blank line before it); CommonMark lets them interrupt. At the top of the document (and of a div)
+    /// the notation follows Pandoc, so hard-wrapped text is not split. Inside a list item or a quote the CommonMark reading stays, and the reader reports what a
+    /// list item or quote holds besides one paragraph.</summary>
+    static class PandocInterrupts
+    {
+        public static bool Allowed(BlockProcessor processor, Block block)
+            => !(block is ParagraphBlock) || !(processor.CurrentContainer is Markdig.Syntax.MarkdownDocument);
+
+        public static void Install(MarkdownPipelineBuilder builder)
+        {
+            builder.BlockParsers.Replace<HeadingBlockParser>(new PandocHeadingParser());
+            builder.BlockParsers.Replace<ListBlockParser>(new PandocListParser());
+            builder.BlockParsers.Replace<QuoteBlockParser>(new PandocQuoteParser());
+            builder.BlockParsers.Replace<ThematicBreakParser>(new PandocBreakParser());
+        }
+    }
+
+    sealed class PandocHeadingParser : HeadingBlockParser
+    {
+        public override bool CanInterrupt(BlockProcessor processor, Block blockParent) => PandocInterrupts.Allowed(processor, blockParent) && base.CanInterrupt(processor, blockParent);
+    }
+
+    sealed class PandocListParser : ListBlockParser
+    {
+        public override bool CanInterrupt(BlockProcessor processor, Block blockParent) => PandocInterrupts.Allowed(processor, blockParent) && base.CanInterrupt(processor, blockParent);
+    }
+
+    sealed class PandocQuoteParser : QuoteBlockParser
+    {
+        public override bool CanInterrupt(BlockProcessor processor, Block blockParent) => PandocInterrupts.Allowed(processor, blockParent) && base.CanInterrupt(processor, blockParent);
+    }
+
+    sealed class PandocBreakParser : ThematicBreakParser
+    {
+        public override bool CanInterrupt(BlockProcessor processor, Block blockParent)
+        {
+            // A div fence is blanked to a thematic break in the text Markdig reads, and it must still end the paragraph before it.
+            var context = ReaderContext.From(processor.Context);
+            if (context != null && context.FenceStarts.Contains(processor.Line.Start)) return base.CanInterrupt(processor, blockParent);
+            return PandocInterrupts.Allowed(processor, blockParent) && base.CanInterrupt(processor, blockParent);
         }
     }
 }

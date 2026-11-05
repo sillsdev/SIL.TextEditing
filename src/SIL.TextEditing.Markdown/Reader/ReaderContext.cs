@@ -92,6 +92,9 @@ namespace SIL.TextEditing.Markdown.Reader
         /// <summary>The offset in <see cref="Source"/> of the text Markdig is parsing now (a fence line is parsed on its own).</summary>
         public int Base { get; set; }
 
+        /// <summary>The offsets where a div fence stands in the blanked text as a thematic break, which does end a paragraph (see MarkdownReader.Interrupt).</summary>
+        public HashSet<int> FenceStarts { get; set; } = new HashSet<int>();
+
         public MarkdownParserContext NewParserContext()
         {
             var context = new MarkdownParserContext();
