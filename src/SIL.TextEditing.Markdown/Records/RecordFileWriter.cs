@@ -37,6 +37,7 @@ namespace SIL.TextEditing.Markdown.Records
                 sb.Append("writingSystems:\n");
                 foreach (var ws in document.WritingSystems)
                 {
+                    if (!RecordProfile.CanQuote(ws.Key)) throw new RecordWriteException("The writing-system id " + ws.Key + " holds a control character or a line separator.");
                     sb.Append("  ").Append(RecordProfile.Key(ws.Key)).Append(":\n");
                     Pair(sb, "lang", ws.Value.Language, 4);
                     Pair(sb, "dir", ws.Value.Direction, 4);

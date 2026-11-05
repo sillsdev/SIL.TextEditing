@@ -119,8 +119,8 @@ namespace SIL.TextEditing.Markdown.Records
             if (parse.TooDeepAt != null) Error(RecordDiagnosticIds.TooDeep, "The YAML nests deeper than " + YamlTree.MaxDepth + " levels; what is deeper is not read.", parse.TooDeepAt.Value, LineEnd(parse.TooDeepAt.Value));
             if (parse.Error != null)
             {
-                int at = Math.Min((int)parse.Error.Start.Index, _text.Length);
-                Error(RecordDiagnosticIds.YamlSyntax, "The front matter is not YAML: " + parse.Error.Message, at, Math.Max(at, LineEnd(at)));
+                int at = Math.Max(firstLineEnd, Math.Min(parse.ErrorAt, closeStart));
+                Error(RecordDiagnosticIds.YamlSyntax, "The front matter is not YAML: " + parse.Error, at, Math.Max(at, LineEnd(at)));
                 return Result(null);
             }
             if (parse.Root == null || parse.Root.Kind != YamlFrameKind.Mapping)
@@ -512,6 +512,13 @@ namespace SIL.TextEditing.Markdown.Records
         {
             var node = pair.Value;
             if (node.Kind != YamlFrameKind.Scalar && node.Kind != YamlFrameKind.Alias) { Shape(node, "a single value"); return null; }
+            if (node.Kind == YamlFrameKind.Scalar && !RecordProfile.CanQuote(node.Value))
+            {
+                // A front-matter value is always a quoted string; one with a control character or a line separator cannot be written (review of PR 147).
+                Error(RecordDiagnosticIds.Unwritable, "The value of " + pair.Key.Value + " cannot be written in a record file: it holds a control character or a line separator.",
+                    ValueStart(node), Math.Max(node.End, node.Start + 1));
+                return node.Value;
+            }
             var value = ReadLeaf(node, TopText, pair.Key.Value, Column(pair.Key.Start) + 2, null);
             return value?.Text;
         }
@@ -527,6 +534,7 @@ namespace SIL.TextEditing.Markdown.Records
                 RecordWork.Steps++;
                 if (!pair.Key.IsScalar) continue;
                 string id = pair.Key.Value;
+                if (!CheckKeyWritable(pair.Key, "writing-system id")) continue;
                 CheckKeySpelling(pair.Key, id);
                 var props = new Dictionary<string, string>(StringComparer.Ordinal);
                 if (pair.Value.Kind == YamlFrameKind.Mapping)
@@ -552,6 +560,14 @@ namespace SIL.TextEditing.Markdown.Records
                 if (listed.Add(id))
                     document.WritingSystems.Add(new KeyValuePair<string, WritingSystemInfo>(id, new WritingSystemInfo(lang ?? fallback.Language, dir ?? fallback.Direction, font ?? fallback.Font)));
             }
+        }
+
+        /// <summary>False, with an error, for a key the writer cannot quote (an escaped control character or line separator); such a key is not read.</summary>
+        bool CheckKeyWritable(YamlFrameNode key, string what)
+        {
+            if (RecordProfile.CanQuote(key.Value)) return true;
+            Error(RecordDiagnosticIds.Unwritable, "This " + what + " cannot be written in a record file: it holds a control character or a line separator.", key.Start, Math.Max(key.End, key.Start + 1));
+            return false;
         }
 
         void CheckKeySpelling(YamlFrameNode key, string name)
@@ -673,6 +689,7 @@ namespace SIL.TextEditing.Markdown.Records
                 {
                     if (!pair.Key.IsScalar || !seen.Add(pair.Key.Value)) continue;
                     string ws = pair.Key.Value;
+                    if (!CheckKeyWritable(pair.Key, "writing-system id")) continue;
                     if (!node.Flow) CheckKeySpelling(pair.Key, ws);
                     _context.CheckWritingSystem(ws, pair.Key.Start, pair.Key.End);
                     if (IsEmptyNode(pair.Value)) { ReportEmpty(pair); continue; }

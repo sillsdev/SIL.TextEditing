@@ -69,6 +69,10 @@ The rest is **defaults**: how this version does it where the owner has not decid
   holds a tab, a control character or a line separator, however it was escaped in YAML) is an error, `fwmd.record.unwritable`. Its fix is the paragraphs
   that were read, written again, when they read back the same; the raw text is never escaped, because FieldWorks Markdown already read it differently (a
   leading space dropped, a tab as a space). A file read with no error can always be written.
+- Whatever YamlDotNet throws while it parses (its scanner throws `InvalidOperationException` on an unclosed `[` or `{` before more lines) is a syntax
+  error, `fwmd.yaml.syntax`, never an exception of the reader. A front-matter value or a key (a writing-system id) that holds a control character or a
+  line separator is `fwmd.record.unwritable` too, since the writer quotes them. A seeded mutation fuzz of the canonical fixtures holds the reader to this:
+  it never throws, its counted work stays in proportion to the file, and a clean read writes and reads back clean.
 - The body is trimmed of spaces, tabs and line ends only; a no-break, em or ideographic space at its end is text.
 - The reader always ends: the comment scan stops at YamlDotNet's first error token and is run only on YAML that parsed, and the scan and the parse stop
   after a number of tokens or events proportional to the front matter's length. Its lookups of a line's block are binary searches, and its work is

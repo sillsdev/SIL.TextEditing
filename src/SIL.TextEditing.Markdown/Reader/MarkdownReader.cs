@@ -72,18 +72,81 @@ namespace SIL.TextEditing.Markdown.Reader
             return blanked.ToString();
         }
 
-        /// <summary>The offset of a top-level <c>record:</c> key in a front-matter block, or -1.</summary>
+        /// <summary>The offset of a top-level <c>record</c> key in a front-matter block, or -1: <c>record:</c>, <c>"record":</c> or <c>'record':</c> at the
+        /// start of a line, followed by a space, a tab or the line end; or, in a front matter written as one flow mapping (<c>{fwmd: 1, record: ...}</c>), a
+        /// <c>record</c> key of that mapping.</summary>
         static int RecordKeyAt(string block)
         {
-            int pos = 0;
+            // The first line is the opening fence.
+            int pos = 0, depth = 0;
+            while (pos < block.Length && block[pos] != '\n' && block[pos] != '\r') pos++;
+            while (pos < block.Length && (block[pos] == '\n' || block[pos] == '\r')) pos++;
+            bool flow = false, firstContent = true;
             while (pos < block.Length)
             {
-                if (string.CompareOrdinal(block, pos, "record:", 0, 7) == 0 && (pos + 7 == block.Length || block[pos + 7] == ' ' || block[pos + 7] == '\n' || block[pos + 7] == '\r'))
-                    return pos;
-                while (pos < block.Length && block[pos] != '\n' && block[pos] != '\r') pos++;
+                int lineEnd = pos;
+                while (lineEnd < block.Length && block[lineEnd] != '\n' && block[lineEnd] != '\r') lineEnd++;
+                {
+                    int key = KeyAt(block, pos, lineEnd);
+                    if (key >= 0 && !flow) return pos;
+                    if (firstContent)
+                    {
+                        int i = pos;
+                        while (i < lineEnd && (block[i] == ' ' || block[i] == '\t')) i++;
+                        if (i < lineEnd) { firstContent = false; flow = block[i] == '{'; }
+                    }
+                    if (flow)
+                    {
+                        // A key of the outer mapping follows its { or a comma at depth one.
+                        for (int i = pos; i < lineEnd; i++)
+                        {
+                            char c = block[i];
+                            if (c == '"' || c == '\'')
+                            {
+                                int close = block.IndexOf(c, i + 1);
+                                if (close < 0 || close > lineEnd) break;
+                                if (depth == 1 && IsKeyStart(block, i)) { int k = KeyAt(block, i, lineEnd); if (k >= 0) return i; }
+                                i = close;
+                                continue;
+                            }
+                            if (c == '{' || c == '[') { depth++; if (depth == 1) continue; }
+                            else if (c == '}' || c == ']') depth--;
+                            else if (depth == 1 && IsKeyStart(block, i) && KeyAt(block, i, lineEnd) >= 0) return i;
+                        }
+                    }
+                }
+                pos = lineEnd;
                 while (pos < block.Length && (block[pos] == '\n' || block[pos] == '\r')) pos++;
             }
             return -1;
+        }
+
+        /// <summary>True when the character at <paramref name="at"/> starts a key of a flow mapping: only white space back to its { or comma.</summary>
+        static bool IsKeyStart(string s, int at)
+        {
+            int i = at - 1;
+            while (i >= 0 && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r')) i--;
+            return i >= 0 && (s[i] == '{' || s[i] == ',');
+        }
+
+        /// <summary>0 when a <c>record</c> key (bare or quoted) and its colon start at <paramref name="at"/>, followed by white space or the end; -1 otherwise.</summary>
+        static int KeyAt(string s, int at, int end)
+        {
+            int i = at;
+            if (i < end && (s[i] == '"' || s[i] == '\''))
+            {
+                char q = s[i];
+                if (string.CompareOrdinal(s, i + 1, "record", 0, 6) != 0 || i + 7 >= end || s[i + 7] != q) return -1;
+                i += 8;
+            }
+            else
+            {
+                if (string.CompareOrdinal(s, i, "record", 0, 6) != 0) return -1;
+                i += 6;
+            }
+            if (i >= end || s[i] != ':') return -1;
+            i++;
+            return i >= end || s[i] == ' ' || s[i] == '\t' ? 0 : -1;
         }
 
         MarkdownStyleNames Names => _options.StyleNames;

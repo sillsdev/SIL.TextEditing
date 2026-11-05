@@ -34,7 +34,10 @@ namespace SIL.TextEditing.Markdown.Records
     {
         public YamlFrameNode? Root;
         public readonly List<int> LaterDocuments = new List<int>();
-        public YamlException? Error;
+        /// <summary>Why the parse stopped, or null when it did not: a syntax error, whatever YamlDotNet threw it as.</summary>
+        public string? Error;
+        /// <summary>Where it stopped: YamlDotNet's place for a <see cref="YamlException"/>, otherwise the end of the last event it gave.</summary>
+        public int ErrorAt;
         /// <summary>The nodes nested deeper than <see cref="YamlTree.MaxDepth"/> were not built.</summary>
         public int? TooDeepAt;
     }
@@ -65,6 +68,7 @@ namespace SIL.TextEditing.Markdown.Records
             int documents = 0;
             int skipDepth = 0;
             long events = 0, limit = Limit(text.Length);
+            int lastEnd = 0;
             try
             {
                 while (parser.MoveNext())
@@ -72,6 +76,7 @@ namespace SIL.TextEditing.Markdown.Records
                     RecordWork.Steps++;
                     if (++events > limit) throw new YamlException("The YAML parser did not read on.");
                     var e = parser.Current!;
+                    lastEnd = (int)e.End.Index;
                     switch (e)
                     {
                         case DocumentStart start:
@@ -138,7 +143,15 @@ namespace SIL.TextEditing.Markdown.Records
             }
             catch (YamlException error)
             {
-                result.Error = error;
+                result.Error = error.Message;
+                result.ErrorAt = error.Start.Index > 0 || lastEnd == 0 ? (int)error.Start.Index : lastEnd;
+            }
+            catch (Exception error) when (!(error is OutOfMemoryException) && !(error is StackOverflowException))
+            {
+                // YamlDotNet's scanner throws other exceptions on some syntax errors (an unclosed [ or { before more lines throws InvalidOperationException
+                // from ScanPlainScalar, review of PR 147, P2-3). Whatever it throws is a syntax error of the file, not a failure of the reader.
+                result.Error = "the parser stopped here (an unclosed bracket, or another error it could not place: " + error.Message + ").";
+                result.ErrorAt = lastEnd;
             }
             return result;
         }
@@ -189,8 +202,9 @@ namespace SIL.TextEditing.Markdown.Records
                     if (scanner.Current is YamlDotNet.Core.Tokens.Comment c) found.Add(new[] { (int)c.Start.Index, (int)c.End.Index });
                 }
             }
-            catch (YamlException)
+            catch (Exception error) when (!(error is OutOfMemoryException) && !(error is StackOverflowException))
             {
+                _ = error;
                 // The parse reports the syntax error; comments found before it are still reported.
             }
             return found;

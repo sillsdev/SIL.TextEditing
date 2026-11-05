@@ -151,5 +151,5 @@ unchanged. The gates run every canonical case too: YamlDotNet's representation m
 styles (double-quoted text, `|-` blocks, plain numbers and Booleans); Pandoc (with the flags above) must read the file, the shape of its `record-data`, every
 rich value of one plain paragraph and the body as the FieldWorks Markdown reader does; and a whole-record canonical file must validate against the published
 JSON Schema. Pandoc reads a `|` value (which ends in a line end) as blocks and a `|-` value as inlines, and both are compared with what the reader read. A
-case that reads with no error must also be written without one, and read back to the same document. The runner gives each case two minutes, so a reader
+case that reads with no error must also be written without one, and read back to the same document. `RecordFuzzTests` also mutates the canonical cases (seeded; `TEXTEDITING_RECORD_FUZZ` sets how many, 3,000 by default): the reader must never throw, and a mutated file it reads without an error must write and read back without one. The runner gives each case two minutes, so a reader
 that does not end fails the case instead of hanging the run.
