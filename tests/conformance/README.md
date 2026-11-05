@@ -107,7 +107,7 @@ every rich value and, for a record kind that has one, the body. `SIL.TextEditing
 - `records/schemas.json`: named record schemas as data. A case uses `"schema": "test"` unless it names another.
 - `records/test.schema.json`: the JSON Schema (draft-07) the `test` schema publishes, byte for byte.
 - `records/NN-name.json`: arrays of cases: `01-frame.json` canonical files (a whole entry, a notebook record with its body, partial files), `02-traps.json` YAML's
-  traps and the profile's errors, `03-schema.json` what the schema refuses.
+  traps and the profile's errors, `03-schema.json` what the schema refuses, `04-unwritable.json` values that read but cannot be written as they are.
 - A case runs against the `records` project of `projects.json` (its writing systems: `en`, `fr`, `ceb`, `no`, `ar`) unless it names another.
 
 ### A schema
@@ -124,7 +124,7 @@ every rich value and, for a record kind that has one, the body. `SIL.TextEditing
 |---|---|
 | `id` | What a file's `schema:` says; also the JSON Schema's `$id`. |
 | `types` | Object types: `name`, `guid` (default `true`: objects carry `guid:`, written first) and `fields` in canonical order. |
-| field `kind` | `text` (plain, double-quoted), `rich` (FieldWorks Markdown, a `\|-` block), `notation` (text the host's checker reads; `notation` names it), `integer`, `boolean`, `guid`, `reference` (one link with `guid=`), `object` (`type`) or `sequence` (`item`: a field with no name). |
+| field `kind` | `text` (plain, double-quoted), `rich` (FieldWorks Markdown: a `\|` block for a field of `paragraphs`, otherwise `\|-`), `notation` (text the host's checker reads; `notation` names it), `integer`, `boolean`, `guid`, `reference` (one link with `guid=`), `object` (`type`) or `sequence` (`item`: a field with no name). |
 | field `multi` | One value per writing system: a mapping from writing-system id to value (`text`, `rich` and `notation` only). |
 | field `paragraphs` | For `rich`: several paragraphs (an StText), read as a document; otherwise one paragraph of inline text (block syntax is `fwmd.field.block-syntax`). |
 | field `ws` | For a field in one writing system: `analysis` (default) or `vernacular`, what unmarked text means. In an alternative of a `multi` field, unmarked text means that alternative's writing system. |
@@ -137,7 +137,7 @@ every rich value and, for a record kind that has one, the body. `SIL.TextEditing
 | `name` | What the case shows. A case named `ok: <id> [<id> ...]: ...` is a negative case for each id it names: none of them may be reported. |
 | `file` | The input text, a whole file. Absent for a **write case**. |
 | `document` | The expected document of a read case, or the model of a write case: `record`, `schema`, `root`, `base`, `analysis`, `vernacular`, `writingSystems` (a list of `{id, lang, dir, font}`, in order) and `data`. In `data` the schema tells objects, alternatives and lists apart; a value is a string (the value as text: a rich value's FieldWorks Markdown, a GUID, a reference's link), or a JSON number or Boolean for an integer or Boolean field. The body field's value is in `data` like any other. Documents are compared as values: object keys and alternatives in any order, empty values left out. |
-| `findings` | The expected findings in source order, as for Markdown cases: `id`, `severity` (`error` by default, `warning`, `suggestion`), the range in the whole file (1-based lines and UTF-16 columns, end exclusive), and optionally `fix` (`null`: none), `choices` and `nearest`. |
+| `findings` | The expected findings in source order, as for Markdown cases: `id`, `severity` (`error` by default, `warning`, `suggestion`), the range in the whole file (1-based lines and UTF-16 columns, end exclusive), and optionally `fix` (`null`: none), `choices` and `nearest`. For `fwmd.yaml.syntax` only the id, the severity and the start line are compared: where a YAML parser places a syntax error is its own. |
 | `canonical` | Absent: not checked. `null`: the file is canonical, so writing what was read gives it back byte for byte. A string: the canonical text. A write case needs a string. |
 | `paragraphs` | For a rich value, by field path (`senses/1/definition.en`; the body is its field's path): the paragraphs the FieldWorks Markdown reader makes of it, in the Markdown fixtures' form. |
 | `targets` | For a reference, by field path: the GUID of its link. |
@@ -150,5 +150,6 @@ For every read case with a canonical form the runner also checks that the canoni
 unchanged. The gates run every canonical case too: YamlDotNet's representation model must read the front matter to the tree the reader does, in the profile's
 styles (double-quoted text, `|-` blocks, plain numbers and Booleans); Pandoc (with the flags above) must read the file, the shape of its `record-data`, every
 rich value of one plain paragraph and the body as the FieldWorks Markdown reader does; and a whole-record canonical file must validate against the published
-JSON Schema. Pandoc reads a `|-` value as inline Markdown (a string with no final line end), so a frame value with several paragraphs or a heading is checked
-only to be inlines.
+JSON Schema. Pandoc reads a `|` value (which ends in a line end) as blocks and a `|-` value as inlines, and both are compared with what the reader read. A
+case that reads with no error must also be written without one, and read back to the same document. The runner gives each case two minutes, so a reader
+that does not end fails the case instead of hanging the run.
