@@ -65,7 +65,12 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 var bytes = new UTF8Encoding(false).GetBytes(input);
                 process.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
                 process.StandardInput.Close();
-                if (!process.WaitForExit(60000)) { process.Kill(); throw new TimeoutException("pandoc did not finish"); }
+                if (!process.WaitForExit(30000))
+                {
+                    process.Kill(true);
+                    string shown = input.Length > 200 ? input.Substring(0, 200) + "..." : input;
+                    throw new TimeoutException("pandoc did not finish in 30 seconds on " + input.Length + " characters of input, which starts: " + shown);
+                }
                 Task.WaitAll(output, error);
                 if (process.ExitCode != 0) throw new InvalidOperationException("pandoc failed: " + error.Result);
                 return output.Result;

@@ -53,6 +53,14 @@ writing that result again changes nothing.
 - `props` spell a property by its attribute key: `bold`, `fontsize`, `fontsizeUnit`, `p50`, `s6x`. A character style is `"s133"`, which holds the style name.
 - Object data is `objData` (the string, as FieldWorks stores it), or the shorthand `link` (`{"guid", "tool", "tag"?, "database"?}` or `{"url"}`: the `silfw://` URL
   FieldWorks stores for a link, with U+0004 in front) or `picture` (a GUID).
+- Encodings of that data: the `silfw://` query is percent-encoded with lowercase hex (`%2f`, never `%2F`), and only the unreserved characters of
+  FieldWorks (letters, digits and `- _ . ! * ( )`) go unencoded. A picture's object data is U+0008 followed by the GUID's 16 bytes as 8 UTF-16 characters
+  (`Guid.ToByteArray()` read as little-endian code units); `"picture": "<guid>"` builds that.
+
+### Strict JSON
+
+The files are strict JSON (RFC 8259): no comments, no trailing commas, and no raw control character inside a string (a newline is `\n`, a tab `\t`). A
+test parses every file with a strict parser, so a file that only the lenient parser of the runner would take fails.
 
 ### Findings
 
@@ -75,7 +83,7 @@ The host a case runs against knows exactly this: which writing systems and style
 there are. A path resolves to its object, and a path with no homograph number matches every homograph of it (an ambiguity with a choice for each). A deleted
 object has no path. The object data of a link is the `silfw://` URL as FieldWorks writes it (whole query URL-encoded, `database=this$` first, `tag=` always).
 
-The project names the two table styles (`tableStyles`); the format only says that a pipe table's header row and body rows take the host's table styles, and Motif's are the GDR template's. A project that gives none gets the library's defaults.
+The project names the two table styles (`tableStyles`); the format only says that a pipe table's header row and body rows take the host's table styles, and Motif's are the GDR template's. A project that gives none has no table styles: the library has no default, so a pipe table is an `fwmd.syntax.unsupported-markup` finding and the writer puts table-style paragraphs in divs.
 
 ## What the cases cover
 
