@@ -20,6 +20,10 @@ namespace SIL.TextEditing.Tests
         public bool Manual;
         public Exception? Throws;
         public bool ThrowsSynchronously;
+        /// <summary>When true an analysis is answered with a cancelled task, as a service that gives up does.</summary>
+        public bool CancelsItself;
+        public readonly List<CancellationToken> CompletionTokens = new List<CancellationToken>();
+        public readonly List<CancellationToken> HoverTokens = new List<CancellationToken>();
 
         public readonly List<string> AnalyzedTexts = new List<string>();
         public readonly List<CompletionTriggerKind> CompletionKinds = new List<CompletionTriggerKind>();
@@ -39,6 +43,7 @@ namespace SIL.TextEditing.Tests
         {
             AnalyzedTexts.Add(text);
             Tokens.Add(cancellation);
+            if (CancelsItself) return Task.FromCanceled<LanguageAnalysis>(new CancellationToken(true));
             if (ThrowsSynchronously && Throws != null) throw Throws;
             if (Throws != null) return Task.FromException<LanguageAnalysis>(Throws);
             if (Manual)
@@ -53,6 +58,7 @@ namespace SIL.TextEditing.Tests
         public Task<IReadOnlyList<CompletionItem>> CompleteAsync(string text, LanguagePosition position, CompletionTriggerKind trigger, CancellationToken cancellation)
         {
             CompletionKinds.Add(trigger);
+            CompletionTokens.Add(cancellation);
             if (Manual)
             {
                 var source = new TaskCompletionSource<IReadOnlyList<CompletionItem>>();
@@ -62,7 +68,14 @@ namespace SIL.TextEditing.Tests
             return Task.FromResult(Completions(text, position, trigger));
         }
 
-        public Task<LanguageHover?> HoverAsync(string text, LanguagePosition position, CancellationToken cancellation) => Task.FromResult(HoverOf(text, position));
+        public Task<LanguageHover?> HoverAsync(string text, LanguagePosition position, CancellationToken cancellation)
+        {
+            HoverTokens.Add(cancellation);
+            if (HoverThrows != null) return Task.FromException<LanguageHover?>(HoverThrows);
+            return Task.FromResult(HoverOf(text, position));
+        }
+
+        public Exception? HoverThrows;
 
         public bool CanInsert(string text, LanguageRange selection, string kind) => CanInsertOf(text, selection, kind);
 

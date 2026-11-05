@@ -30,7 +30,13 @@ namespace SIL.TextEditing.Avalonia
             public Paragraph Paragraph = null!;
             public long Stamp;
             public TextPosition Caret;
+            /// <summary>Where the thing being completed starts: the start of the stretch the first answer's items replace, else the caret it was asked at. A refresh
+            /// keeps the popup only while its items still replace a stretch that starts here (P2-1: the popup lives as long as its context, not as long as typing goes on).</summary>
+            public int ContextStart;
+            public int Hover = -1;
         }
+
+        CancellationTokenSource? _complCancel;
 
         CompletionState? _completion;
         int _complRequest;
@@ -51,6 +57,31 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Raised when the popup opens, closes or shows other items or another highlight, so a host (an accessibility bridge, a test) can follow it.</summary>
         public event EventHandler? CompletionChanged;
 
+        bool _reportedCompletionOpen;
+
+        void RaiseCompletionChanged()
+        {
+            bool open = _completion != null;
+            if (open != _reportedCompletionOpen)
+            {
+                _reportedCompletionOpen = open;
+                _peer?.RaiseExpandCollapseChanged(open);
+            }
+            CompletionChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>What the field's peer reports as its status: the worst diagnostic's message, and the popup's state when it is open.</summary>
+        internal string? AutomationStatus
+        {
+            get
+            {
+                string? worst = LanguageDiagnostics.OrderBy(d => d.Severity).Select(d => d.Severity + ": " + d.Message).FirstOrDefault();
+                if (_completion == null) return worst;
+                string popup = "completion list open, " + _completion.Items.Count + " items, " + _completion.Items[_completion.Index].Label + " selected";
+                return worst == null ? popup : worst + "; " + popup;
+            }
+        }
+
         /// <summary>Asks the service for the completions at the caret, as Ctrl+Space does, and opens the popup when it has some. The answer is used only if the text and the
         /// caret are as they were when it was asked. Nothing happens with no service, in a read-only field, where the text may not be edited, or while an input method is composing.</summary>
         public Task ShowCompletionAsync() => RequestCompletion(CompletionTriggerKind.Invoked);
@@ -65,19 +96,35 @@ namespace SIL.TextEditing.Avalonia
             var caret = Editor.Caret;
             int request = ++_complRequest;
             int epoch = _langEpoch;
+            CancelCompletionRequest();
+            var cancel = _complCancel = new CancellationTokenSource();
             IReadOnlyList<CompletionItem> items;
-            try { items = await service.CompleteAsync(text, LanguageText.PositionOf(text, Math.Min(caret.Offset, text.Length)), kind, CancellationToken.None); }
+            try { items = await service.CompleteAsync(text, LanguageText.PositionOf(text, Math.Min(caret.Offset, text.Length)), kind, cancel.Token); }
+            catch (OperationCanceledException) { return; }
             catch (Exception e)
             {
-                if (request == _complRequest) LanguageFailure(e);
+                if (request == _complRequest) ReportLanguageFailure(e);
                 return;
             }
             if (request != _complRequest || epoch != _langEpoch || !LanguageActive || !ReferenceEquals(Editor.Document.Paragraphs[0], paragraph)
                 || paragraph.ChangeStamp != stamp || !Editor.Caret.Equals(caret) || Editor.HasSelection || _preedit != null) return;
             if (items == null || items.Count == 0) { CloseCompletion(); return; }
-            _completion = new CompletionState { Items = items.ToList(), Index = 0, Paragraph = paragraph, Stamp = stamp, Caret = caret };
+            var list = items.ToList();
+            int start = caret.Offset;
+            foreach (var item in list)
+                if (item.ReplaceRange is LanguageRange range) { start = Offsets(text, range).Start; break; }
+            if (kind == CompletionTriggerKind.Refresh && _completion != null)
+            {
+                // Still the same thing being completed? Items that replace a stretch must start where the first answer's did; items that replace nothing mean the
+                // caret is where the context began. Otherwise the typing has left the context (a space, a closing bracket, the next word): the popup goes.
+                int context = _completion.ContextStart;
+                bool same = list.All(i => i.ReplaceRange is LanguageRange r ? Offsets(text, r).Start == context : caret.Offset == context);
+                if (!same) { CloseCompletion(); return; }
+                start = context;
+            }
+            _completion = new CompletionState { Items = list, Index = 0, Paragraph = paragraph, Stamp = stamp, Caret = caret, ContextStart = start };
             ShowCompletionPopup();
-            CompletionChanged?.Invoke(this, EventArgs.Empty);
+            RaiseCompletionChanged();
         }
 
         /// <summary>Moves the highlight by <paramref name="delta"/> items, stopping at the ends. False when the popup is closed.</summary>
@@ -91,7 +138,7 @@ namespace SIL.TextEditing.Avalonia
             if (index < c.Top) c.Top = index;
             else if (index >= c.Top + CompletionRows) c.Top = index - CompletionRows + 1;
             ShowCompletionPopup();
-            CompletionChanged?.Invoke(this, EventArgs.Empty);
+            RaiseCompletionChanged();
             return true;
         }
 
@@ -127,11 +174,33 @@ namespace SIL.TextEditing.Avalonia
         public void CloseCompletion()
         {
             _complRequest++;
+            CancelCompletionRequest();
             _complRefreshPending = false;
             if (_completion == null) return;
             _completion = null;
             if (_complPopup != null) _complPopup.IsOpen = false;
-            CompletionChanged?.Invoke(this, EventArgs.Empty);
+            RaiseCompletionChanged();
+        }
+
+        void CancelCompletionRequest()
+        {
+            var c = _complCancel;
+            _complCancel = null;
+            if (c == null) return;
+            try { c.Cancel(); }
+            catch (ObjectDisposedException) { }
+        }
+
+        /// <summary>Whether the field wants a key for itself while a language service is set, so a host that routes keys (WinForms: IsInputKey, ProcessCmdKey; a dialog's
+        /// default and cancel buttons) can leave it to the field: Ctrl+Space always, and while the completion popup is open Enter, Tab, Esc, Up, Down, PageUp and PageDown.
+        /// The field handles them itself once it has them (<see cref="HandleKey"/>).</summary>
+        public bool WantsKey(Key key, KeyModifiers modifiers)
+        {
+            if (_lang == null) return false;
+            bool ctrl = (modifiers & KeyModifiers.Control) != 0, other = (modifiers & (KeyModifiers.Alt | KeyModifiers.Meta | KeyModifiers.Shift)) != 0;
+            if (key == Key.Space && ctrl && !other) return true;
+            if (_completion == null || ctrl || other) return false;
+            return key == Key.Down || key == Key.Up || key == Key.PageDown || key == Key.PageUp || key == Key.Enter || key == Key.Tab || key == Key.Escape;
         }
 
         /// <summary>After an edit with the popup open the list is asked for again, once the edit's events are over, so it fits what is now typed.</summary>
@@ -185,7 +254,9 @@ namespace SIL.TextEditing.Avalonia
         {
             var service = _lang;
             if (service == null || typed.Length == 0 || !LanguageActive || _preedit != null) return;
-            if (service.CompletionTriggerCharacters.Contains(typed[typed.Length - 1])) _ = RequestCompletion(CompletionTriggerKind.TriggerCharacter);
+            if (!service.CompletionTriggerCharacters.Contains(typed[typed.Length - 1])) return;
+            _complRefreshPending = false;   // the trigger is asked as itself; the refresh the edit scheduled would only ask the same thing again as Refresh
+            _ = RequestCompletion(CompletionTriggerKind.TriggerCharacter);
         }
 
         // ------------------------------------------------ the popup
@@ -199,10 +270,18 @@ namespace SIL.TextEditing.Avalonia
                 _complRows = new StackPanel { Orientation = Orientation.Vertical };
                 var frame = new Border { Child = _complRows, BorderThickness = new Thickness(1), Padding = new Thickness(2), MinWidth = 160 };
                 AutomationProperties.SetName(frame, "Completions");
+                AutomationProperties.SetAccessibilityView(frame, AccessibilityView.Content);
+                AutomationProperties.SetControlTypeOverride(frame, global::Avalonia.Automation.Peers.AutomationControlType.List);
+                frame.PointerWheelChanged += (o, e) =>
+                {
+                    if (_completion == null || e.Delta.Y == 0) return;
+                    ScrollCompletion(e.Delta.Y > 0 ? -1 : 1);
+                    e.Handled = true;
+                };
                 _complPopup = new Popup
                 {
                     PlacementTarget = this,
-                    Placement = PlacementMode.Bottom,
+                    Placement = PlacementMode.BottomEdgeAlignedLeft,
                     IsLightDismissEnabled = false,
                     Child = frame,
                 };
@@ -216,14 +295,21 @@ namespace SIL.TextEditing.Avalonia
             var rows = _complRows!;
             rows.Children.Clear();
             var selection = ResolveSelectionBrush();
+            bool contrast = SystemColours.IsHighContrast();
+            IBrush selectedText = contrast && SystemColours.Get(SystemColour.HighlightText) is Color ht ? new SolidColorBrush(ht) : LayoutForeground;
+            IBrush hoverFill = _complHoverFill = contrast ? selection : new SolidColorBrush(Colors.Gray, 0.2);
             for (int i = c.Top; i < c.Items.Count && i < c.Top + CompletionRows; i++)
             {
                 var item = c.Items[i];
                 int index = i;
                 var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-                line.Children.Add(new TextBlock { Text = item.Label, Foreground = LayoutForeground });
-                if (!string.IsNullOrEmpty(item.Detail)) line.Children.Add(new TextBlock { Text = item.Detail, Foreground = Brushes.Gray });
-                var row = new Border { Child = line, Padding = new Thickness(4, 1), Background = i == c.Index ? selection : Brushes.Transparent };
+                IBrush rowText = i == c.Index ? selectedText : LayoutForeground;
+                line.Children.Add(new TextBlock { Text = item.Label, Foreground = rowText });
+                if (!string.IsNullOrEmpty(item.Detail)) line.Children.Add(new TextBlock { Text = item.Detail, Foreground = contrast ? rowText : Brushes.Gray });
+                var row = new Border { Child = line, Padding = new Thickness(4, 1), Background = i == c.Index ? selection : i == c.Hover ? hoverFill : Brushes.Transparent };
+                AutomationProperties.SetAccessibilityView(row, AccessibilityView.Content);
+                AutomationProperties.SetControlTypeOverride(row, global::Avalonia.Automation.Peers.AutomationControlType.ListItem);
+                row.PointerEntered += (o, e) => HoverCompletion(index);
                 AutomationProperties.SetName(row, item.Label + (string.IsNullOrEmpty(item.Detail) ? string.Empty : ", " + item.Detail));
                 if (i == c.Index) AutomationProperties.SetItemStatus(row, "selected");
                 row.PointerPressed += (o, e) =>
@@ -251,6 +337,39 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>For a test: the row of the popup at an index of the shown window, as a control to click.</summary>
         internal Control? CompletionRow(int shown) => _complRows != null && shown >= 0 && shown < _complRows.Children.Count ? _complRows.Children[shown] : null;
+
+        /// <summary>The wheel: shows the window of rows <paramref name="rows"/> further down (negative: up), without moving the highlight.</summary>
+        internal void ScrollCompletion(int rows)
+        {
+            var open = _completion;
+            if (open == null) return;
+            int top = Math.Max(0, Math.Min(Math.Max(0, open.Items.Count - CompletionRows), open.Top + rows));
+            if (top == open.Top) return;
+            open.Top = top;
+            ShowCompletionPopup();
+        }
+
+        /// <summary>The pointer is over the row at this index of the list (or -1 for none): it is tinted, and a click would accept it.</summary>
+        internal void HoverCompletion(int index)
+        {
+            var c = _completion;
+            if (c == null || c.Hover == index) return;
+            c.Hover = index;
+            // The rows are tinted in place: replacing them under the pointer would swallow the click that follows.
+            if (_complRows == null) return;
+            for (int k = 0; k < _complRows.Children.Count; k++)
+            {
+                int i = c.Top + k;
+                if (_complRows.Children[k] is Border row && i != c.Index) row.Background = i == index ? _complHoverFill : Brushes.Transparent;
+            }
+        }
+
+        IBrush _complHoverFill = Brushes.Transparent;
+
+        internal Popup? CompletionPopup => _complPopup;
+
+        /// <summary>For a test: the popup's list control.</summary>
+        internal Control? CompletionList => _complPopup?.Child;
 
         internal bool CompletionPopupIsOpen => _complPopup != null && _complPopup.IsOpen;
     }

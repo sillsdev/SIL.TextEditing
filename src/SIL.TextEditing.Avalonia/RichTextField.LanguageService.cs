@@ -313,6 +313,11 @@ namespace SIL.TextEditing.Avalonia
         {
             if (_lang == null) return;
             CancelLanguageRequest();
+            _langFailed = false;          // a failure holds off asking about that text only
+            _langCancelledRuns = 0;
+            ClearLanguageHover();         // the tip was about text that is not there now
+            _langEdited = true;
+            if (LanguageDebounce > TimeSpan.Zero) { _langDelay?.Dispose(); _langPosted = false; }   // every edit starts the wait again
             var old = _langState;
             var edit = _pendingEdit;
             _langState = null;
@@ -352,11 +357,42 @@ namespace SIL.TextEditing.Avalonia
             var live = LiveLanguage();
             if (live != null && !live.Provisional) return;
             _langPosted = true;
-            Post(() =>
+            void Ask()
             {
                 _langPosted = false;
                 if (LanguageActive && _onScreen) AskLanguageService();
-            });
+            }
+            if (LanguageDebounce <= TimeSpan.Zero || live == null && _langState == null && _langOut == null && !_langEdited) Post(Ask);
+            else StartLanguageDelay(() => Post(Ask));
+        }
+
+        bool _langEdited;
+        IDisposable? _langDelay;
+
+        /// <summary>How long after the last edit the field waits before it asks the service, so typing is not asked about key by key: a service in another process wants
+        /// 100 to 250 ms. Zero, the default, asks as soon as the field is idle. The first answer for a new text or a new service is never held back.</summary>
+        public TimeSpan LanguageDebounce { get; set; }
+
+        /// <summary>For a test: starts a one-shot delay; given the interval and the action it returns what cancels it. Null (the default) uses a task delay that posts to the field's dispatcher.</summary>
+        internal Func<TimeSpan, Action, IDisposable>? LanguageScheduler { get; set; }
+
+        sealed class DelayHandle : IDisposable
+        {
+            readonly CancellationTokenSource _cancel = new CancellationTokenSource();
+
+            public DelayHandle(TimeSpan interval, Action action)
+            {
+                Task.Delay(interval, _cancel.Token).ContinueWith(t => { if (!t.IsCanceled) action(); }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            }
+
+            public void Dispose() => _cancel.Cancel();
+        }
+
+        void StartLanguageDelay(Action action)
+        {
+            _langDelay?.Dispose();
+            var scheduler = LanguageScheduler;
+            _langDelay = scheduler != null ? scheduler(LanguageDebounce, action) : new DelayHandle(LanguageDebounce, action);
         }
 
         void Post(Action action)
@@ -387,6 +423,7 @@ namespace SIL.TextEditing.Avalonia
             var asking = _langOut;
             if (asking != null && asking.Epoch == _langEpoch && ReferenceEquals(asking.Paragraph, paragraph) && asking.Stamp == paragraph.ChangeStamp) return;
             CancelLanguageRequest();
+            _langEdited = false;
             var request = new LangRequest { Paragraph = paragraph, Stamp = paragraph.ChangeStamp, Epoch = _langEpoch, Text = paragraph.Text, Cancel = new CancellationTokenSource() };
             Task<LanguageAnalysis> task;
             try
@@ -414,20 +451,38 @@ namespace SIL.TextEditing.Avalonia
                 if (wanted) LanguageFailure(task.Exception!.GetBaseException());
                 return;
             }
-            if (task.IsCanceled) { if (wanted) ScheduleLanguageIfWanted(); return; }
+            if (task.IsCanceled)
+            {
+                // A service that cancels a request nobody cancelled is asked again, a few times for the same text; then the field waits for the next edit.
+                if (wanted && ++_langCancelledRuns <= MaxCancelledRetries) ScheduleLanguageIfWanted();
+                return;
+            }
             var paragraphs = Editor.Document.Paragraphs;
             bool current = wanted && LanguageActive && ReferenceEquals(paragraphs[0], request.Paragraph) && request.Paragraph.ChangeStamp == request.Stamp;
-            if (current) ApplyAnalysis(request, task.Result);
+            if (current) { _langCancelledRuns = 0; ApplyAnalysis(request, task.Result); }
             else ScheduleLanguageIfWanted();
         }
 
+        /// <summary>A service that is asked again for the same text after cancelling it itself, at most this many times.</summary>
+        const int MaxCancelledRetries = 3;
+
+        int _langCancelledRuns;
+
+        /// <summary>An analysis failed: the text is not asked again until it changes (the next edit tries the service again), or until <see cref="RestartLanguageAnalysis"/> or
+        /// the service's <c>Changed</c>.</summary>
         void LanguageFailure(Exception error)
         {
             _langFailed = true;
+            ReportLanguageFailure(error);
+        }
+
+        /// <summary>Tells the host of a failure without stopping anything: a completion or a hover that failed costs that answer only.</summary>
+        void ReportLanguageFailure(Exception error)
+        {
             var handler = LanguageServiceFailed;
             if (handler == null)
             {
-                Trace("The language service failed and is switched off until it is restarted: " + error);
+                Trace("The language service failed: " + error);
                 return;
             }
             try { handler(error); }
@@ -520,7 +575,9 @@ namespace SIL.TextEditing.Avalonia
 
         /// <summary>The help for a place: the messages of the diagnostics there (worst first), then the service's own hover text, one per line; null when there is none, or when the
         /// text changed while the service was asked. A host that shows its own tooltip asks this; the field itself sets its tooltip from it when the pointer rests on text.</summary>
-        public async Task<string?> GetLanguageHoverAsync(TextPosition position)
+        public Task<string?> GetLanguageHoverAsync(TextPosition position) => GetLanguageHoverAsync(position, CancellationToken.None);
+
+        async Task<string?> GetLanguageHoverAsync(TextPosition position, CancellationToken cancellation)
         {
             var service = _lang;
             if (service == null || !LanguageActive || position.Paragraph != 0) return null;
@@ -530,12 +587,14 @@ namespace SIL.TextEditing.Avalonia
             string text = paragraph.Text;
             var lines = DiagnosticsAt(position).Select(d => d.Message).ToList();
             LanguageHover? hover;
-            try { hover = await service.HoverAsync(text, LanguageText.PositionOf(text, Math.Min(position.Offset, text.Length)), CancellationToken.None); }
+            try { hover = await service.HoverAsync(text, LanguageText.PositionOf(text, Math.Min(position.Offset, text.Length)), cancellation); }
+            catch (OperationCanceledException) { return null; }
             catch (Exception e)
             {
-                LanguageFailure(e);
+                ReportLanguageFailure(e);
                 hover = null;
             }
+            if (cancellation.IsCancellationRequested) return null;
             if (epoch != _langEpoch || !LanguageActive || !ReferenceEquals(Editor.Document.Paragraphs[0], paragraph) || paragraph.ChangeStamp != stamp) return null;
             if (hover != null && hover.Contents.Length > 0) lines.Add(hover.Contents);
             return lines.Count == 0 ? null : string.Join("\n", lines);
@@ -549,13 +608,18 @@ namespace SIL.TextEditing.Avalonia
             if (offset == _hoverOffset) return;
             _hoverOffset = offset;
             int request = ++_hoverRequest;
+            _hoverCancel?.Cancel();
+            _hoverCancel = null;
             if (offset < 0) { ToolTip.SetTip(this, null); return; }
-            _ = ShowHover(request, offset);
+            var cancel = _hoverCancel = new CancellationTokenSource();
+            _ = ShowHover(request, offset, cancel.Token);
         }
 
-        async Task ShowHover(int request, int offset)
+        CancellationTokenSource? _hoverCancel;
+
+        async Task ShowHover(int request, int offset, CancellationToken cancellation)
         {
-            var text = await GetLanguageHoverAsync(new TextPosition(0, offset));
+            var text = await GetLanguageHoverAsync(new TextPosition(0, offset), cancellation);
             if (request == _hoverRequest) ToolTip.SetTip(this, text);
         }
 
@@ -564,6 +628,8 @@ namespace SIL.TextEditing.Avalonia
             if (_hoverOffset < 0) return;
             _hoverOffset = -1;
             _hoverRequest++;
+            _hoverCancel?.Cancel();
+            _hoverCancel = null;
             ToolTip.SetTip(this, null);
         }
     }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -1257,7 +1258,7 @@ namespace SIL.TextEditing.Avalonia
 
         FieldPeer? _peer;
 
-        sealed class FieldPeer : ControlAutomationPeer, global::Avalonia.Automation.Provider.IValueProvider
+        sealed class FieldPeer : ControlAutomationPeer, global::Avalonia.Automation.Provider.IValueProvider, global::Avalonia.Automation.Provider.IExpandCollapseProvider
         {
             readonly RichTextField _field;
             string _lastValue;
@@ -1280,6 +1281,17 @@ namespace SIL.TextEditing.Avalonia
                 _lastValue = now;
                 RaisePropertyChangedEvent(global::Avalonia.Automation.ValuePatternIdentifiers.ValueProperty, old, now);
             }
+
+            /// <summary>The worst diagnostic's message, and whether the completion popup is open (ADR 0030): the squiggle and the popup have no other non-visual form.</summary>
+            protected override string? GetItemStatusCore() => _field.AutomationStatus;
+
+            public ExpandCollapseState ExpandCollapseState => _field.IsCompletionOpen ? ExpandCollapseState.Expanded : ExpandCollapseState.Collapsed;
+            public bool ShowsMenu => false;
+            public void Expand() { if (!_field.IsCompletionOpen) _ = _field.ShowCompletionAsync(); }
+            public void Collapse() => _field.CloseCompletion();
+
+            public void RaiseExpandCollapseChanged(bool open) =>
+                RaisePropertyChangedEvent(ExpandCollapsePatternIdentifiers.ExpandCollapseStateProperty, open ? ExpandCollapseState.Collapsed : ExpandCollapseState.Expanded, open ? ExpandCollapseState.Expanded : ExpandCollapseState.Collapsed);
 
             protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Edit;
             protected override bool IsContentElementCore() => true;

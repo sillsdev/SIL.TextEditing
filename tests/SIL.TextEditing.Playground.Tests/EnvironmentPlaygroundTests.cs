@@ -129,6 +129,30 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void Typing_a_whole_environment_closes_the_popup_at_the_closing_bracket_and_Enter_and_Tab_then_reach_the_host() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Environment))
+            {
+                Replace(s, "/ ");
+                s.Type("[");
+                Assert.True(s.Field.IsCompletionOpen);
+                s.Type("V");
+                Headless.Pump();
+                Assert.True(s.Field.IsCompletionOpen);                       // still completing the class name
+                s.Type("]");
+                Headless.Pump();
+                Assert.False(s.Field.IsCompletionOpen);                      // the context ended
+                foreach (var c in " _ a") { s.Type(c.ToString()); Headless.Pump(); Assert.False(s.Field.IsCompletionOpen); }
+                Assert.False(s.Field.CompletionPopupIsOpen);
+                s.Press(Key.Enter);
+                Assert.Equal("/ [V] _ a", s.ParagraphText(0));
+                Assert.Contains("Enter passed to the host", s.Log);
+                s.Press(Key.Tab);
+                Assert.Contains("leave requested", s.Log);
+            }
+        });
+
+        [Fact]
         public void Typing_after_the_bracket_narrows_the_list_and_Esc_closes_it_and_leaves_the_text() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Environment))

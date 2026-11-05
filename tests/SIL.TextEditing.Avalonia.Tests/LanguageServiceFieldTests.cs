@@ -204,7 +204,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         // ------------------------------------------------ failures
 
         [Fact]
-        public void A_service_that_fails_is_reported_once_and_left_alone_until_it_is_restarted() => Headless.Run(() =>
+        public void A_service_that_fails_is_reported_and_the_same_text_is_not_asked_again_until_it_changes_or_the_service_is_restarted() => Headless.Run(() =>
         {
             var r = new LanguageRig("a bad", new FakeLanguageService { Throws = new InvalidOperationException("boom") });
             var failures = new List<Exception>();
@@ -214,13 +214,13 @@ namespace SIL.TextEditing.Avalonia.Tests
             r.Field.Editor.SetCaret(new TextPosition(0, 5));
             r.Field.Editor.TypeText("x");
             r.Idle();
-            Assert.Single(failures);                       // switched off
-            Assert.Single(r.Service.AnalyzedTexts);
+            Assert.Equal(2, failures.Count);               // a failure holds off that text only: the edit asks again, and fails again
+            Assert.Equal(2, r.Service.AnalyzedTexts.Count);
             r.Service.Throws = null;
             r.Service.Analysis = FakeLanguageService.Words("word");
             r.Field.RestartLanguageAnalysis();
             r.Idle();
-            Assert.Equal(2, r.Service.AnalyzedTexts.Count);
+            Assert.Equal(3, r.Service.AnalyzedTexts.Count);
             Assert.Equal(2, r.Field.LanguageTokens.Count);
             r.Close();
         });
