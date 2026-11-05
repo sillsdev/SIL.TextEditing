@@ -349,10 +349,10 @@ namespace SIL.TextEditing.Avalonia.Tests
         });
 
         [Fact]
-        public void The_clipboard_forms_cannot_be_set_to_null()
+        public void The_clipboard_forms_cannot_be_set_to_null() => Headless.Run(() =>
         {
             var field = new RichTextField(OneParagraph("x"));
             Assert.Throws<System.ArgumentNullException>(() => field.ClipboardForms = null!);
-        }
+        });
     }
 }
