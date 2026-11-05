@@ -81,6 +81,20 @@ _Avoid_: error, underline (that is a text property)
 **Spell checker**:
 The host's dictionary for one writing system, behind `ISpellChecker`. The field never loads a dictionary.
 
+## Language service
+
+**Language service**:
+The host's explanation of what a box's text means to the notation it is written in (an environment, a morph breakdown), behind `ITextLanguageService`: tokens, diagnostics, completions, hover and whether an insert is allowed here. The field draws and applies the answers and never writes them into the text (ADR 0030).
+_Avoid_: parser, validator (the service may be neither)
+
+**Token chip**:
+The colour the field draws behind a stretch of a notation's text, by the kind of token the language service gave it. It is decoration: the text and its runs are unchanged.
+_Avoid_: highlight (that is find), object (an embedded object is a different thing)
+
+**Diagnostic**:
+A problem or note the language service found in a stretch of a box's text, drawn as a squiggle like a spelling mark and carried with an optional exact fix. It is a view: it is not in the document.
+_Avoid_: error (a diagnostic can be a warning), spelling mark (that is the spell checker's)
+
 ## Markdown
 
 **FieldWorks Markdown**:

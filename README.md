@@ -81,7 +81,7 @@ run winforms48    # WinForms form: TextBox, playground, TextBox (FieldWorks' sha
 
 `run.cmd` and `run.ps1` build the host and start it; add `--scenario "Inline picture (ORC)"` to open a scenario.
 The playground loads ready-made documents (Latin and Arabic, Indic and Thai shaping, NFD and surrogates, inline
-pictures, unknown properties, 200 paragraphs, many fields) and shows what the model holds in a live inspector. A
+pictures, unknown properties, an environment box with a language service, 200 paragraphs, many fields) and shows what the model holds in a live inspector. A
 person tests with the checklist in [docs/manual-testing.md](docs/manual-testing.md).
 
 ## FieldWorks editing semantics (ADR 0018)
@@ -193,6 +193,28 @@ the list again, drops the marks of that paragraph and checks it again when idle.
 replaced in it. It restarts checking too. When a style resolver's answers change (not the resolver itself, which the field takes again when it is set), `InvalidateAllLayouts()`, and
 `RestartSpelling()` when what is checked changed. After repairing a failed dictionary, raise `DictionariesChanged`. Setting
 `DocumentEditor.IsReadOnly` directly tells automation as `RichTextField.IsReadOnly` does.
+
+## Language service (ADR 0030)
+
+A box whose text is a notation (the first is a FieldWorks phonological environment, `/ [V] _ #`) takes a host **language service**:
+`RichTextField.LanguageService` is an `ITextLanguageService` (in `SIL.TextEditing`, no Avalonia or liblcm), shaped like the spell-check host and with
+Language Server Protocol data (zero-based line and character in UTF-16 units, ranges, severities 1 to 4, completion items), so a VS Code adapter and
+agents' findings can use the same answers. `AnalyzeAsync` gives tokens (a kind string and a range) and diagnostics (range, severity, id, message, an
+optional exact fix) together; `CompleteAsync`, `HoverAsync` and `CanInsert` do the rest; `Changed` tells every field to ask again; every call that can take
+time is a `Task`, so Motif's backend can answer from another process. `TextLanguageService` is a base class for one that answers at once. The field serves a
+field of one paragraph, and `SingleLine` (single-paragraph and no hard line break) is what a notation box sets.
+
+The field asks when idle and applies an answer only to the paragraph and stamp it was asked about (as spelling does); after an edit it carries the results
+the edit left alone, so nothing flickers. **Tokens are chips**: a `TokenStyleMap` (per kind, a fill and an outline for the light theme and the dark one) is
+drawn behind plain text, so copy, Markdown and undo see only text, and a high contrast theme gets none. **Diagnostics are squiggles** drawn with the
+spelling marks' drawing (red error, blue warning, grey information; a hint is not drawn) and are never written into the document: no run, bag or property 5
+changes. Hovering sets the tooltip from the diagnostics' messages and the service's help (`GetLanguageHoverAsync`); `ContextInfo.Diagnostics` and
+`ApplyDiagnosticFix` give the host's context menu a fix as one undo step; `CanInsert(kind)` enables a host's Insert commands. **Completion**: Ctrl+Space, or a
+trigger character the service names, opens a popup at the caret (plain named rows, no theme needed, the keyboard stays in the field); Up, Down, PageUp,
+PageDown, Enter or Tab (accepts, and neither reaches the host), Esc; typing asks again, and a caret move, a selection, losing focus, read-only or an input method
+composing closes it. Where no popup can be shown the state and `CompletionChanged` still work. The playground's **Environment** scenario is the sample
+(`SampleEnvironmentService`, over a made-up phonology; not shipped); the real service that reads a project's phonology comes later, in a project that
+references liblcm.
 
 ## Colours and themes
 
