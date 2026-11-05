@@ -46,7 +46,6 @@ namespace SIL.TextEditing.Playground.Tests
         [InlineData("/ í _")]
         [InlineData("/ í _")]                       // the same letter written apart
         [InlineData("")]                                   // nothing to describe
-        [InlineData("   ")]
         public void A_well_formed_environment_has_no_diagnostic(string text)
         {
             Assert.Empty(Analyze(text).Diagnostics);
@@ -102,6 +101,34 @@ namespace SIL.TextEditing.Playground.Tests
         public void Other_malformed_environments_are_reported_once(string text)
         {
             Assert.Single(Analyze(text).Diagnostics);
+        }
+
+        [Theory]
+        [InlineData("   ")]          // only empty text has nothing to describe, as in FieldWorks
+        [InlineData("/ [")]
+        [InlineData("/ [ _")]
+        [InlineData("/ [ (a)")]
+        public void White_space_alone_and_a_lone_opening_bracket_are_syntax_problems(string text)
+        {
+            Assert.Equal(SampleEnvironmentService.Codes.Syntax, Assert.Single(Analyze(text).Diagnostics).Code);
+        }
+
+        [Fact]
+        public void Class_abbreviations_are_compared_as_canonical_equivalents()
+        {
+            var service = new SampleEnvironmentService(new[] { "a" }, new[] { new SampleNaturalClass("é", "e acute") });
+            Assert.Empty(Check(service, "/ [é] _"));
+        }
+
+        [Fact]
+        public void Ranges_are_in_the_protocols_lines_when_the_text_holds_line_ends()
+        {
+            var analysis = Analyze("/ a\n_ [X]");
+            var d = Assert.Single(analysis.Diagnostics);
+            Assert.Equal(new LanguageRange(new LanguagePosition(1, 3), new LanguagePosition(1, 4)), d.Range);
+            Assert.Equal(new LanguagePosition(1, 0), analysis.Tokens[2].Range.Start);
+            var fixes = Analyze("/ a\n[v] _").Diagnostics.Single().Fix!;
+            Assert.Equal(new LanguageRange(new LanguagePosition(1, 1), new LanguagePosition(1, 2)), fixes.Edits[0].Range);
         }
 
         [Fact]

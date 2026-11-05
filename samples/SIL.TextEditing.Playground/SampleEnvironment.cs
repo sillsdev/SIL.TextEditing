@@ -227,13 +227,14 @@ namespace SIL.TextEditing.Playground
         /// <summary>The natural class an abbreviation names: the abbreviation as it is, or without a trailing caret and digit (reduplication), else null.</summary>
         SampleNaturalClass? FindClass(string name)
         {
-            var found = _classes.FirstOrDefault(c => c.Abbreviation == name);
+            string canonical = Nfc(name);
+            var found = _classes.FirstOrDefault(c => Nfc(c.Abbreviation) == canonical);
             if (found != null) return found;
             int caret = name.Length - 2;
             if (caret > 0 && name[caret] == '^' && name[caret + 1] >= '0' && name[caret + 1] <= '9')
             {
-                string bare = name.Substring(0, caret);
-                return _classes.FirstOrDefault(c => c.Abbreviation == bare);
+                string bare = Nfc(name.Substring(0, caret));
+                return _classes.FirstOrDefault(c => Nfc(c.Abbreviation) == bare);
             }
             return null;
         }
@@ -268,7 +269,8 @@ namespace SIL.TextEditing.Playground
         /// <summary>The first thing wrong with the environment, reading left to right as FieldWorks does (it reports one problem), or null.</summary>
         Problem? Check(string text, List<Item> items)
         {
-            if (items.Count == 0) return null;
+            if (items.Count == 0)
+                return text.Length == 0 ? null : new Problem { Code = Codes.Syntax, Start = 0, End = text.Length, Message = "An environment starts with a slash (/)." };
             int at = 0;
             Item? Peek() => at < items.Count ? items[at] : (Item?)null;
             Problem SyntaxAt(Item? item, string detail)
@@ -371,6 +373,8 @@ namespace SIL.TextEditing.Playground
                             Fix = near.Count == 1 ? new LanguageFix("Change to " + near[0].Abbreviation, new[] { new LanguageTextEdit(new LanguageRange(item.WordsStart, item.WordsEnd), near[0].Abbreviation) }) : null,
                         };
                     }
+                    case ItemKind.ClassOpen when item.Text.Length == 0:
+                        return new Problem { Code = Codes.Syntax, Start = item.Start, End = item.End, Message = "Something is wrong around here: a natural class needs its abbreviation between square brackets." };
                     case ItemKind.ClassOpen:
                         return new Problem
                         {
@@ -450,6 +454,12 @@ namespace SIL.TextEditing.Playground
 
         // ------------------------------------------------------------------ the service
 
+        /// <summary>A range of offsets in the protocol's line and character: the text may hold CR or LF (the notation treats them as spaces).</summary>
+        static LanguageRange At(string text, int start, int end) => new LanguageRange(LanguageText.PositionOf(text, start), LanguageText.PositionOf(text, end));
+
+        static LanguageFix? Remap(string text, LanguageFix? fix) =>
+            fix == null ? null : new LanguageFix(fix.Title, fix.Edits.Select(e => new LanguageTextEdit(At(text, e.Range.Start.Character, e.Range.End.Character), e.NewText)).ToList());
+
         protected override LanguageAnalysis Analyze(string text)
         {
             var items = Lex(text);
@@ -469,12 +479,12 @@ namespace SIL.TextEditing.Playground
                     case ItemKind.Segment: kind = Kinds.Segment; target = item.Text; break;
                     default: kind = Kinds.Unknown; break;
                 }
-                tokens.Add(new LanguageToken(new LanguageRange(item.Start, item.End), kind, target));
+                tokens.Add(new LanguageToken(At(text, item.Start, item.End), kind, target));
             }
             var diagnostics = new List<LanguageDiagnostic>();
             var problem = Check(text, items);
             if (problem != null)
-                diagnostics.Add(new LanguageDiagnostic(new LanguageRange(problem.Start, Math.Max(problem.End, problem.Start)), DiagnosticSeverity.Error, problem.Message, problem.Code, SourceName, problem.Fix));
+                diagnostics.Add(new LanguageDiagnostic(At(text, problem.Start, Math.Max(problem.End, problem.Start)), DiagnosticSeverity.Error, problem.Message, problem.Code, SourceName, Remap(text, problem.Fix)));
             return new LanguageAnalysis(tokens, diagnostics);
         }
 
@@ -484,7 +494,7 @@ namespace SIL.TextEditing.Playground
             foreach (var item in Lex(text))
             {
                 if (offset < item.Start || offset >= item.End) continue;
-                var range = new LanguageRange(item.Start, item.End);
+                var range = At(text, item.Start, item.End);
                 switch (item.Kind)
                 {
                     case ItemKind.Slash: return new LanguageHover("Starts the environment: what follows is where the allomorph may occur.", range);
@@ -551,30 +561,57 @@ namespace SIL.TextEditing.Playground
             return true;
         }
 
-        /// <summary>A word boundary goes at the very start of the left context or the very end of the right one, so the selection must be after the slash and
-        /// have only space before it (up to the slash) or only space after it, and the text may have at most two, one at each edge.</summary>
+        // The word boundary rule, as a table of what FieldWorks' Insert menu is seen to do (the tests are the oracle):
+        //
+        //   existing boundaries | where the one there is        | the new one may go
+        //   --------------------+-------------------------------+----------------------------------------------
+        //   none                |                               | at either edge of the environment
+        //   two                 |                               | nowhere
+        //   one                 | opens the environment         | at the closing edge
+        //   one                 | closes the environment        | at the opening edge
+        //   one                 | in the middle (no underscore) | only over that boundary, replacing it
+        //
+        // "Opens" and "closes" come from the underscore when there is one (before it, after it) and from the text around it when there is not.
+
+        enum BoundaryRole { Opens, Closes, Middle }
+
+        static BoundaryRole RoleOfBoundary(string text, int slash, int boundary)
+        {
+            int bar = text.IndexOf('_');
+            if (bar >= 0) return boundary < bar ? BoundaryRole.Opens : BoundaryRole.Closes;
+            if (OnlySpace(text, slash + 1, boundary)) return BoundaryRole.Opens;
+            if (OnlySpace(text, boundary + 1, text.Length)) return BoundaryRole.Closes;
+            return BoundaryRole.Middle;
+        }
+
         static bool CanInsertBoundary(string text, int a, int b)
         {
             int slash = text.IndexOf('/');
-            if (slash < 0 || a <= slash || b <= slash) return false;
-            bool atStart = OnlySpace(text, slash + 1, a), atEnd = OnlySpace(text, b, text.Length);
-            if (!atStart && !atEnd) return false;
-            int first = text.IndexOf('#');
-            if (first < 0) return true;
-            if (text.IndexOf('#', first + 1) >= 0) return false;
-            int bar = text.IndexOf('_');
-            if (bar >= 0) return first < bar ? atEnd : atStart;   // the boundary there is on the left, so the new one goes on the right; and the other way about
-            if (OnlySpace(text, slash + 1, first)) return atEnd;
-            if (OnlySpace(text, first + 1, text.Length)) return atStart;
-            return a <= first && b > first;
+            if (slash < 0 || Math.Min(a, b) <= slash) return false;
+            bool opensHere = OnlySpace(text, slash + 1, a), closesHere = OnlySpace(text, b, text.Length);
+            if (!opensHere && !closesHere) return false;
+            var boundaries = Enumerable.Range(0, text.Length).Where(i => text[i] == '#').ToList();
+            if (boundaries.Count == 0) return true;
+            if (boundaries.Count > 1) return false;
+            switch (RoleOfBoundary(text, slash, boundaries[0]))
+            {
+                case BoundaryRole.Opens: return closesHere;
+                case BoundaryRole.Closes: return opensHere;
+                default: return a <= boundaries[0] && b > boundaries[0];
+            }
         }
 
         // ------------------------------------------------------------------ completion
 
-        protected override IReadOnlyList<CompletionItem> Complete(string text, LanguagePosition position, CompletionTriggerKind trigger)
+        protected override IReadOnlyList<CompletionItem> Complete(string text, LanguagePosition position, CompletionTriggerKind trigger) =>
+            CompleteCore(text, position, trigger).Select(i => i.ReplaceRange is LanguageRange r
+                ? new CompletionItem(i.Label, i.Kind, i.Detail, i.InsertText, At(text, r.Start.Character, r.End.Character), i.CaretOffset)
+                : i).ToList();
+
+        IReadOnlyList<CompletionItem> CompleteCore(string text, LanguagePosition position, CompletionTriggerKind trigger)
         {
             int caret = LanguageText.OffsetOf(text, position);
-            var caretRange = new LanguageRange(caret, caret);
+            var caretRange = At(text, caret, caret);
             var result = new List<CompletionItem>();
 
             // Inside square brackets: the classes whose abbreviation starts with what is typed.
