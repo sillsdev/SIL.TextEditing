@@ -365,15 +365,28 @@ namespace SIL.TextEditing
 
         public virtual IReadOnlyList<char> CompletionTriggerCharacters => new char[0];
 
-        public Task<LanguageAnalysis> AnalyzeAsync(string text, CancellationToken cancellation) => Task.FromResult(Analyze(text));
+        public virtual Task<LanguageAnalysis> AnalyzeAsync(string text, CancellationToken cancellation) => Task.FromResult(Analyze(text));
 
-        public Task<IReadOnlyList<CompletionItem>> CompleteAsync(string text, LanguagePosition position, CompletionTriggerKind trigger, CancellationToken cancellation) =>
+        public virtual Task<IReadOnlyList<CompletionItem>> CompleteAsync(string text, LanguagePosition position, CompletionTriggerKind trigger, CancellationToken cancellation) =>
             Task.FromResult(Complete(text, position, trigger));
 
-        public Task<LanguageHover?> HoverAsync(string text, LanguagePosition position, CancellationToken cancellation) => Task.FromResult(Hover(text, position));
+        public virtual Task<LanguageHover?> HoverAsync(string text, LanguagePosition position, CancellationToken cancellation) => Task.FromResult(Hover(text, position));
 
         public event EventHandler? Changed;
 
         public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>A <see cref="TextLanguageService"/> whose work is done on the thread pool, off the field's thread: for a notation whose analysis takes long enough to be
+    /// felt between keystrokes. The overrides are called on a worker thread, possibly several at once, so they must not touch the UI and must be thread-safe; the field
+    /// applies the answers on its own thread, only to the text asked about, as for any service.</summary>
+    public abstract class BackgroundTextLanguageService : TextLanguageService
+    {
+        public override Task<LanguageAnalysis> AnalyzeAsync(string text, CancellationToken cancellation) => Task.Run(() => Analyze(text), cancellation);
+
+        public override Task<IReadOnlyList<CompletionItem>> CompleteAsync(string text, LanguagePosition position, CompletionTriggerKind trigger, CancellationToken cancellation) =>
+            Task.Run(() => Complete(text, position, trigger), cancellation);
+
+        public override Task<LanguageHover?> HoverAsync(string text, LanguagePosition position, CancellationToken cancellation) => Task.Run(() => Hover(text, position), cancellation);
     }
 }
