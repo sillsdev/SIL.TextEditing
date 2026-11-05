@@ -29,6 +29,10 @@ namespace SIL.TextEditing.LCModel
         /// <summary>When set, a pasted string is split into paragraphs at this text; null (FieldWorks) keeps it as one paragraph.</summary>
         public string? PasteParagraphSeparator { get; set; }
 
+        /// <summary>Told of each property or value the copy leaves out because liblcm cannot load it back (ADR 0016, amended); null drops silently.
+        /// <see cref="DroppedProperty.RunIndex"/> indexes the joined runs of the fragment and <see cref="DroppedProperty.ParagraphIndex"/> is null.</summary>
+        public Action<DroppedProperty>? OnDropped { get; set; }
+
         public string Id => TsStringClipboard.XmlFormatName;
         public string DisplayName => "TsString";
         public string FormatName => TsStringClipboard.XmlFormatName;
@@ -36,7 +40,7 @@ namespace SIL.TextEditing.LCModel
         public ClipboardPayloadKind PayloadKind => ClipboardPayloadKind.Text;
 
         public object? Write(IReadOnlyList<Paragraph> fragment) =>
-            fragment.Count == 0 ? null : TsStringClipboard.FragmentToXml(fragment, _writingSystems, WriteParagraphSeparator);
+            fragment.Count == 0 ? null : TsStringClipboard.FragmentToXml(fragment, _writingSystems, WriteParagraphSeparator, OnDropped);
 
         public IReadOnlyList<Paragraph>? Read(object payloadObject)
         {
