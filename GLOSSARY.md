@@ -107,3 +107,15 @@ _Avoid_: GDR profile, GDR format
 
 **Project path**:
 The path of a FieldWorks object in the designed project tree, used in links.
+
+**Record file**:
+One FieldWorks record, or part of one, as one file: YAML front matter in a strict profile holding the record's objects and fields, FieldWorks Markdown in each rich value, and for some record kinds a Markdown body (ADR 0032).
+_Avoid_: entry file, YAML export
+
+**Record schema**:
+The data that says which record kinds, object types and fields a record file may have and what kind of value each field holds, so the reader types every value by its path and not by YAML's rules (ADR 0032).
+_Avoid_: model (that is liblcm's), JSON Schema (that is what the record schema publishes for editors)
+
+**Body field**:
+The one rich field of a record kind written as the Markdown body below the front matter, such as a notebook record's description. A lexical entry has none.
+_Avoid_: main field, content

@@ -32,5 +32,16 @@
       { "guid": "0000000c-0000-4000-8000-00000000000c", "path": "/lexicon/q%3F%23%5C", "tool": "lexiconEdit", "name": "q?#\\" },
       { "guid": "0000000d-0000-4000-8000-00000000000d", "path": "/lexicon/..", "tool": "lexiconEdit", "name": "dots" }
     ]
+  },
+  "records": {
+    "analysis": "en",
+    "vernacular": "ceb",
+    "writingSystems": {
+      "en": { "lang": "en", "dir": "ltr", "font": "Charis SIL" },
+      "fr": { "lang": "fr", "dir": "ltr", "font": "Charis SIL" },
+      "ceb": { "lang": "ceb", "dir": "ltr", "font": "Charis SIL" },
+      "no": { "lang": "no", "dir": "ltr", "font": "Charis SIL" },
+      "ar": { "lang": "ar", "dir": "rtl", "font": "Scheherazade New" }
+    }
   }
 }

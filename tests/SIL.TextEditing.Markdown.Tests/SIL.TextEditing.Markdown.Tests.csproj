@@ -15,5 +15,7 @@
     <ProjectReference Include="..\..\src\SIL.TextEditing.Markdown\SIL.TextEditing.Markdown.csproj" />
     <!-- The conformance fixtures: JSON the library and any other implementation of the format must pass (tests/conformance/README.md). -->
     <None Include="..\conformance\*.json" Link="conformance\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The record-file fixtures (tests/conformance/README.md, "Record files"): their schemas and cases. -->
+    <None Include="..\conformance\records\*.json" Link="conformance\records\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -143,7 +143,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
 
         // ---------------------------------------------------------------- the model
 
-        static Paragraph Paragraph(Dictionary<string, object?> o)
+        internal static Paragraph Paragraph(Dictionary<string, object?> o)
         {
             string style = Json.OptStr(o, "style") ?? "Normal";
             var paragraph = new Paragraph { Style = style };

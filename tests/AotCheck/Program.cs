@@ -14,6 +14,14 @@ Console.WriteLine(clusters.Count == 2 ? "ok" : "unexpected");
     if (failures.Count > 0) return 1;
 }
 
+// Runs the record frame (RecordCheck.cs): YamlDotNet's parser layer, the schema-typed reader, the writer and the JSON Schema, under AOT.
+{
+    var failures = RecordCheck.Run();
+    foreach (var failure in failures) Console.WriteLine("record FAILED: " + failure);
+    Console.WriteLine(failures.Count == 0 ? "record ok" : "record unexpected");
+    if (failures.Count > 0) return 1;
+}
+
 // Runs the libpalaso path under AOT: SLDR offline init (reads langtags JSON with Newtonsoft) and a definition.
 try
 {

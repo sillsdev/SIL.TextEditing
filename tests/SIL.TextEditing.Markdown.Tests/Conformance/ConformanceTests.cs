@@ -27,6 +27,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
                 "fwmd.syntax.too-deep", "fwmd.syntax.unsupported-markup", "fwmd.ws.unknown", "fwmd.link.not-found", "fwmd.link.ambiguous", "fwmd.link.broken",
                 "fwmd.link.guid-mismatch", "fwmd.link.relative-without-base", "fwmd.link.stale-path", "fwmd.link.rebound", "fwmd.link.url-rebuilt", "fwmd.style.unknown",
                 "fwmd.heading.too-deep", "fwmd.table.ragged", "fwmd.table.tab-in-cell", "fwmd.table.alignment", "fwmd.picture.unknown", "fwmd.field.block-syntax", "fwmd.prop.unknown-number",
+                "fwmd.record.record-file",
             };
             var all = ConformanceLoader.All();
             var missing = new List<string>();
@@ -234,7 +235,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             System.IO.Directory.CreateDirectory(dir);
             try
             {
-                foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json"))
+                foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json", System.IO.SearchOption.AllDirectories))
                 {
                     string lf = ConformanceLoader.ReadText(path);
                     string copy = System.IO.Path.Combine(dir, System.IO.Path.GetFileName(path));
@@ -265,8 +266,8 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         [Fact]
         public void EveryFixtureFileIsStrictJson()
         {
-            // D6: a second implementation proves conformance by passing the same files, so they must load in any JSON parser, not only in this runner's reader.
-            foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json"))
+            // D6: a second implementation proves conformance by passing the same files, so they must load in any JSON parser, not only in this runner's reader (the record fixtures in records/ too).
+            foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json", System.IO.SearchOption.AllDirectories))
             {
                 string text = System.IO.File.ReadAllText(path);
                 Json.Parse(text); // our reader rejects raw control characters in strings

@@ -97,3 +97,59 @@ for every finding id. The Pandoc check reads them all.
 Write the case from the spec, run the tests, and read the failure: the runner prints the findings and paragraphs it got. Put the case in the file for its topic.
 Check a new canonical spelling with Pandoc (`pandoc -f markdown-smart-implicit_figures-implicit_header_references-task_lists -t native`); the Pandoc test does
 the same for every case.
+
+## Record files
+
+`records/` holds the fixtures of the YAML record frame (ADR 0032): a record as one file, YAML front matter in a strict profile with FieldWorks Markdown in
+every rich value and, for a record kind that has one, the body. `SIL.TextEditing.Markdown.Tests` runs them in `RecordConformanceTests`, `RecordGateTests` and
+`RecordJsonSchemaTests` (net48 and net10.0). The Markdown loader above skips the folder.
+
+- `records/schemas.json`: named record schemas as data. A case uses `"schema": "test"` unless it names another.
+- `records/test.schema.json`: the JSON Schema (draft-07) the `test` schema publishes, byte for byte.
+- `records/NN-name.json`: arrays of cases: `01-frame.json` canonical files (a whole entry, a notebook record with its body, partial files), `02-traps.json` YAML's
+  traps and the profile's errors, `03-schema.json` what the schema refuses, `04-unwritable.json` values that read but cannot be written as they are.
+- A case runs against the `records` project of `projects.json` (its writing systems: `en`, `fr`, `ceb`, `no`, `ar`) unless it names another.
+
+### A schema
+
+```json
+{ "id": "test.schema.json",
+  "types": [ { "name": "entry", "guid": true, "fields": [
+      { "name": "citation-form", "kind": "text", "multi": true },
+      { "name": "senses", "kind": "sequence", "item": { "kind": "object", "type": "sense" } } ] } ],
+  "kinds": [ { "name": "lexicon/entry", "root": "entry", "pathSegments": 2, "body": null } ] }
+```
+
+| Key | Meaning |
+|---|---|
+| `id` | What a file's `schema:` says; also the JSON Schema's `$id`. |
+| `types` | Object types: `name`, `guid` (default `true`: objects carry `guid:`, written first) and `fields` in canonical order. |
+| field `kind` | `text` (plain, double-quoted), `rich` (FieldWorks Markdown: a `\|` block for a field of `paragraphs`, otherwise `\|-`), `notation` (text the host's checker reads; `notation` names it), `integer`, `boolean`, `guid`, `reference` (one link with `guid=`), `object` (`type`) or `sequence` (`item`: a field with no name). |
+| field `multi` | One value per writing system: a mapping from writing-system id to value (`text`, `rich` and `notation` only). |
+| field `paragraphs` | For `rich`: several paragraphs (an StText), read as a document; otherwise one paragraph of inline text (block syntax is `fwmd.field.block-syntax`). |
+| field `ws` | For a field in one writing system: `analysis` (default) or `vernacular`, what unmarked text means. In an alternative of a `multi` field, unmarked text means that alternative's writing system. |
+| `kinds` | Record kinds: `name` (the file's `record:`), `root` (the root object type), `pathSegments` (how many segments of a `root:` path name the record) and `body` (the root type's rich field of paragraphs written below the front matter, or none). |
+
+### A case
+
+| Field | Meaning |
+|---|---|
+| `name` | What the case shows. A case named `ok: <id> [<id> ...]: ...` is a negative case for each id it names: none of them may be reported. |
+| `file` | The input text, a whole file. Absent for a **write case**. |
+| `document` | The expected document of a read case, or the model of a write case: `record`, `schema`, `root`, `base`, `analysis`, `vernacular`, `writingSystems` (a list of `{id, lang, dir, font}`, in order) and `data`. In `data` the schema tells objects, alternatives and lists apart; a value is a string (the value as text: a rich value's FieldWorks Markdown, a GUID, a reference's link), or a JSON number or Boolean for an integer or Boolean field. The body field's value is in `data` like any other. Documents are compared as values: object keys and alternatives in any order, empty values left out. |
+| `findings` | The expected findings in source order, as for Markdown cases: `id`, `severity` (`error` by default, `warning`, `suggestion`), the range in the whole file (1-based lines and UTF-16 columns, end exclusive), and optionally `fix` (`null`: none), `choices` and `nearest`. For `fwmd.yaml.syntax` only the id, the severity and the start line are compared: where a YAML parser places a syntax error is its own. |
+| `canonical` | Absent: not checked. `null`: the file is canonical, so writing what was read gives it back byte for byte. A string: the canonical text. A write case needs a string. |
+| `paragraphs` | For a rich value, by field path (`senses/1/definition.en`; the body is its field's path): the paragraphs the FieldWorks Markdown reader makes of it, in the Markdown fixtures' form. |
+| `targets` | For a reference, by field path: the GUID of its link. |
+| `notations` | The host's notation checker: for each notation name, a list of `{match, code, message, fix}`; a value containing `match` gets that finding on it. |
+| `pandoc` | Absent or `true`: Pandoc reads the canonical text (see below). A string: it is not asked to, and why. |
+
+A field path joins field names, 1-based sequence indices and, after a dot, a writing system with `/`: `senses/1/examples/1/example.ceb`.
+
+For every read case with a canonical form the runner also checks that the canonical text reads back to the same document with no finding and is written again
+unchanged. The gates run every canonical case too: YamlDotNet's representation model must read the front matter to the tree the reader does, in the profile's
+styles (double-quoted text, `|-` blocks, plain numbers and Booleans); Pandoc (with the flags above) must read the file, the shape of its `record-data`, every
+rich value of one plain paragraph and the body as the FieldWorks Markdown reader does; and a whole-record canonical file must validate against the published
+JSON Schema. Pandoc reads a `|` value (which ends in a line end) as blocks and a `|-` value as inlines, and both are compared with what the reader read. A
+case that reads with no error must also be written without one, and read back to the same document. `RecordFuzzTests` also mutates the canonical cases (seeded; `TEXTEDITING_RECORD_FUZZ` sets how many, 3,000 by default): the reader must never throw, and a mutated file it reads without an error must write and read back without one. The runner gives each case two minutes, so a reader
+that does not end fails the case instead of hanging the run.
