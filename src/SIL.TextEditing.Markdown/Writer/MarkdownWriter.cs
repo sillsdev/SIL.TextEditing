@@ -57,7 +57,8 @@ namespace SIL.TextEditing.Markdown.Writer
             }
             // The text is read with and without a final line end: a file has one, a string in a database may not.
             string? text = writer.Search(generator, cells, candidate => Reads(candidate) && Reads(candidate + "\n"));
-            return text ?? throw new MarkdownWriteException("The runs cannot be written so that they read back unchanged.");
+            if (text == null) throw new MarkdownWriteException("The runs cannot be written so that they read back unchanged.");
+            return text.StartsWith("%", StringComparison.Ordinal) ? "\\" + text : text;
         }
 
         string WriteAll(IEnumerable<Paragraph> paragraphs)
@@ -102,7 +103,8 @@ namespace SIL.TextEditing.Markdown.Writer
                 i = end;
             }
             string body = blocks.Count == 0 ? string.Empty : string.Join("\n\n", blocks) + "\n";
-            if (!_options.WriteFrontMatter) return body;
+            // Pandoc reads a first line that starts with % as a title block.
+            if (!_options.WriteFrontMatter) return body.StartsWith("%", StringComparison.Ordinal) ? "\\" + body : body;
             string front = FrontMatter(entries);
             return body.Length == 0 ? front : front + "\n" + body;
         }

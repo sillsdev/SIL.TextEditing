@@ -661,6 +661,8 @@ namespace SIL.TextEditing.Markdown.Writer
             }
         }
 
+        const int MaxBareBracketDepth = 8;
+
         const string SafeSet = "\\!#&()*+-.:=>[]_{}~|^$@<`";
 
         void ResolveEscapes(bool[] escape)
@@ -668,14 +670,20 @@ namespace SIL.TextEditing.Markdown.Writer
             int n = _units.Count;
             // Counts for the characters that pair up across a paragraph.
             int dollars = 0, carets = 0, tildes = 0;
+            // Pandoc pairs these across the whole line: a literal $ opens math that a $ in a destination or an attribute value closes, so every occurrence counts, written or not.
             for (int i = 0; i < n; i++)
             {
-                if (!_units[i].Lit) continue;
-                switch (_units[i].Ch) { case '$': dollars++; break; case '^': carets++; break; case '~': tildes++; break; }
+                string text = _units[i].Lit ? null! : _units[i].Text;
+                if (_units[i].Lit)
+                {
+                    switch (_units[i].Ch) { case '$': dollars++; break; case '^': carets++; break; case '~': tildes++; break; }
+                }
+                else foreach (char ch in text) { if (ch == '$') dollars++; else if (ch == '^') carets++; else if (ch == '~') tildes++; }
             }
             // Brackets: a literal pair that is balanced inside its scope stays bare unless a (, [ or { follows its ]; every other bracket is escaped.
             var stacks = new Dictionary<int, Stack<int>>();
             var pairedWith = new Dictionary<int, int>();
+            var deep = new HashSet<int>();
             for (int i = 0; i < n; i++)
             {
                 var u = _units[i];
@@ -687,7 +695,14 @@ namespace SIL.TextEditing.Markdown.Writer
                 }
                 else if (u.Ch == ']')
                 {
-                    if (stacks.TryGetValue(u.Scope, out var st) && st.Count > 0) { int open = st.Pop(); pairedWith[open] = i; pairedWith[i] = open; }
+                    if (stacks.TryGetValue(u.Scope, out var st) && st.Count > 0)
+                    {
+                        int open = st.Pop();
+                        pairedWith[open] = i;
+                        pairedWith[i] = open;
+                        // Pandoc 3.9 does not finish on dozens of nested balanced brackets, so the inner pairs beyond a small depth are escaped.
+                        if (st.Count >= MaxBareBracketDepth) { deep.Add(open); deep.Add(i); }
+                    }
                 }
             }
             for (int i = 0; i < n; i++)
@@ -735,7 +750,7 @@ namespace SIL.TextEditing.Markdown.Writer
                     case '&':
                     {
                         var sb = new StringBuilder();
-                        for (int j = i + 1; j < n && _units[j].Lit && !_units[j].IsSpace; j++) sb.Append(_units[j].Text);
+                        for (int j = i + 1; j < n && j < i + 36 && _units[j].Lit && !_units[j].IsSpace; j++) sb.Append(_units[j].Text); // an entity name is at most 32 characters
                         string after = sb.ToString();
                         escape[i] = after.Length > 0 && (after[0] == '#' || AttributeText.ReadsAsReference("&" + after, 0));
                         break;
@@ -752,7 +767,7 @@ namespace SIL.TextEditing.Markdown.Writer
                     case '[':
                     case ']':
                     {
-                        if (!pairedWith.TryGetValue(i, out int mate)) { escape[i] = true; break; }
+                        if (!pairedWith.TryGetValue(i, out int mate) || deep.Contains(i)) { escape[i] = true; break; }
                         int close = c == '[' ? mate : i;
                         int next = NextChar(close);
                         escape[i] = next == '(' || next == '[' || next == '{';

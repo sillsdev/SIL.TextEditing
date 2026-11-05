@@ -253,3 +253,33 @@ namespace SIL.TextEditing.Markdown.Tests
         }
     }
 }
+namespace SIL.TextEditing.Markdown.Tests
+{
+    /// <summary>The writer's own paths are linear: only Markdig's slow paths (a quadratic <c>[a](</c> run, deep lists, a table read) are left, and the README says so.</summary>
+    public class WriterGrowthTests
+    {
+        static long Millis(System.Action work)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            work();
+            return watch.ElapsedMilliseconds;
+        }
+
+        [Fact]
+        public void RepeatedAmpersandsAreWrittenInLinearTime()
+        {
+            var paragraph = B.Plain(string.Concat(System.Linq.Enumerable.Repeat("&a", 32_000)));
+            long ms = Millis(() => MarkdownConverter.ToMarkdown(B.Doc(paragraph), Hosts.Project()));
+            Assert.True(ms < 2500, "32,000 ampersands took " + ms + " ms");
+        }
+
+        [Fact]
+        public void FourThousandTableRowsAreWrittenInLinearTime()
+        {
+            var paragraphs = new System.Collections.Generic.List<Paragraph> { B.P("GDR Table Header", B.En("a\tb")) };
+            for (int i = 0; i < 3999; i++) paragraphs.Add(B.P("GDR Table Row", B.En("c" + i + "\td")));
+            long ms = Millis(() => MarkdownConverter.ToMarkdown(B.Doc(paragraphs.ToArray()), Hosts.Project()));
+            Assert.True(ms < 3000, "4,000 table rows took " + ms + " ms");
+        }
+    }
+}

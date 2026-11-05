@@ -169,6 +169,24 @@
     "pandoc": false
   },
   {
+    "name": "a dollar sign is escaped when another one follows in a destination, because Pandoc pairs them across the line",
+    "paragraphs": [ { "style": "Normal", "runs": [
+      { "text": "costs $5 ", "ws": "en" },
+      { "text": "see", "ws": "en", "props": { "s133": "Hyperlink" }, "objData": "\u0004https://x.org/a$b" }
+    ] } ],
+    "canonical": "costs \\$5 [see](https://x.org/a$b)\n"
+  },
+  {
+    "name": "balanced brackets nested deeper than eight are escaped, which Pandoc 3.9 needs to finish",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "[[[[[[[[[[x]]]]]]]]]]", "ws": "en" } ] } ],
+    "canonical": "[[[[[[[[\\[\\[x\\]\\]]]]]]]]]\n"
+  },
+  {
+    "name": "a first line that starts with a percent sign is escaped, which Pandoc would read as a title block",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "% not a title", "ws": "en" } ] } ],
+    "canonical": "\\% not a title\n"
+  },
+  {
     "name": "a tab in the front matter's indentation is malformed, because Pandoc refuses it",
     "project": "standard",
     "markdown": "---\nfwmd: 1\nwritingSystems:\n\ten:\n---\n\nx\n",
