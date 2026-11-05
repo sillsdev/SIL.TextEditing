@@ -43,6 +43,12 @@
     <PackageVersion Include="Markdig.Signed" Version="0.37.0" />
   </ItemGroup>
 
+  <!-- ADR 0032 (owner decision R-2): the YAML parser of record files; its parser layer only, never the reflection serializer. Referenced by
+       SIL.TextEditing.Markdown only. -->
+  <ItemGroup>
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+
   <!-- Same test stack as Motif. -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
