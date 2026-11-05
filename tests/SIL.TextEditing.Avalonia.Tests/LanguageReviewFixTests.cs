@@ -315,9 +315,11 @@ namespace SIL.TextEditing.Avalonia.Tests
         sealed class OffThread : BackgroundTextLanguageService
         {
             public int Thread;
+            public readonly ManualResetEventSlim Ran = new ManualResetEventSlim();
             protected override LanguageAnalysis Analyze(string text)
             {
                 Thread = Environment.CurrentManagedThreadId;
+                Ran.Set();
                 return LanguageAnalysis.Empty;
             }
         }
@@ -326,7 +328,9 @@ namespace SIL.TextEditing.Avalonia.Tests
         public void The_background_service_runs_Analyze_off_the_callers_thread() => Headless.Run(() =>
         {
             var service = new OffThread();
-            var analysis = Wait(service.AnalyzeAsync("x", CancellationToken.None));
+            var task = service.AnalyzeAsync("x", CancellationToken.None);
+            Assert.True(service.Ran.Wait(60000));            // waited for by event: waiting on the task itself could run it on this thread
+            var analysis = Wait(task);
             Assert.Same(LanguageAnalysis.Empty, analysis);
             Assert.NotEqual(Environment.CurrentManagedThreadId, service.Thread);
         });
