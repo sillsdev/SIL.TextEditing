@@ -49,12 +49,32 @@ namespace SIL.TextEditing.Markdown.Reader
                     "'" + dest + "' is relative to the file, and there is no file location to resolve it against. Write it from the root of the project, such as /lists/GDR/GDR-46.");
                 return null;
             }
+            if ((d.Kind == DestKind.Silfw || d.Kind == DestKind.Motif) && d.Guid == null && d.Path == null)
+            {
+                Report(MarkdownDiagnosticIds.LinkNotFound, MarkdownSeverity.Error, "'" + dest + "' names no object: it has neither a GUID nor a path.");
+                return null;
+            }
+            if (d.GuidConflict)
+            {
+                Report(MarkdownDiagnosticIds.LinkGuidMismatch, MarkdownSeverity.Error, "The path names one GUID and ?guid= another. Keep the one you mean.");
+                return null;
+            }
+            if (d.Kind == DestKind.External && attrGuid != null)
+            {
+                Report(MarkdownDiagnosticIds.LinkGuidMismatch, MarkdownSeverity.Error, "'" + dest + "' is an external address, and guid= names an object of the project. Write the path of the object, or drop guid=.");
+                return null;
+            }
             bool internalLink = attrGuid != null || name || example || broken || d.Kind == DestKind.Silfw || d.Kind == DestKind.Motif
                 || (d.Kind == DestKind.RootPath && d.Path != null && d.Path.HasKnownTopFolder && d.Path.TopFolder != "files")
                 || (d.Kind == DestKind.Relative && d.Path != null);
             if (!internalLink)
                 return new MarkdownObject { Kind = MarkdownObjectKind.ExternalLink, Url = urlGiven ? urlAttr : dest };
 
+            if (urlGiven && d.Kind != DestKind.Silfw && !(SilfwUrl.TryParse(urlAttr ?? string.Empty, out var givenUrl) && givenUrl.Guid != null))
+            {
+                Report(MarkdownDiagnosticIds.MalformedAttribute, MarkdownSeverity.Error, "url= of a link to an object of the project is the silfw:// URL FieldWorks stores for it. Drop it, or make the link an external one.");
+                return null;
+            }
             var link = new MarkdownObject { Kind = MarkdownObjectKind.InternalLink, FollowsName = name, Broken = broken, Example = example, Tool = tool, Project = d.Project };
             bool aliasOrBackLink = d.Kind == DestKind.Silfw || d.Kind == DestKind.Motif || (d.Kind == DestKind.RootPath && d.Guid != null);
             if (attrGuid != null && d.Guid != null && attrGuid != d.Guid && aliasOrBackLink)
@@ -63,7 +83,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 return null;
             }
             link.Guid = attrGuid ?? d.Guid;
-            ProjectPath? path = d.Kind == DestKind.RootPath && d.Guid != null ? null : d.Path;
+            ProjectPath? path = d.Path != null && d.Path.ObjectGuid != null ? null : d.Path;
             if (d.Kind == DestKind.Silfw)
             {
                 link.Url = dest;
@@ -97,7 +117,20 @@ namespace SIL.TextEditing.Markdown.Reader
                 && storedUrl.Database != SilfwUrl.CurrentProject && storedUrl.Database != _options.SilfwDatabase) link.Project = storedUrl.Database;
             if (broken) Report(MarkdownDiagnosticIds.LinkBroken, MarkdownSeverity.Warning, "This link's target was deleted. The text and the last path are kept.");
 
-            if (link.Project != null) return link; // a link into another project: no path here, never rebound, never broken
+            if (link.Project != null)
+            {
+                if (link.Url == null)
+                {
+                    if (link.Guid == null)
+                    {
+                        Report(MarkdownDiagnosticIds.LinkNotFound, MarkdownSeverity.Error, "A path in another project (" + link.Project + ") needs guid=: this project cannot find it.");
+                        return null;
+                    }
+                    // The project is kept as the stored URL names it; the core never turns it into this one.
+                    link.Url = SilfwUrl.Build(link.Guid.Value, link.Tool ?? (path != null ? PathTools.ToolOf(path) : null), link.Field == null ? null : link.FieldWritingSystem == null ? link.Field : link.Field + "." + link.FieldWritingSystem, link.Project);
+                }
+                return link; // a link into another project: no path here, never rebound, never broken
+            }
 
             var paths = _options.Paths;
             if (paths == null)

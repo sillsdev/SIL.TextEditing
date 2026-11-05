@@ -15,6 +15,7 @@ namespace SIL.TextEditing.Markdown.Writer
     /// parser, so this stays 0 for every fixture and every generated document; a count above 0 is a gap in a rule. Per thread, so a test counts only its own work.</summary>
     internal static class WriterFallbacks
     {
+        [ThreadStatic] public static int Generic;
         [ThreadStatic] public static int Safe;
         [ThreadStatic] public static int Numeric;
         [ThreadStatic] public static int SafeTable;
@@ -184,10 +185,16 @@ namespace SIL.TextEditing.Markdown.Writer
             string canonical = generator.Generate(cells, new GenMode());
             if (accepts(canonical)) return canonical;
             string safe = generator.Generate(cells, new GenMode { Safe = true });
+            // Object data the object spellings cannot carry: those runs are written as the generic span, which holds any data.
+            WriterFallbacks.Generic++;
+            string generic = generator.Generate(cells, new GenMode { GenericObjects = true });
+            if (generic != canonical && accepts(generic)) return generic;
             WriterFallbacks.Safe++;
             if (safe != canonical && accepts(safe)) return safe;
+            string safeGeneric = generator.Generate(cells, new GenMode { Safe = true, GenericObjects = true });
+            if (accepts(safeGeneric)) return safeGeneric;
             WriterFallbacks.Numeric++;
-            string numeric = generator.Generate(cells, new GenMode { Numeric = true });
+            string numeric = generator.Generate(cells, new GenMode { Numeric = true, GenericObjects = true });
             return accepts(numeric) ? numeric : null;
         }
 

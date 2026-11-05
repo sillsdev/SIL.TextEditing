@@ -66,7 +66,7 @@ namespace SIL.TextEditing.Markdown.Tests
 
         // A link that cannot be resolved is a finding on the whole link, attributes included.
         const string TextLink = "[see](/lexicon/zzz)";
-        const string TextLinkWithUrl = "[see this](/lexicon/zzz){url=\"x\"}";
+        const string TextLinkWithUrl = "[see this](/lexicon/zzz){tool=x}";
 
         [Fact]
         public void ATextFormLinkInAParagraph() => AssertFindings("a\n\nb " + TextLink + " c", 3, ("fwmd.link.not-found", TextLink));

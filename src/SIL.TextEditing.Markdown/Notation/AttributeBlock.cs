@@ -271,6 +271,16 @@ namespace SIL.TextEditing.Markdown.Notation
             return j > at + 1 && j < text.Length && text[j] == ';';
         }
 
+        public static bool HasLoneSurrogate(string value)
+        {
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (char.IsHighSurrogate(value[i]) && i + 1 < value.Length && char.IsLowSurrogate(value[i + 1])) { i++; continue; }
+                if (char.IsSurrogate(value[i])) return true;
+            }
+            return false;
+        }
+
         /// <summary>True when the value cannot be carried in a quoted attribute value: it holds a control character or an unpaired surrogate.</summary>
         public static bool NeedsHex(string value)
         {

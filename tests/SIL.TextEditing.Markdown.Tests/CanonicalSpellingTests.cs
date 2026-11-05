@@ -11,9 +11,9 @@ namespace SIL.TextEditing.Markdown.Tests
     /// every fixture and every generated document must be written in the canonical spelling.</summary>
     public class CanonicalSpellingTests
     {
-        static int Fallbacks => WriterFallbacks.Safe + WriterFallbacks.Numeric + WriterFallbacks.SafeTable;
+        static int Fallbacks => WriterFallbacks.Generic + WriterFallbacks.Safe + WriterFallbacks.Numeric + WriterFallbacks.SafeTable;
 
-        static void Reset() { WriterFallbacks.Safe = 0; WriterFallbacks.Numeric = 0; WriterFallbacks.SafeTable = 0; }
+        static void Reset() { WriterFallbacks.Generic = 0; WriterFallbacks.Safe = 0; WriterFallbacks.Numeric = 0; WriterFallbacks.SafeTable = 0; }
 
         [Fact]
         public void EveryFixtureIsWrittenInTheCanonicalSpelling()

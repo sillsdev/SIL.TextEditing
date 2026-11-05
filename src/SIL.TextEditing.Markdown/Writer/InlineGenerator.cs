@@ -51,6 +51,8 @@ namespace SIL.TextEditing.Markdown.Writer
         public bool Safe;
         /// <summary>Every character of text is a numeric reference: the form that always reads back.</summary>
         public bool Numeric;
+        /// <summary>Every object run is written as the generic span with its data in hex, which no object data can fail to fit.</summary>
+        public bool GenericObjects;
     }
 
     /// <summary>Writes the inline text of one paragraph (or of the cells of one table row) from its runs (spec 3.2 to 3.4), by the rules of the spec and not by
@@ -210,8 +212,8 @@ namespace SIL.TextEditing.Markdown.Writer
         void WriteRun(Run run, bool lastInCell, int stars)
         {
             if (run.ObjData == null) { WriteTextRun(run, stars); return; }
-            var described = _options.Objects.Describe(run.ObjData);
-            if (described == null) { WriteGeneric(run); return; }
+            var described = _mode.GenericObjects ? null : _options.Objects.Describe(run.ObjData);
+            if (described == null || !Spellable(described)) { WriteGeneric(run); return; }
             switch (described.Kind)
             {
                 case MarkdownObjectKind.Picture when run.Text == Chars.ObjectReplacement.ToString() && described.Guid != null:
@@ -227,6 +229,14 @@ namespace SIL.TextEditing.Markdown.Writer
                     WriteGeneric(run);
                     return;
             }
+        }
+
+        /// <summary>False when a string of the object holds a NUL or a lone surrogate: a quoted value cannot carry either, so the object is written in hex.</summary>
+        static bool Spellable(MarkdownObject o)
+        {
+            foreach (string? s in new[] { o.Url, o.Tool, o.Project, o.Field, o.FieldWritingSystem, o.Path })
+                if (s != null && (s.IndexOf((char)0) >= 0 || AttributeText.HasLoneSurrogate(s))) return false;
+            return true;
         }
 
         void WriteTextRun(Run run, int stars)
@@ -303,15 +313,21 @@ namespace SIL.TextEditing.Markdown.Writer
             Guid guid = link.Guid!.Value;
             var paths = _options.Paths;
             ProjectPath? path = null;
-            if (link.Path != null) path = ProjectPath.Parse(link.Path);
-            if (path == null && paths != null) path = paths.PathOf(guid);
-            string? derivedTool = paths?.ToolOf(guid) ?? (path != null ? PathTools.ToolOf(path) : null);
+            // A link into another project has no path in this one, and this project's resolver must not be asked about its GUID.
+            if (link.Project == null)
+            {
+                if (link.Path != null) path = ProjectPath.Parse(link.Path);
+                if (path == null && paths != null) path = paths.PathOf(guid);
+            }
+            string? derivedTool = link.Project != null ? null : paths?.ToolOf(guid) ?? (path != null ? PathTools.ToolOf(path) : null);
             var form = _options.LinkForm;
             // A form that needs something the caller or the project has not given falls back: no file location, A; no project name, A; no path, E.
             if (form == MarkdownLinkForm.FileRelative && _options.LinkBase == null) form = MarkdownLinkForm.RootPath;
             if (form == MarkdownLinkForm.MotifUrl && _options.ProjectName == null && link.Project == null) form = MarkdownLinkForm.RootPath;
             if ((form == MarkdownLinkForm.RootPath || form == MarkdownLinkForm.FileRelative) && path == null) form = MarkdownLinkForm.ObjectAlias;
             if (path != null && (link.Field != null) && path.Field == null) path = new ProjectPath(path.Segments, link.Field, link.FieldWritingSystem);
+            if (path != null) path = WithDotSuffixes(path, guid);
+            string fieldTag = link.Field == null ? string.Empty : link.FieldWritingSystem == null ? link.Field : link.Field + "." + link.FieldWritingSystem;
 
             string dest;
             bool guidAttr = true, urlAttr = link.Url != null;
@@ -319,12 +335,17 @@ namespace SIL.TextEditing.Markdown.Writer
             {
                 case MarkdownLinkForm.SilfwUrl:
                     string tag = link.Field == null ? string.Empty : link.FieldWritingSystem == null ? link.Field : link.Field + "." + link.FieldWritingSystem;
-                    dest = link.Url ?? SilfwUrl.Build(guid, link.Tool ?? derivedTool, tag, link.Project ?? _options.SilfwDatabase);
+                    dest = link.Url ?? SilfwUrl.Build(guid, link.Tool, tag, link.Project ?? _options.SilfwDatabase);
                     guidAttr = false;
                     urlAttr = false;
                     break;
                 case MarkdownLinkForm.MotifUrl:
-                    dest = "motif://projects/" + EncodeProject(link.Project ?? _options.ProjectName!) + (path ?? ProjectPath.ForObject(guid)).ToString() + "?guid=" + guid.ToString("D");
+                    {
+                        string full = (path ?? new ProjectPath(ProjectPath.ForObject(guid).Segments, link.Field, link.FieldWritingSystem)).ToString();
+                        int hash = full.IndexOf('#');
+                        // The query comes before the fragment, as in any URL.
+                        dest = "motif://projects/" + EncodeProject(link.Project ?? _options.ProjectName!) + (hash < 0 ? full : full.Substring(0, hash)) + "?guid=" + guid.ToString("D") + (hash < 0 ? string.Empty : full.Substring(hash));
+                    }
                     guidAttr = false;
                     break;
                 case MarkdownLinkForm.FileRelative:
@@ -338,10 +359,13 @@ namespace SIL.TextEditing.Markdown.Writer
                     dest = path!.ToString();
                     break;
             }
+            string? storedUrl = link.Url;
+            // A stored URL without a tool, for an object the project can name a tool for, would come back with that tool: it travels in url=.
+            if (storedUrl == null && link.Tool == null && derivedTool != null && form != MarkdownLinkForm.SilfwUrl) { storedUrl = SilfwUrl.Build(guid, null, fieldTag, link.Project); urlAttr = true; }
             var extra = new List<PropertyKeys.Item>();
             if (guidAttr) extra.Add(new PropertyKeys.Item("guid", guid.ToString("D")));
             if (!urlAttr && link.Tool != null && link.Tool != derivedTool && form != MarkdownLinkForm.SilfwUrl) extra.Add(new PropertyKeys.Item("tool", link.Tool));
-            if (urlAttr) extra.Add(new PropertyKeys.Item("url", link.Url));
+            if (urlAttr) extra.Add(new PropertyKeys.Item("url", storedUrl));
             var flags = new List<PropertyKeys.Item>();
             if (link.Name != null && run.Text == link.Name) flags.Add(new PropertyKeys.Item(".name", null));
             if (link.Example) flags.Add(new PropertyKeys.Item(".example", null));
@@ -352,13 +376,26 @@ namespace SIL.TextEditing.Markdown.Writer
             CloseScope("](" + LinkSyntax.Wrap(dest, _context.InTable) + ")" + (items.Count > 0 ? Block(items) : string.Empty));
         }
 
+        /// <summary>A segment that is only dots would be a step in a relative path, and no encoding survives a URI parser (spec 4.3), so it gets the eight GUID digits.</summary>
+        static ProjectPath WithDotSuffixes(ProjectPath path, Guid guid)
+        {
+            bool any = false;
+            foreach (var segment in path.Segments) if (segment.Name.Length > 0 && segment.Name.Trim((char)46).Length == 0 && segment.Homograph == null && segment.GuidSuffix == null) any = true;
+            if (!any) return path;
+            var segments = new List<ProjectPathSegment>();
+            foreach (var segment in path.Segments)
+                segments.Add(segment.Name.Length > 0 && segment.Name.Trim((char)46).Length == 0 && segment.Homograph == null && segment.GuidSuffix == null
+                    ? new ProjectPathSegment(segment.Name, null, guid.ToString("N").Substring(0, 8)) : segment);
+            return new ProjectPath(segments, path.Field, path.FieldWritingSystem);
+        }
+
         static string EncodeProject(string name)
         {
             var sb = new StringBuilder();
             foreach (byte b in Encoding.UTF8.GetBytes(name))
             {
                 char c = (char)b;
-                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~' || b >= 0x80 && false) sb.Append(c);
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') sb.Append(c);
                 else sb.Append('%').Append(((int)b).ToString("X2", CultureInfo.InvariantCulture));
             }
             return sb.ToString();
@@ -367,7 +404,7 @@ namespace SIL.TextEditing.Markdown.Writer
         void WriteExternalLink(Run run, MarkdownObject link)
         {
             string url = link.Url!;
-            bool plain = DestinationCarries(url);
+            bool plain = DestinationCarries(url) && LinkSyntax.ReadsAsExternal(url, _options);
             var extra = new List<PropertyKeys.Item>();
             if (!plain) extra.Add(new PropertyKeys.Item("url", url));
             var items = RunItems(run, false, false, extra, generic: false, isLink: true);
@@ -380,13 +417,13 @@ namespace SIL.TextEditing.Markdown.Writer
         /// surrogate, parentheses balanced, no ampersand that reads as a character reference, and not empty.</summary>
         static bool DestinationCarries(string url)
         {
-            if (url.Length == 0) return false;
+            if (url.Length == 0 || url[0] == ' ' || url[url.Length - 1] == ' ') return false;
             int depth = 0;
             for (int i = 0; i < url.Length; i++)
             {
                 char c = url[i];
                 if (c < ' ' || (c >= '\x7F' && c <= '\x9F') || c == '<' || c == '>' || c == '\\') return false;
-                if (c == '\n' || c == '\r') return false;
+                if (char.IsWhiteSpace(c) && c != (char)32) return false; // Pandoc trims or changes these in a destination
                 if (c == '(') depth++;
                 else if (c == ')') { depth--; if (depth < 0) return false; }
                 else if (c == '&' && AttributeText.ReadsAsReference(url, i)) return false;

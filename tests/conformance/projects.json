@@ -29,7 +29,8 @@
       { "guid": "00000009-0000-4000-8000-000000000009", "path": "/lexicon/Noun (common)", "tool": "lexiconEdit", "name": "Noun (common)" },
       { "guid": "0000000a-0000-4000-8000-00000000000a", "path": "/lexicon/a%28b", "tool": "lexiconEdit", "name": "a(b" },
       { "guid": "0000000b-0000-4000-8000-00000000000b", "path": "/lexicon/50%25", "tool": "lexiconEdit", "name": "50%" },
-      { "guid": "0000000c-0000-4000-8000-00000000000c", "path": "/lexicon/q%3F%23%5C", "tool": "lexiconEdit", "name": "q?#\\" }
+      { "guid": "0000000c-0000-4000-8000-00000000000c", "path": "/lexicon/q%3F%23%5C", "tool": "lexiconEdit", "name": "q?#\\" },
+      { "guid": "0000000d-0000-4000-8000-00000000000d", "path": "/lexicon/..", "tool": "lexiconEdit", "name": "dots" }
     ]
   }
 }

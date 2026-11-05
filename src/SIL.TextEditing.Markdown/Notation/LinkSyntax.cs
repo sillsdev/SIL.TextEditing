@@ -26,6 +26,8 @@ namespace SIL.TextEditing.Markdown.Notation
         public string Text = string.Empty;
         public ProjectPath? Path;
         public Guid? Guid;
+        /// <summary>A <c>motif://</c> link whose path is an <c>/objects/<guid></c> alias names another GUID in its <c>?guid=</c>.</summary>
+        public bool GuidConflict;
         public string? Project;
         public SilfwUrlParts? Silfw;
         /// <summary>For a relative destination: true when it looks like a project link (starts with <c>./</c> or <c>../</c>, or ends in <c>.fw.md</c>).</summary>
@@ -52,12 +54,15 @@ namespace SIL.TextEditing.Markdown.Notation
             if (dest.StartsWith(MotifPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 string rest = dest.Substring(MotifPrefix.Length);
+                string fragment = string.Empty;
+                int hash0 = rest.IndexOf('#');
+                if (hash0 >= 0) { fragment = rest.Substring(hash0); rest = rest.Substring(0, hash0); }
                 string? query = null;
                 int q = rest.IndexOf('?');
                 if (q >= 0) { query = rest.Substring(q + 1); rest = rest.Substring(0, q); }
                 int slash = rest.IndexOf('/');
                 string project = ProjectPath.PercentDecode(slash < 0 ? rest : rest.Substring(0, slash));
-                string pathText = slash < 0 ? "/" : rest.Substring(slash);
+                string pathText = (slash < 0 ? "/" : rest.Substring(slash)) + fragment;
                 var path = ProjectPath.Parse(pathText);
                 if (path != null)
                 {
@@ -67,9 +72,14 @@ namespace SIL.TextEditing.Markdown.Notation
                     if (query != null)
                     {
                         foreach (string pair in query.Split('&'))
-                            if (pair.StartsWith("guid=", StringComparison.Ordinal) && Guid.TryParse(pair.Substring(5), out var g)) d.Guid = g;
+                            if (pair.StartsWith("guid=", StringComparison.Ordinal) && Guid.TryParse(pair.Substring(5), out var g))
+                            {
+                                if (d.Guid != null && d.Guid != g) d.GuidConflict = true;
+                                else d.Guid = g;
+                            }
                     }
-                    if (options.ProjectName == null || !string.Equals(project, options.ProjectName, StringComparison.Ordinal)) d.Project = project;
+                    // Without a project name from the host, a Motif link is taken to be about this project: the core cannot know better, and must not invent a foreign one.
+                    if (options.ProjectName != null && !string.Equals(project, options.ProjectName, StringComparison.Ordinal)) d.Project = project;
                     return d;
                 }
             }
@@ -129,6 +139,15 @@ namespace SIL.TextEditing.Markdown.Notation
             if (parts.Count > 0 && parts[parts.Count - 1].EndsWith(".fw.md", StringComparison.Ordinal))
                 parts[parts.Count - 1] = parts[parts.Count - 1].Substring(0, parts[parts.Count - 1].Length - 6);
             return ProjectPath.Parse("/" + string.Join("/", parts) + fragment);
+        }
+
+        /// <summary>True when the reader would take this URL for an external link as written: not a silfw or motif URL, not a path under a top folder of the tree, not relative to the file.</summary>
+        public static bool ReadsAsExternal(string url, MarkdownOptions options)
+        {
+            var d = Classify(url, options);
+            if (d.Kind == DestKind.Silfw || d.Kind == DestKind.Motif || d.Kind == DestKind.Relative) return false;
+            if (d.Kind == DestKind.RootPath && d.Path != null && d.Path.HasKnownTopFolder && d.Path.TopFolder != "files") return false;
+            return true;
         }
 
         // ---------------------------------------------------------------- writing
