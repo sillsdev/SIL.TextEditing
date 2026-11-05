@@ -107,7 +107,8 @@ namespace SIL.TextEditing.Markdown.Records
             }
             foreach (var comment in YamlTree.Comments(yamlText)) ReportComment(comment[0], comment[1]);
             foreach (int at in parse.LaterDocuments)
-                Error(RecordDiagnosticIds.SecondDocument, "A second YAML document starts here; a record file's front matter is one document.", at, LineEnd(at));
+                // The reader reads the first document only, so the fix that makes the file say what was read removes the rest of the front matter.
+                Error(RecordDiagnosticIds.SecondDocument, "A second YAML document starts here; a record file's front matter is one document, and the rest is not read.", LineStartOf(at), closeStart, string.Empty);
             if (parse.TooDeepAt != null) Error(RecordDiagnosticIds.TooDeep, "The YAML nests deeper than " + YamlTree.MaxDepth + " levels; what is deeper is not read.", parse.TooDeepAt.Value, LineEnd(parse.TooDeepAt.Value));
             if (parse.Error != null)
             {
@@ -284,14 +285,27 @@ namespace SIL.TextEditing.Markdown.Records
                         if (key.Kind != YamlFrameKind.Alias) Error(RecordDiagnosticIds.WrongShape, "A key is a single value.", key.Start, Math.Max(key.End, key.Start + 1));
                     }
                     else if (key.Value == "<<" && key.Style == ScalarStyle.Plain)
-                        Error(RecordDiagnosticIds.MergeKey, "Merge keys are not part of a record file; write the merged keys out.", key.Start, key.End);
+                        ReportPairRemoval(RecordDiagnosticIds.MergeKey, "Merge keys are not part of a record file, and this one is not read; write the merged keys out.", pair);
                     else if (!seen.Add(key.Value))
-                        Error(RecordDiagnosticIds.DuplicateKey, "'" + key.Value + "' is already a key of this mapping; keep one of the two.", key.Start, key.End);
+                        ReportPairRemoval(RecordDiagnosticIds.DuplicateKey, "'" + key.Value + "' is already a key of this mapping; the first is read, and this one is not.", pair);
                     CheckYaml(key, inFlow || node.Flow);
                     CheckYaml(pair.Value, inFlow || node.Flow);
                 }
             }
             foreach (var item in node.Items) CheckYaml(item, inFlow || node.Flow);
+        }
+
+        /// <summary>An error on a key whose pair the reader does not read. The fix removes the pair's lines, so the file says what was read; when the pair
+        /// shares a line with something else (a flow mapping, the first key of a list item) the finding is on the key and has no fix.</summary>
+        void ReportPairRemoval(string id, string message, KeyValuePair<YamlFrameNode, YamlFrameNode> pair)
+        {
+            int end = Math.Max(pair.Key.End, TrimLineEnds(pair.Value.End));
+            int lineStart = LineStartOf(pair.Key.Start);
+            bool alone = true;
+            for (int i = lineStart; i < pair.Key.Start; i++) if (_text[i] != ' ') alone = false;
+            for (int i = end; i < LineEnd(end); i++) if (_text[i] != ' ') alone = false;
+            if (alone) Error(id, message, lineStart, NextLine(end), string.Empty);
+            else Error(id, message, pair.Key.Start, pair.Key.End);
         }
 
         /// <summary>The range of the anchor (<c>&amp;</c>) or tag (<c>!</c>) token among a node's properties, with the spaces after it, or an empty range
@@ -1013,7 +1027,7 @@ namespace SIL.TextEditing.Markdown.Records
                         }
                         if (close < _text.Length)
                         {
-                            Error(RecordDiagnosticIds.SecondDocument, "Pandoc reads this block as YAML metadata; a record file has one front matter.", line, LineEnd(close));
+                            Error(RecordDiagnosticIds.SecondDocument, "Pandoc reads this block as YAML metadata; a record file has one front matter.", line, NextLine(close), string.Empty);
                             line = NextLine(close);
                             previousBlank = false;
                             continue;

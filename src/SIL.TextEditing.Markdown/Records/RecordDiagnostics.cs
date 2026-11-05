@@ -17,7 +17,7 @@ namespace SIL.TextEditing.Markdown.Records
         /// <summary>Error: a raw U+2028, U+2029 or U+0085, which one YAML reader takes as a line break and another does not. Fix in a rich value: its
         /// character reference (<c>&amp;#x2028;</c>); elsewhere none.</summary>
         public const string LineSeparator = "fwmd.yaml.line-separator";
-        /// <summary>Error: a key a mapping already has. No single fix: the choices are to keep one or the other.</summary>
+        /// <summary>Error: a key a mapping already has. The first is read; the fix removes the later pair's lines (none when the pair shares a line).</summary>
         public const string DuplicateKey = "fwmd.yaml.duplicate-key";
         /// <summary>Error: an anchor (<c>&amp;x</c>). Fix: remove it.</summary>
         public const string Anchor = "fwmd.yaml.anchor";
@@ -25,12 +25,12 @@ namespace SIL.TextEditing.Markdown.Records
         public const string Alias = "fwmd.yaml.alias";
         /// <summary>Error: a tag (<c>!!str</c>, <c>!x</c>). Fix: remove it; the schema types every value.</summary>
         public const string Tag = "fwmd.yaml.tag";
-        /// <summary>Error: a merge key (<c>&lt;&lt;</c>). No fix: what it merges has to be written out.</summary>
+        /// <summary>Error: a merge key (<c>&lt;&lt;</c>). It is not read; the fix removes its lines (none when it shares a line).</summary>
         public const string MergeKey = "fwmd.yaml.merge-key";
         /// <summary>Error: a folded scalar (<c>&gt;</c>), which rewrites line ends. Fix: the value it reads as, as a literal block.</summary>
         public const string Folded = "fwmd.yaml.folded";
         /// <summary>Error: a second YAML document: a <c>---</c> line with text after it in the front matter, or a YAML block in the body, which Pandoc
-        /// merges into the metadata. No fix.</summary>
+        /// merges into the metadata. It is not read; the fix removes it.</summary>
         public const string SecondDocument = "fwmd.yaml.second-document";
         /// <summary>Error: YAML nested deeper than the reader builds (64 levels).</summary>
         public const string TooDeep = "fwmd.yaml.too-deep";

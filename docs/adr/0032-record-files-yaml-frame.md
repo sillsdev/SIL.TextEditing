@@ -50,10 +50,12 @@ The rest is **defaults**: how this version does it where the owner has not decid
   the Boolean they meant. Single quotes, other escapes, other block headers (`|`, `|+`, `|2-`), uppercase GUIDs and needlessly quoted keys are information
   with the canonical spelling as fix. Flow collections and JSON are read, with information. Comments are dropped, with information and a fix that removes them.
 - Errors: tabs in indentation (fix: two spaces per tab; the rest is read with each tab as a space), raw U+2028, U+2029 or U+0085 (fix in a rich value:
-  the character reference), duplicate keys (the first is read), anchors (fix: remove), aliases (fix: the quoted text, `"*palit"`), tags (fix: remove),
-  merge keys, folded blocks (fix: the value they read as, canonically), a second document (a `---` line with text after it, or a YAML block in the body,
-  which Pandoc would merge into the metadata), nesting deeper than 64, and YAML that does not parse (nothing more is read). Duplicate keys, merge keys and
-  second documents have no fix: which value was meant is not clear, as `MarkdownDiagnostic` says for an ambiguous intent.
+  the character reference), duplicate keys, anchors (fix: remove), aliases (fix: the quoted text, `"*palit"`), tags (fix: remove), merge keys, folded
+  blocks (fix: the value they read as, canonically), a second document (a `---` line with text after it, or a YAML block in the body, which Pandoc would
+  merge into the metadata), nesting deeper than 64, and YAML that does not parse (nothing more is read). For a duplicate key, a merge key and a second
+  document the fix makes the file say what was read: the first of two keys is read, a merge key and a second document are not, so the fix removes the
+  later pair, the merge key's lines or the second document. Where such a pair shares a line (a flow mapping), the finding has no fix. Line separators
+  outside a rich value and syntax errors have none either.
 - Information is `MarkdownSeverity.Suggestion`. Finding ids are `fwmd.yaml.*` and `fwmd.record.*` (`RecordDiagnosticIds`); the reader also reports
   `fwmd.version.unsupported`, `fwmd.ws.unknown` and the FieldWorks Markdown reader's own ids inside rich values, placed in the file.
 - A rich value is read with `ParseInline` (one paragraph) or `Parse` (paragraphs). Unmarked text means the alternative's writing system, or the field's
@@ -71,11 +73,15 @@ The rest is **defaults**: how this version does it where the owner has not decid
 - The fixtures in `tests/conformance/records` (README "Record files") define the profile with the schema as data, so a second implementation can run them.
 - Pandoc reads every canonical record file, but it reads a `|-` value (a string with no final line end) as inline Markdown: a frame value with several
   paragraphs, a heading or a list loses its blocks in Pandoc's metadata view. The body and one-paragraph values agree. Owner question below.
+- `MarkdownConverter.Parse` on a whole record file reports `fwmd.syntax.malformed-attribute` on the lines of `|-` blocks and list items in the front
+  matter: its small front-matter reader knows only decision 32's keys and shapes. A host reads a record file with `RecordFileReader`. Owner question below.
 - VS Code's YAML extension does not validate Markdown front matter by itself, and a canonical file has no room for a `# yaml-language-server` comment.
 
 **Open questions for the owner**
 1. Rich values of paragraphs in the frame (a notebook record's other StText fields): keep `|-` and accept Pandoc's inline view, or write them as `|`
    (clip), which Pandoc reads as blocks, and read the final line end as no content?
-2. How an editor finds the JSON Schema of a record file: a workspace `yaml.schemas` mapping by file name, an extension, or a comment the profile allows.
+2. Should the plain FieldWorks Markdown reader skip the front matter of a file whose front matter has `record:` (it would then read only the body), or
+   leave record files to `RecordFileReader`?
+3. How an editor finds the JSON Schema of a record file: a workspace `yaml.schemas` mapping by file name, an extension, or a comment the profile allows.
 
 Owner decisions R-2, R-5, R-6 and R-7, 2026-11-05; the rest defaults, 2026-11-05.
