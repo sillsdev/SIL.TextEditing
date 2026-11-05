@@ -234,7 +234,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             System.IO.Directory.CreateDirectory(dir);
             try
             {
-                foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json"))
+                foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json", System.IO.SearchOption.AllDirectories))
                 {
                     string lf = ConformanceLoader.ReadText(path);
                     string copy = System.IO.Path.Combine(dir, System.IO.Path.GetFileName(path));
@@ -265,8 +265,8 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         [Fact]
         public void EveryFixtureFileIsStrictJson()
         {
-            // D6: a second implementation proves conformance by passing the same files, so they must load in any JSON parser, not only in this runner's reader.
-            foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json"))
+            // D6: a second implementation proves conformance by passing the same files, so they must load in any JSON parser, not only in this runner's reader (the record fixtures in records/ too).
+            foreach (string path in System.IO.Directory.GetFiles(ConformanceLoader.Directory, "*.json", System.IO.SearchOption.AllDirectories))
             {
                 string text = System.IO.File.ReadAllText(path);
                 Json.Parse(text); // our reader rejects raw control characters in strings
