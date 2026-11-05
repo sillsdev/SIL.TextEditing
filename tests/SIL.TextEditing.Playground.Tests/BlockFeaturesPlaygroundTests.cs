@@ -77,8 +77,8 @@ namespace SIL.TextEditing.Playground.Tests
 
                 var paragraphs = s.Editor.Document.Paragraphs;
                 Assert.Equal(before + 2, paragraphs.Count);
-                Assert.Equal("Name Gloss", paragraphs[1].Text);
-                Assert.StartsWith("palit buy", paragraphs[2].Text);   // the last pasted paragraph is followed by the rest of the paragraph the caret was in
+                Assert.Equal("Name | Gloss", paragraphs[1].Text);
+                Assert.StartsWith("palit | buy", paragraphs[2].Text);   // the last pasted paragraph is followed by the rest of the paragraph the caret was in
                 Assert.All(paragraphs.Skip(1).Take(2), p => Assert.Equal(string.Empty, p.Style));
                 Assert.Contains("2 table rows", s.Log);
                 Assert.Contains("now plain paragraphs", s.Log);

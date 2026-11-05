@@ -11,7 +11,7 @@
         "column": 5,
         "endLine": 11,
         "endColumn": 20,
-        "fix": "Name Gloss\n\n    palit buy"
+        "fix": "Name | Gloss\n\n    palit | buy"
       }
     ]
   },
@@ -91,7 +91,7 @@
         "column": 5,
         "endLine": 13,
         "endColumn": 20,
-        "fix": "Name Gloss\n\n    palit buy"
+        "fix": "Name | Gloss\n\n    palit | buy"
       }
     ]
   },
@@ -114,7 +114,7 @@
         "column": 5,
         "endLine": 11,
         "endColumn": 20,
-        "fix": "Name Gloss\n\n    palit buy"
+        "fix": "Name | Gloss\n\n    palit | buy"
       }
     ]
   },
@@ -153,7 +153,7 @@
         "column": 7,
         "endLine": 12,
         "endColumn": 16,
-        "fix": "a b\n\n      c d"
+        "fix": "a | b\n\n      c | d"
       }
     ]
   },

@@ -100,7 +100,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 field.BlocksFlattened += (o, f) => { Assert.Same(field, o); seen.Add(f); };
                 await Paste(field);
                 var paragraphs = field.Editor.Document.Paragraphs;
-                Assert.Equal(new[] { "lead", "Title", "a b", "c d", "item" }, paragraphs.Select(p => p.Text).ToArray());
+                Assert.Equal(new[] { "lead", "Title", "a | b", "c | d", "item" }, paragraphs.Select(p => p.Text).ToArray());
                 Assert.All(paragraphs.Skip(1), p => Assert.Equal(BlockFeatures.None, Recognizer.Recognize(p)));
                 var one = Assert.Single(seen);
                 Assert.Equal(2, one.TableRows);
@@ -121,7 +121,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 var paragraphs = field.Editor.Document.Paragraphs;
                 Assert.Equal("Heading 1", paragraphs[1].Style);
                 Assert.Equal("Bulleted List", paragraphs[4].Style);
-                Assert.Equal("a b", paragraphs[2].Text);
+                Assert.Equal("a | b", paragraphs[2].Text);
                 Assert.NotEqual(RowStyle, paragraphs[2].Style);
             }
             finally { window.Close(); }
@@ -137,7 +137,7 @@ namespace SIL.TextEditing.Avalonia.Tests
                 field.BlockFeatures = BlockFeatures.None;
                 await Paste(field);
                 Assert.Single(field.Editor.Document.Paragraphs);
-                Assert.Equal("lead Title a b c d item", field.Editor.Document.Paragraphs[0].Text);
+                Assert.Equal("lead Title a | b c | d item", field.Editor.Document.Paragraphs[0].Text);
             }
             finally { window.Close(); }
         });

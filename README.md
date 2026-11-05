@@ -129,7 +129,7 @@ decision Q79). When a kind is off:
 - **Commands that make it are refused.** The editor has no style command (the host applies a paragraph style as an undoable delta), so the host asks
   `RichTextField.IsParagraphStyleAllowed(styleName)` before it applies one and hides what is off. The playground has a switch for each kind, hides the styles of
   a kind that is off in its style box and refuses them in `ApplyParagraphStyle`.
-- **A paste, and so a Markdown paste, flattens it.** A table becomes one plain paragraph per row with the cells joined by one space, a list item or a heading
+- **A paste, and so a Markdown paste, flattens it.** A table becomes one plain paragraph per row with the cells joined by a space, a bar and a space (`a | b`), a list item or a heading
   becomes a plain paragraph, and `RichTextField.BlocksFlattened` tells the host how many of each (the same way `WritingSystemsMapped` does). Blocks the
   document already holds are kept, undo restores them exactly, and Enter in one starts a plain paragraph.
 - **How a paragraph is a table, list or heading is decided in one place**, `IBlockRecognizer` (`RichTextField.BlockRecognizer`). The default,

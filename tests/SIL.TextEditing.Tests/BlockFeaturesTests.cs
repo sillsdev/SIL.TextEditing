@@ -104,7 +104,7 @@ namespace SIL.TextEditing.Tests
             BlockFlattening? seen = null;
             e.BlocksFlattened += f => seen = f;
             e.Paste(Frag(TableRow("Name", "Gloss"), TableRow("palit", "buy")));
-            Assert.Equal(new[] { "Name Gloss", "palit buy" }, AfterLead(e));
+            Assert.Equal(new[] { "Name | Gloss", "palit | buy" }, AfterLead(e));
             Assert.All(e.Document.Paragraphs.Skip(1), p => Assert.Equal("Normal", p.Style));
             Assert.All(e.Document.Paragraphs.Skip(1), p => Assert.Equal("Normal", p.Props.StrProps[TextPropertyNumbers.NamedStyle]));
             Assert.NotNull(seen);
@@ -119,7 +119,7 @@ namespace SIL.TextEditing.Tests
             var e = Editor(BlockFeatures.None);
             var row = Styled(Row, "en", "a", "en", "\t", "fr", "b", "en", "\t", "en", "\t", "fr", "d");
             e.Paste(new List<Paragraph> { row });
-            Assert.Equal("a b  d", e.Document.Paragraphs[0].Text);
+            Assert.Equal("a | b |  | d", e.Document.Paragraphs[0].Text);
             Assert.Contains(e.Document.Paragraphs[0].Runs, r => r.Ws == "fr" && r.Text.Contains("b"));
             Assert.DoesNotContain('\t', e.Document.Paragraphs[0].Text);
         }
@@ -149,7 +149,7 @@ namespace SIL.TextEditing.Tests
         {
             var e = Editor(BlockFeatures.Lists);
             e.Paste(Frag(Styled("Heading 1", "en", "Title"), Styled("Bulleted List", "en", "one"), TableRow("a", "b")));
-            Assert.Equal(new[] { "Title", "one", "a b" }, AfterLead(e));
+            Assert.Equal(new[] { "Title", "one", "a | b" }, AfterLead(e));
             Assert.Equal("Bulleted List", e.Document.Paragraphs[2].Style);
             Assert.Equal("Normal", e.Document.Paragraphs[1].Style);
         }
@@ -165,7 +165,7 @@ namespace SIL.TextEditing.Tests
             undo.Undo();
             Assert.Equal(new[] { "x" }, Texts(e));
             undo.Redo();
-            Assert.Equal(new[] { "xa b", "c d" }, Texts(e));
+            Assert.Equal(new[] { "xa | b", "c | d" }, Texts(e));
         }
 
         [Fact]
@@ -174,7 +174,7 @@ namespace SIL.TextEditing.Tests
             var e = Editor(BlockFeatures.None);
             e.SingleParagraph = true;
             e.Paste(new List<Paragraph> { TableRow("a", "b"), TableRow("c", "d") });
-            Assert.Equal(new[] { "a b c d" }, Texts(e));
+            Assert.Equal(new[] { "a | b c | d" }, Texts(e));
         }
 
         [Fact]
@@ -268,8 +268,70 @@ namespace SIL.TextEditing.Tests
             Assert.Equal(0, report.ListItems);
             Assert.Equal(2, report.Total);
             Assert.Equal("Numbered List", paras[3].Style);
-            Assert.Equal("a b", paras[2].Text);
+            Assert.Equal("a | b", paras[2].Text);
             Assert.Equal(0, BlockFlattener.Flatten(paras, BlockFeatures.All, Recognizer).Total);
+        }
+        // ---- review of PR 156
+
+        [Fact]
+        public void Replace_all_inside_a_kept_heading_or_table_row_raises_nothing_and_keeps_the_block()
+        {
+            var doc = Doc(Styled("Heading 1", "en", "foo bar foo"), TableRow("foo", "bar"));
+            var e = new DocumentEditor(doc) { BlockFeatures = BlockFeatures.None, BlockRecognizer = Recognizer };
+            var seen = new List<BlockFlattening>();
+            e.BlocksFlattened += f => seen.Add(f);
+            Assert.Equal(3, e.ReplaceAll(new FindOptions { Pattern = "foo" }, "baz"));
+            Assert.Empty(seen);
+            Assert.Equal("baz bar baz", e.Document.Paragraphs[0].Text);
+            Assert.Equal("Heading 1", e.Document.Paragraphs[0].Style);
+            Assert.Equal(Row, e.Document.Paragraphs[1].Style);
+            Assert.Equal("baz\tbar", e.Document.Paragraphs[1].Text);
+        }
+
+        sealed class CombinedRecognizer : IBlockRecognizer
+        {
+            public int Flattens;
+            public BlockFeatures Recognize(Paragraph paragraph) => BlockFeatures.All;
+            public BlockFeatures RecognizeStyle(string styleName) => BlockFeatures.All;
+            public void Flatten(Paragraph paragraph, BlockFeatures kind) => Flattens++;
+        }
+
+        [Fact]
+        public void A_recogniser_answer_that_is_not_one_flag_means_not_a_block()
+        {
+            var r = new CombinedRecognizer();
+            var e = Editor(BlockFeatures.None);
+            e.BlockRecognizer = r;
+            BlockFlattening? seen = null;
+            e.BlocksFlattened += f => seen = f;
+            e.Paste(Frag(Styled("Heading 1", "en", "Title")));
+            Assert.Equal(0, r.Flattens);
+            Assert.Null(seen);
+            Assert.Equal(0, BlockFlattener.Flatten(new List<Paragraph> { Para("en", "en", "x") }, BlockFeatures.None, r).Total);
+        }
+
+        [Fact]
+        public void A_heading_with_bullets_of_its_own_goes_fully_plain_when_headings_are_off()
+        {
+            var p = Styled("Heading 1", "en", "Title");
+            p.Props.SetInt(TextPropertyNumbers.BulNumScheme, 100);
+            p.Props.SetStr(TextPropertyNumbers.BulNumTxtAfter, ")");
+            var e = Editor(BlockFeatures.Lists | BlockFeatures.Tables);
+            e.Paste(Frag(p));
+            var plain = e.Document.Paragraphs[1];
+            Assert.Equal("Normal", plain.Style);
+            Assert.False(plain.Props.IntProps.ContainsKey(TextPropertyNumbers.BulNumScheme));
+            Assert.False(plain.Props.StrProps.ContainsKey(TextPropertyNumbers.BulNumTxtAfter));
+            Assert.Equal(BlockFeatures.None, Recognizer.Recognize(plain));
+        }
+
+        [Fact]
+        public void The_default_recogniser_has_no_table_style_so_tables_need_a_recogniser_that_names_them()
+        {
+            var e = new DocumentEditor(OneParagraph("")) { BlockFeatures = BlockFeatures.Lists | BlockFeatures.Headings };
+            Assert.True(e.IsParagraphStyleAllowed("Table Row"));
+            e.BlockRecognizer = new StyleBlockRecognizer(null, null, new[] { "Table Row" });
+            Assert.False(e.IsParagraphStyleAllowed("Table Row"));
         }
     }
 }

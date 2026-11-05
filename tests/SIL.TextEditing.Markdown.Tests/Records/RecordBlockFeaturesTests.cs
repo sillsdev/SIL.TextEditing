@@ -127,7 +127,7 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             var again = RecordFileReader.Read(fixedText, c.Schema, options);
             var fixedParagraphs = ((RecordScalar)again.Document!.Find("plain")!).Paragraphs!;
             Assert.Equal(editor.Document.Paragraphs.Select(p => p.Text).ToArray(), fixedParagraphs.Select(p => p.Text).ToArray());
-            Assert.Equal(new[] { "Intro.", "Name Gloss", "palit buy" }, fixedParagraphs.Select(p => p.Text).ToArray());
+            Assert.Equal(new[] { "Intro.", "Name | Gloss", "palit | buy" }, fixedParagraphs.Select(p => p.Text).ToArray());
             Assert.All(editor.Document.Paragraphs.Skip(1), p => Assert.Equal("Normal", p.Style));
             Assert.All(fixedParagraphs.Skip(1), p => Assert.Equal("Normal", p.Style));
         }
@@ -140,6 +140,24 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             Assert.True(read.HasErrors);
             var paragraphs = ((RecordScalar)read.Document!.Find("plain")!).Paragraphs!;
             Assert.Equal("Heading 1", paragraphs[0].Style);
+        }
+
+        [Fact]
+        public void The_fix_keeps_the_files_line_ends_so_a_CRLF_file_gets_no_bare_LF()
+        {
+            var c = RecordFixtures.All().First(x => x.SchemaName == "blocks" && x.Name.StartsWith("a table in a field that allows no blocks", StringComparison.Ordinal));
+            var options = RecordFixtures.Options(c);
+            string crlf = c.Text!.Replace("\n", "\r\n");
+            var read = RecordFileReader.Read(crlf, c.Schema, options);
+            var finding = read.Diagnostics.Single(d => d.Id == RecordDiagnosticIds.BlockNotAllowed);
+            Assert.Contains("\r\n", finding.Replacement);
+            Assert.DoesNotContain("\n", finding.Replacement!.Replace("\r\n", string.Empty));
+            string fixedText = read.Source.Substring(0, finding.Start) + finding.Replacement + read.Source.Substring(finding.End);
+            var again = RecordFileReader.Read(fixedText, c.Schema, options);
+            Assert.False(again.HasErrors, string.Join("\n", again.Diagnostics));
+            Assert.Equal(new[] { "Intro.", "Name | Gloss", "palit | buy" }, ((RecordScalar)again.Document!.Find("plain")!).Paragraphs!.Select(p => p.Text).ToArray());
+            // An LF file keeps LF.
+            Assert.DoesNotContain("\r", RecordFileReader.Read(c.Text, c.Schema, options).Diagnostics.Single(d => d.Id == RecordDiagnosticIds.BlockNotAllowed).Replacement!);
         }
 
         static IEnumerable<RecordScalar> Scalars(RecordValue value)

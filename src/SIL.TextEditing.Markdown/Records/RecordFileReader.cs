@@ -970,7 +970,7 @@ namespace SIL.TextEditing.Markdown.Records
             while (i < paragraphs.Count)
             {
                 var kind = recognizer.Recognize(paragraphs[i]);
-                if (kind == BlockFeatures.None || (allowed & kind) != 0) { i++; continue; }
+                if (!BlockFlattener.IsBlockKind(kind) || (allowed & kind) != 0) { i++; continue; }
                 int j = i + 1;
                 while (j < paragraphs.Count && sources[j].Block == sources[i].Block && recognizer.Recognize(paragraphs[j]) == kind) j++;
                 // The block's lines, whole: Markdig's span of a table row leaves out its outer pipes, and the fix replaces the lines.
@@ -998,11 +998,13 @@ namespace SIL.TextEditing.Markdown.Records
                 string text = RecordScalar.Rich(flat, options).Text;
                 if (RecordProfile.LiteralProblem(text) != null) return null;
                 if (!MarkdownConverter.AreEquivalent(flat, MarkdownConverter.Parse(text, options).Document.Paragraphs)) return null;
+                int firstBreak = _text.IndexOf('\n');   // the file's line ends: CR LF in the file gives CR LF in the replacement, not a mix
+                bool crlf = firstBreak > 0 && _text[firstBreak - 1] == '\r';
                 var lines = text.Split('\n');
                 var sb = new System.Text.StringBuilder(text.Length + lines.Length * indent);
                 for (int k = 0; k < lines.Length; k++)
                 {
-                    if (k > 0) sb.Append('\n');
+                    if (k > 0) sb.Append(crlf ? "\r\n" : "\n");
                     if (k > 0 && lines[k].Length > 0) sb.Append(' ', indent);
                     sb.Append(lines[k]);
                 }

@@ -13,7 +13,9 @@ namespace SIL.TextEditing
     {
         /// <summary>Plain paragraphs only. As the answer of <see cref="IBlockRecognizer.Recognize"/>: the paragraph is plain.</summary>
         None = 0,
-        /// <summary>Tables: one paragraph per row, in today's form a tab between cells.</summary>
+        /// <summary>Tables: one paragraph per row, in today's form a tab between cells. The default recogniser knows no table style (the host names them), so
+        /// a host that turns this off must give <see cref="DocumentEditor.BlockRecognizer"/> its table styles, for instance
+        /// <c>MarkdownStyleNames.ToBlockRecognizer()</c>; until it does, no paragraph is a table row and nothing is flattened or refused.</summary>
         Tables = 1,
         /// <summary>Bulleted and numbered lists: one paragraph per item.</summary>
         Lists = 2,
@@ -29,7 +31,9 @@ namespace SIL.TextEditing
     /// recogniser in and nothing else moves.</summary>
     public interface IBlockRecognizer
     {
-        /// <summary>The one feature the paragraph is an instance of, or <see cref="BlockFeatures.None"/> for a plain paragraph.</summary>
+        /// <summary>The one feature the paragraph is an instance of, or <see cref="BlockFeatures.None"/> for a plain paragraph. The answer must be exactly one of
+        /// <see cref="BlockFeatures.Tables"/>, <see cref="BlockFeatures.Lists"/> and <see cref="BlockFeatures.Headings"/>, or <see cref="BlockFeatures.None"/>: an
+        /// answer that combines flags is taken to mean "not a block" (see <see cref="BlockFlattener.IsBlockKind"/>).</summary>
         BlockFeatures Recognize(Paragraph paragraph);
 
         /// <summary>The feature a paragraph style gives, or <see cref="BlockFeatures.None"/>: the answer for "may this style be applied here?" before any
@@ -62,7 +66,9 @@ namespace SIL.TextEditing
 
         static HashSet<string> Set(IEnumerable<string>? names) => new HashSet<string>((names ?? Enumerable.Empty<string>()).Where(n => n != null), StringComparer.Ordinal);
 
-        /// <summary>The names a new FieldWorks project has: Heading 1 to 3, Bulleted List and Numbered List, and no table style (the host names those).</summary>
+        /// <summary>The names a new FieldWorks project has: Heading 1 to 3, Bulleted List and Numbered List, and <b>no table style</b> (the host names those). With
+        /// this recogniser no paragraph is a table row, so turning <see cref="BlockFeatures.Tables"/> off does nothing and <see cref="DocumentEditor.IsParagraphStyleAllowed"/>
+        /// says yes to every table style; a host with tables gives the field a recogniser that names its table styles.</summary>
         public static StyleBlockRecognizer Default { get; } = new StyleBlockRecognizer(
             new[] { "Heading 1", "Heading 2", "Heading 3" }, new[] { "Bulleted List", "Numbered List" }, null);
 
@@ -116,9 +122,14 @@ namespace SIL.TextEditing
     /// <c>fwmd.record.block-not-allowed</c>, both call <see cref="Flatten"/>, so they agree by construction (ADR 0033).</summary>
     public static class BlockFlattener
     {
+        /// <summary>True for exactly one of <see cref="BlockFeatures.Tables"/>, <see cref="BlockFeatures.Lists"/> and <see cref="BlockFeatures.Headings"/>: the answers of
+        /// <see cref="IBlockRecognizer.Recognize"/> that name a block. <see cref="BlockFeatures.None"/>, and an answer that combines flags, do not.</summary>
+        public static bool IsBlockKind(BlockFeatures kind) => kind == BlockFeatures.Tables || kind == BlockFeatures.Lists || kind == BlockFeatures.Headings;
+
         /// <summary>Makes every paragraph of a kind not in <paramref name="allowed"/> plain, in place, and says what it changed. A table becomes one plain
-        /// paragraph per row, the cells joined by one space (a tab cannot join them: a field's paragraphs hold no tab, and a rich value in a record file cannot
-        /// either). A list item and a heading become plain paragraphs. The paragraphs are the caller's own copies.</summary>
+        /// paragraph per row, each tab (the cell separator) becoming a space, a bar and a space, so the cells stay apart and the text is what a visible separator
+        /// would give later (a tab cannot join them: a field's paragraphs hold no tab, and a rich value in a record file cannot either). A list item and a heading
+        /// become plain paragraphs. The paragraphs are the caller's own copies.</summary>
         public static BlockFlattening Flatten(IEnumerable<Paragraph> paragraphs, BlockFeatures allowed, IBlockRecognizer recognizer)
         {
             if (paragraphs == null) throw new ArgumentNullException(nameof(paragraphs));
@@ -129,7 +140,7 @@ namespace SIL.TextEditing
                 foreach (var p in paragraphs)
                 {
                     var kind = recognizer.Recognize(p);
-                    if (kind == BlockFeatures.None || (allowed & kind) != 0) continue;
+                    if (!IsBlockKind(kind) || (allowed & kind) != 0) continue;
                     recognizer.Flatten(p, kind);
                     if (kind == BlockFeatures.Tables) tables++;
                     else if (kind == BlockFeatures.Lists) lists++;
@@ -140,7 +151,8 @@ namespace SIL.TextEditing
         }
 
         /// <summary>The standard flattening, for a recogniser to call: the style (and the style name a paragraph keeps in its properties) becomes
-        /// <paramref name="plainStyle"/>; a list item loses its bullet or number properties; a table row's tabs become spaces.</summary>
+        /// <paramref name="plainStyle"/>; whatever the kind, the paragraph loses its own bullet and number properties (a heading with a bullet goes fully plain); a
+        /// table row's tabs become " | ".</summary>
         public static void ToPlain(Paragraph paragraph, BlockFeatures kind, string plainStyle)
         {
             if (paragraph == null) throw new ArgumentNullException(nameof(paragraph));
@@ -151,7 +163,6 @@ namespace SIL.TextEditing
                 if (plainStyle.Length == 0) paragraph.Props.StrProps.Remove(TextPropertyNumbers.NamedStyle);
                 else paragraph.Props.StrProps[TextPropertyNumbers.NamedStyle] = plainStyle;
             }
-            if (kind == BlockFeatures.Lists)
             {
                 paragraph.Props.IntProps.Remove(TextPropertyNumbers.BulNumScheme);
                 paragraph.Props.IntProps.Remove(TextPropertyNumbers.BulNumStartAt);
@@ -163,7 +174,7 @@ namespace SIL.TextEditing
             {
                 bool any = false;
                 foreach (var r in paragraph.Runs)
-                    if (!r.IsObject && r.Text.IndexOf('\t') >= 0) { r.Text = r.Text.Replace('\t', ' '); any = true; }
+                    if (!r.IsObject && r.Text.IndexOf('\t') >= 0) { r.Text = r.Text.Replace("\t", " | "); any = true; }
                 if (any) paragraph.Normalize();
             }
         }

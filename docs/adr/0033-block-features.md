@@ -32,7 +32,7 @@ The rest is **defaults**: how this version does it where the owner has not decid
 
 **What a feature that is off does**
 - **Paste, and so Markdown import,** goes through `DocumentEditor.ReplaceRange`, which flattens the fragment first. A table becomes one plain paragraph per row,
-  and the cells are joined by **one space** (each tab, the cell separator, becomes a space). A tab cannot be the joiner: a paragraph of a multi-paragraph field
+  and the cells are joined by **a space, a bar and a space** (each tab, the cell separator, becomes ` | `; empty cells give `a |  | b`). This is the text the styled separator of Q73 (a visible ` | ` run, issue 152) flattens to, so the tab form and the later form agree and the cell boundaries survive. A tab cannot be the joiner: a paragraph of a multi-paragraph field
   holds no tab (the editor removes them from every pasted paragraph, and typed text), single-paragraph mode removes them too, and a rich value in a record file
   cannot hold one (`fwmd.table.tab-in-cell`, `fwmd.record.unwritable`). Flattening runs before those rules, so the cells stay apart. A list item or a heading
   becomes a plain paragraph, and a list item loses its bullet and number properties (143 to 147). The style name kept in the paragraph's properties is changed
@@ -40,6 +40,8 @@ The rest is **defaults**: how this version does it where the owner has not decid
 - **Existing blocks are kept**, as `SingleParagraph` keeps paragraphs that are already there. Undo and redo restore exactly what was there; only `Apply` of a
   host's own delta is not filtered. **Enter** in an existing block of a kind that is off starts a plain paragraph; in a block that is allowed it continues the
   block.
+- **Find and Replace** inside a block the field keeps changes the text and nothing else, and raises nothing (the replacement fragment is plain; review of PR 156). Spelling
+  and language-service replacements were already plain.
 - A **plain-text paste** is not a block and is not touched. The first pasted paragraph joins the paragraph under the caret and takes its style, as it always did.
 
 **In a record schema** a rich field has the same flags (`RecordField.BlockFeatures`; `Rich` and `MultiRich` take `blocks`). The default is `All` for a field of
@@ -57,6 +59,17 @@ an error. The JSON Schema gives a field of paragraphs that does not allow everyt
 schema and the host's fields from liblcm metadata. As Q79 says: all three kinds on for a multi-paragraph field (an `StText`), except `Text.Contents` (the
 interlinear baseline, whose paragraphs are segmented) and Scripture, which are `None`; a one-paragraph field is `None`; hosts override per field. Nothing in
 this repository reads liblcm for this. The field's own default stays `All`, so a host that does nothing is unchanged.
+
+**Recogniser details**
+- `Recognize` answers with exactly one flag or `None`. An answer that combines flags is taken to mean "not a block" (`BlockFlattener.IsBlockKind`), so a faulty
+  recogniser flattens nothing.
+- `StyleBlockRecognizer.Default` names **no table style**, because the host names them. A host that turns `Tables` off must give the field a recogniser with its table
+  styles (`MarkdownStyleNames.ToBlockRecognizer()` when the Markdown options name them); with the default, no paragraph is a table row, nothing is flattened and
+  `IsParagraphStyleAllowed` says yes to table styles.
+- A paragraph is recognised by its style first, then by a bullet scheme of its own. A heading with a bullet of its own is a heading: kept when headings are allowed
+  (even with lists off), and made fully plain (bullet properties too) when headings are off. Flattening any kind strips the bullet and number properties.
+- A handler of `BlocksFlattened` that throws surfaces from the paste, after the edit has been made, as with the editor's other events.
+- The record fix keeps the file's line ends (CR LF stays CR LF).
 
 **Not built here:** inserting a table, Tab and Enter inside one, and "paste as table" (Q75 to Q78, issue 152); alignment and widths (Q77); a bullet scheme that
 only a style gives (the recogniser sees the style's name and the paragraph's own properties, not the host's style sheet, ADR 0004; a host with such styles names

@@ -63,7 +63,7 @@ internal static class RecordCheck
         var row = Para("a\tb");
         row.Style = "Table Row";
         editor.Paste(new List<Paragraph> { Para("lead"), row });
-        Check(pasted.Paragraphs.Count == 2 && pasted.Paragraphs[1].Text == "a bx" && pasted.Paragraphs[1].Style == "Normal", "record: a pasted table row becomes a plain paragraph");
+        Check(pasted.Paragraphs.Count == 2 && pasted.Paragraphs[1].Text == "a | bx" && pasted.Paragraphs[1].Style == "Normal", "record: a pasted table row becomes a plain paragraph");
 
         string json = schema.ToJsonSchema();
         Check(json.Contains("\"contentMediaType\": \"text/x-fieldworks-feature-structure\"") && json.Contains("\"$id\": \"aot.schema.json\""), "record: the JSON Schema");

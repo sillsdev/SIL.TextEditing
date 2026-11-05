@@ -11,8 +11,10 @@ namespace SIL.TextEditing
         /// <see cref="SIL.TextEditing.BlockFeatures.Headings"/>. The default is <see cref="SIL.TextEditing.BlockFeatures.All"/>, which changes nothing. When a feature is off
         /// (a) the host's commands that would make it are refused: ask <see cref="IsParagraphStyleAllowed"/> (and <see cref="IsAllowed"/>) before applying a
         /// paragraph style, (b) paste, and so Markdown import, turns a block of that kind into plain paragraphs (a table into one paragraph per row, the cells
-        /// joined by a space; see <see cref="BlockFlattener"/>) and raises <see cref="BlocksFlattened"/>, and (c) Enter in an existing block starts a plain paragraph.
-        /// As with <see cref="SingleParagraph"/>, blocks the document already holds are kept; only new ones are refused. Undo and redo restore exactly what was there.</summary>
+        /// joined by a space, a bar and a space; see <see cref="BlockFlattener"/>) and raises <see cref="BlocksFlattened"/>, and (c) Enter in an existing block starts a plain paragraph.
+        /// As with <see cref="SingleParagraph"/>, blocks the document already holds are kept; only new ones are refused (Find and Replace inside a kept block change its text
+        /// and nothing else, and raise nothing). Undo and redo restore exactly what was there. The default <see cref="BlockRecognizer"/> knows no table style: see
+        /// <see cref="SIL.TextEditing.BlockFeatures.Tables"/>. A handler of <see cref="BlocksFlattened"/> that throws surfaces from the paste, after the edit has been made.</summary>
         public BlockFeatures BlockFeatures { get; set; } = BlockFeatures.All;
 
         /// <summary>How a paragraph is recognised as a table row, a list item or a heading (by the host's style names; see <see cref="StyleBlockRecognizer"/>).
@@ -54,7 +56,7 @@ namespace SIL.TextEditing
         {
             if (BlockFeatures == BlockFeatures.All) return;
             var kind = BlockRecognizer.Recognize(paragraph);
-            if (kind != BlockFeatures.None && !IsAllowed(kind)) BlockRecognizer.Flatten(paragraph, kind);
+            if (BlockFlattener.IsBlockKind(kind) && !IsAllowed(kind)) BlockRecognizer.Flatten(paragraph, kind);
         }
     }
 }

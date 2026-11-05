@@ -73,7 +73,7 @@ The set of block kinds (tables, lists, headings) a field, or a rich field of a r
 _Avoid_: block settings, block flags
 
 **Flatten**:
-To turn a block the field does not allow into plain paragraphs: a table into one paragraph per row with the cells joined by a space, a list item or a heading into a plain paragraph. Paste and the record reader's fix do it with the same code.
+To turn a block the field does not allow into plain paragraphs: a table into one paragraph per row with the cells joined by a space, a bar and a space, a list item or a heading into a plain paragraph. Paste and the record reader's fix do it with the same code.
 _Avoid_: strip, unformat
 
 **Block recogniser**:
