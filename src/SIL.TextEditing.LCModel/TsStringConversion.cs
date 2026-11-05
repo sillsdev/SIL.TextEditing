@@ -53,8 +53,9 @@ namespace SIL.TextEditing.LCModel
             return bag;
         }
 
-        /// <summary>Whether liblcm refuses the integer property by number (see <see cref="LiblcmRefusals.IsPropertyRefused"/>). Kept for hosts
-        /// that ask before they build; the conversions below also refuse values (<see cref="LiblcmRefusals.ForInt"/>).</summary>
+        /// <summary>Whether liblcm refuses the integer property by number, which would make the project load as a corrupted record;
+        /// <paramref name="inStyleRules"/> says it is a paragraph's StyleRules, where liblcm also refuses ktptEditable (155). This is the one
+        /// number check, for hosts that ask before they build; the conversions below also refuse values (ADR 0016).</summary>
         public static bool IsRefusedByLiblcm(int tpt, bool inStyleRules) => LiblcmRefusals.IsPropertyRefused(tpt, inStyleRules);
 
         // A builder of what the bag holds that liblcm can load back. Refused properties and values are reported and left out; the bag is not touched.
@@ -83,6 +84,7 @@ namespace SIL.TextEditing.LCModel
             }
             return builder;
         }
+
         /// <summary>The runs of a string. An empty string yields one empty run, so its writing system survives.</summary>
         public static List<Run> ToRuns(ITsString text, IWritingSystemHandles writingSystems)
         {
@@ -194,8 +196,8 @@ namespace SIL.TextEditing.LCModel
             if (paragraph.Rtl != (hadRtl && rtl != 0))
                 bag.IntProps[PropRightToLeft] = new IntPropValue(0, paragraph.Rtl ? 1 : 0);
             // The bag may hold a direction liblcm refuses (a negative one) that agrees with Rtl. The editor shows Rtl, so store that.
-            if (bag.TryGetInt(PropRightToLeft, out int heldRtl) && bag.IntProps.TryGetValue(PropRightToLeft, out var held)
-                && LiblcmRefusals.ForInt(PropRightToLeft, held.Variation, heldRtl, true) != null)
+            if (bag.IntProps.TryGetValue(PropRightToLeft, out var held)
+                && LiblcmRefusals.ForInt(PropRightToLeft, held.Variation, held.Value, true) != null)
             {
                 int stored = paragraph.Rtl ? 1 : 0;
                 onDropped?.Invoke(new DroppedProperty(PropRightToLeft, false, paragraphIndex, null, DroppedReason.ValueReplaced,
@@ -220,7 +222,7 @@ namespace SIL.TextEditing.LCModel
 
         /// <summary>A document as paragraphs for the host to store: the key each paragraph carries (null for a new one,
         /// which the host then assigns), its string and its StyleRules. A property or value liblcm cannot load back is left out and
-        /// reported to <paramref name="onDropped"/> (<see cref="LiblcmRefusals"/>).</summary>
+        /// reported to <paramref name="onDropped"/> (ADR 0016).</summary>
         public static List<TextParagraph> ToTextParagraphs(Document document, IWritingSystemHandles writingSystems,
             Action<DroppedProperty>? onDropped = null)
         {

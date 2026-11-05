@@ -14,7 +14,7 @@ namespace SIL.TextEditing.LCModel
     /// <c>LiblcmRefusalSweepTests</c> re-runs that sweep and fails when a rule and liblcm disagree.
     /// <para>A value liblcm changes without throwing (a colour out of range, a relative line height written negative, a NUL in text) is
     /// lossy, not refused: it still loads. The writing system (ktptWs 1, ktptBaseWs 16) depends on the host's handles and is not judged here.</para></summary>
-    public static class LiblcmRefusals
+    internal static class LiblcmRefusals
     {
         // Integer properties liblcm's text-props writer writes and its reader refuses ("Unknown Prop attribute"): hyphenate, maxLines,
         // cellBorderWidth, cellSpacing, cellPadding, setRowDefaults, relLineHeight, directionDepth, and ktptMarginTop (written "MarginTop",
@@ -36,10 +36,11 @@ namespace SIL.TextEditing.LCModel
 
         const int GuidChars = 8;   // a GUID is stored as eight UTF-16 units
 
-        /// <summary>Whether liblcm refuses the integer property by number, which would make the project load as a corrupted record.
+        /// <summary>Whether liblcm refuses the integer property by number, which would make the project load as a corrupted record. Hosts ask
+        /// through <see cref="TsStringConversion.IsRefusedByLiblcm"/>, the one public number check.
         /// <paramref name="inStyleRules"/> says it is a paragraph's StyleRules, where liblcm also refuses ktptEditable (155); on a run it
         /// ignores it. A property liblcm silently drops (ktptTableRule 161, unknown numbers, tabList, tabDef) is not refused.</summary>
-        public static bool IsPropertyRefused(int tpt, bool inStyleRules) => RefusedInts.Contains(tpt) || (inStyleRules && tpt == Editable);
+        internal static bool IsPropertyRefused(int tpt, bool inStyleRules) => RefusedInts.Contains(tpt) || (inStyleRules && tpt == Editable);
 
         /// <summary>Why liblcm cannot load back this integer property with this variation and value, or null when it can.
         /// <paramref name="inStyleRules"/> is true for a paragraph's StyleRules and false for a run.</summary>
@@ -47,9 +48,9 @@ namespace SIL.TextEditing.LCModel
         {
             // The property builder takes this pair to mean "delete the property", so nothing reaches liblcm.
             if (variation == -1 && value == -1) return null;
-            if (IsPropertyRefused(tpt, inStyleRules)) return new Refusal(DroppedReason.PropertyNotLoadable, null);
+            if (IsPropertyRefused(tpt, inStyleRules)) return Refusal.Property;
             string? why = ValueProblem(tpt, variation, value, inStyleRules);
-            return why == null ? null : new Refusal(DroppedReason.ValueNotLoadable, why);
+            return why == null ? null : Refusal.Value(why);
         }
 
         static string? ValueProblem(int tpt, int variation, int value, bool inStyleRules)
@@ -85,7 +86,7 @@ namespace SIL.TextEditing.LCModel
         public static Refusal? ForString(int tpt, string value, bool inStyleRules)
         {
             string? why = StringProblem(tpt, value ?? string.Empty, inStyleRules);
-            return why == null ? null : new Refusal(DroppedReason.ValueNotLoadable, why);
+            return why == null ? null : Refusal.Value(why);
         }
 
         static string? StringProblem(int tpt, string value, bool inStyleRules)
@@ -172,18 +173,19 @@ namespace SIL.TextEditing.LCModel
         }
     }
 
-    /// <summary>A reason liblcm cannot load a property back.</summary>
-    public sealed class Refusal
+    /// <summary>A reason liblcm cannot load a property back: the whole property (by number) or this value of it. It cannot name
+    /// <see cref="DroppedReason.ValueReplaced"/>, which is the adapter's choice, not liblcm's.</summary>
+    internal sealed class Refusal
     {
-        public Refusal(DroppedReason reason, string? detail)
-        {
-            Reason = reason;
-            Detail = detail;
-        }
+        Refusal(string? detail) { Detail = detail; }
 
-        public DroppedReason Reason { get; }
+        public static readonly Refusal Property = new Refusal(null);
+
+        public static Refusal Value(string detail) => new Refusal(detail);
 
         /// <summary>What is wrong with the value, in words; null when the whole property is refused.</summary>
         public string? Detail { get; }
+
+        public DroppedReason Reason => Detail == null ? DroppedReason.PropertyNotLoadable : DroppedReason.ValueNotLoadable;
     }
 }

@@ -368,6 +368,9 @@ namespace SIL.TextEditing.LCModel.Tests
             var d = Assert.Single(dropped);
             Assert.Equal((128, DroppedReason.ValueReplaced), (d.Number, d.Reason));
             Assert.Contains("replaced", d.Message);
+            Assert.Equal(DroppedProperty.ReplacedDiagnosticId, d.Id);
+            Assert.NotEqual(DroppedProperty.DiagnosticId, d.Id);
+            Assert.Equal("textediting.lcm.replaced-property", d.Id);
             Assert.True(LiblcmOracle.Loads(true, rules));
             var back = TsStringUtils.GetTextProps(XElement.Parse(TsStringUtils.GetXmlRep(rules, null!)), null!);
             Assert.Equal(1, back.GetIntPropValues(Rtl, out _));
@@ -438,7 +441,7 @@ namespace SIL.TextEditing.LCModel.Tests
                         run.Props.IntProps[tpt] = new IntPropValue(variation, value);
                         loads = LiblcmOracle.LoadsString(TsStringConversion.ToTsString(new List<Run> { run }, H, "en", dropped.Add));
                     }
-                    var expected = LiblcmRefusals.IsPropertyRefused(tpt, styleRules) ? DroppedReason.PropertyNotLoadable
+                    var expected = TsStringConversion.IsRefusedByLiblcm(tpt, styleRules) ? DroppedReason.PropertyNotLoadable
                         : styleRules && tpt == Rtl ? DroppedReason.ValueReplaced : DroppedReason.ValueNotLoadable;
                     if (!loads || dropped.Count != 1 || dropped[0].Number != tpt || dropped[0].Reason != expected)
                         failures.Add($"{(styleRules ? "StyleRules" : "run")} {tpt} var {variation} value {value}");

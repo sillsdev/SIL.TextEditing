@@ -26,7 +26,7 @@ namespace SIL.TextEditing.LCModel.Tests
                     if (liblcmThrows != refused)
                         mismatches.Add(Describe(styleRules, tpt, $"var {variation} value {value}: liblcm {(liblcmThrows ? "throws" : "loads")}, rules {(refused ? "refuse" : "accept")}"));
                 }
-            Assert.True(mismatches.Count == 0, mismatches.Count + " mismatches, first: " + string.Join(" | ", mismatches.Take(25)));
+            Assert.True(mismatches.Count == 0, mismatches.Count + " mismatches: " + string.Join(" | ", mismatches));
         }
 
         [Fact]
@@ -41,7 +41,7 @@ namespace SIL.TextEditing.LCModel.Tests
                     if (liblcmThrows != refused)
                         mismatches.Add(Describe(styleRules, tpt, $"'{Show(value)}': liblcm {(liblcmThrows ? "throws" : "loads")}, rules {(refused ? "refuse" : "accept")}"));
                 }
-            Assert.True(mismatches.Count == 0, mismatches.Count + " mismatches, first: " + string.Join(" | ", mismatches.Take(25)));
+            Assert.True(mismatches.Count == 0, mismatches.Count + " mismatches: " + string.Join(" | ", mismatches));
         }
 
         static string Show(string s) => string.Concat(s.Select(c => c < 32 || c > 126 ? "\\u" + ((int)c).ToString("X4") : c.ToString()));
@@ -56,7 +56,7 @@ namespace SIL.TextEditing.LCModel.Tests
                     .Where(tpt => IntCases().Where(c => c.tpt == tpt && !(c.variation == -1 && c.value == -1)).All(c => SweptInt(styleRules, c.tpt, c.variation, c.value) == Outcome.Throws))
                     .ToList();
             foreach (bool styleRules in new[] { true, false })
-                Assert.Equal(IntNumbers.Where(n => LiblcmRefusals.IsPropertyRefused(n, styleRules)).ToList(), byNumber[styleRules]);
+                Assert.Equal(IntNumbers.Where(n => TsStringConversion.IsRefusedByLiblcm(n, styleRules)).ToList(), byNumber[styleRules]);
         }
 
         // What liblcm stores and loads back, with a value it accepts. Everything else in 2..300 is written without the property or read
