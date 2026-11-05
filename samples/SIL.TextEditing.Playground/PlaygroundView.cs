@@ -52,6 +52,13 @@ namespace SIL.TextEditing.Playground
             public const string SpellAdd = "SpellAddButton";
             public const string SpellIgnore = "SpellIgnoreButton";
             public const string HyphenLetter = "HyphenLetterBox";
+            public const string EnvSlash = "EnvSlashButton";
+            public const string EnvBar = "EnvBarButton";
+            public const string EnvClass = "EnvClassBox";
+            public const string EnvOptional = "EnvOptionalButton";
+            public const string EnvHash = "EnvHashButton";
+            public const string EnvDropClass = "EnvDropClassButton";
+            public const string EnvRestoreClass = "EnvRestoreClassButton";
             public const string SpellBackground = "SpellBackgroundBox";
             public const string DefaultAnalysis = "DefaultAnalysisButton";
             public const string DefaultVernacular = "DefaultVernacularButton";
@@ -103,6 +110,9 @@ namespace SIL.TextEditing.Playground
         CheckBox _leaveHandled = null!;
         CheckBox _spellCheck = null!;
         SampleSpelling? _spelling;
+        SampleEnvironmentService? _env;
+        Button _envSlash = null!, _envBar = null!, _envOptional = null!, _envHash = null!;
+        ComboBox _envClass = null!;
         CheckBox _hyphenLetter = null!;
         CheckBox _spellBackground = null!;
         bool _spellOffUiThread;
@@ -166,6 +176,9 @@ namespace SIL.TextEditing.Playground
 
         /// <summary>The playground's dictionaries while spell checking is on, else null.</summary>
         public SampleSpelling? Spelling => _spelling;
+
+        /// <summary>The sample environment language service while the Environment scenario is loaded, else null.</summary>
+        public SampleEnvironmentService? EnvironmentService => _env;
         public IReadOnlyList<RichTextField> Fields => _sessions.Select(s => s.Field).ToList();
         /// <summary>The host-owned undo stack of the active field.</summary>
         public SimpleUndoStack Undo => _active.Undo;
@@ -263,6 +276,30 @@ namespace SIL.TextEditing.Playground
             toolbar.Children.Add(Tool(Names.SpellWholeLast, "Whole word, last writing system", "For a word that mixes writing systems: make the whole word the last writing system in it", () => WholeWordSpelling(true)));
             toolbar.Children.Add(Tool(Names.SpellAdd, "Add to dictionary", "Add the marked word at the caret to its dictionary", () => AddSpelling(false)));
             toolbar.Children.Add(Tool(Names.SpellIgnore, "Ignore", "Ignore the marked word at the caret", () => AddSpelling(true)));
+
+            toolbar.Children.Add(Spacer());
+            toolbar.Children.Add(Label("Insert:"));
+            _envSlash = Tool(Names.EnvSlash, "/", "Insert the environment slash: allowed while there is none (Environment scenario)", () => InsertEnvironment(SampleEnvironmentService.InsertKinds.Slash, "/"));
+            _envBar = Tool(Names.EnvBar, "_", "Insert the underscore, where the allomorph stands: after the slash, once", () => InsertEnvironment(SampleEnvironmentService.InsertKinds.Bar, "_"));
+            _envOptional = Tool(Names.EnvOptional, "( )", "Insert an optional item, with the caret between the parentheses", () => InsertEnvironment(SampleEnvironmentService.InsertKinds.OptionalItem, "()"));
+            _envHash = Tool(Names.EnvHash, "#", "Insert a word boundary: at the very start or end of the environment", () => InsertEnvironment(SampleEnvironmentService.InsertKinds.WordBoundary, "#"));
+            _envClass = new ComboBox { Name = Names.EnvClass, MinWidth = 110, Margin = new Thickness(2), IsTabStop = false, PlaceholderText = "[class]" };
+            ToolTip.SetTip(_envClass, "Insert a natural class: the abbreviation in square brackets, where the recognizer accepts an item");
+            _envClass.SelectionChanged += (s, e) =>
+            {
+                if (_syncing || !(_envClass.SelectedItem is string abbreviation)) return;
+                InsertEnvironment(SampleEnvironmentService.InsertKinds.NaturalClass, "[" + abbreviation + "]");
+                _syncing = true;
+                _envClass.SelectedIndex = -1;
+                _syncing = false;
+            };
+            toolbar.Children.Add(_envSlash);
+            toolbar.Children.Add(_envBar);
+            toolbar.Children.Add(_envClass);
+            toolbar.Children.Add(_envOptional);
+            toolbar.Children.Add(_envHash);
+            toolbar.Children.Add(Tool(Names.EnvDropClass, "Drop class V", "The host's phonology loses the natural class V and tells the fields (ITextLanguageService.Changed): every environment that names it is asked again", () => EnvironmentClass(false)));
+            toolbar.Children.Add(Tool(Names.EnvRestoreClass, "Restore class V", "The host's phonology gets the natural class V back", () => EnvironmentClass(true)));
 
             var wsBar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
             wsBar.Children.Add(_wsLabel);
@@ -474,6 +511,24 @@ namespace SIL.TextEditing.Playground
                 foreach (var s in info.SpellingSuggestions) Add(s, true);
                 Add("Find \"" + info.Word + "\"", true, () => { _findBox.Text = info.Word; });
             }
+            foreach (var d in info.Diagnostics)
+            {
+                Add(d.Severity + ": " + d.Message, false);
+                if (d.Fix != null) { var diagnostic = d; Add(d.Fix.Title, true, () => Log("fix \"" + diagnostic.Fix!.Title + "\": " + (field.ApplyDiagnosticFix(diagnostic) ? "done" : "refused"))); }
+            }
+            if (_env != null)
+            {
+                foreach (var (caption, kind, text) in new[]
+                {
+                    ("Insert slash", SampleEnvironmentService.InsertKinds.Slash, "/"), ("Insert underscore", SampleEnvironmentService.InsertKinds.Bar, "_"),
+                    ("Insert optional item", SampleEnvironmentService.InsertKinds.OptionalItem, "()"), ("Insert word boundary", SampleEnvironmentService.InsertKinds.WordBoundary, "#"),
+                })
+                {
+                    var k = kind;
+                    var t = text;
+                    Add(caption, field.CanInsert(k), () => InsertEnvironment(k, t));
+                }
+            }
             if (info.EmbeddedObject != null)
                 Add((info.EmbeddedObject.IsLink ? "Open link" : "Object") + ": " + info.EmbeddedObject.Data.Substring(Math.Min(1, info.EmbeddedObject.Data.Length)), info.EmbeddedObject.IsLink);
             Add("Cut", field.Editor.HasSelection && field.Editor.CanEdit, () => ClipboardIdle = CopyAsync(true));
@@ -553,11 +608,12 @@ namespace SIL.TextEditing.Playground
             _active = _sessions[0];
             _syncing = true;
             _readOnlyCheck.IsChecked = false;
-            _singleParagraphCheck.IsChecked = false;
+            _singleParagraphCheck.IsChecked = scenario.Name == Scenarios.Environment;
             _spellCheck.IsChecked = scenario.Name == Scenarios.Spelling;
             _hyphenLetter.IsChecked = false;
             _syncing = false;
             SetSpelling(scenario.Name == Scenarios.Spelling);
+            SetEnvironment(scenario.Name == Scenarios.Environment);
             _selectionState = string.Empty;
             Log("scenario: " + scenario.Name + (scenario.Many ? " (" + documents.Count + " fields)" : string.Empty));
             UpdateFindHighlight();
@@ -621,8 +677,17 @@ namespace SIL.TextEditing.Playground
                 if (_active == session && d.Label != "type") Log("edit: " + d.Label + " (paragraphs " + d.Start + ".." + (d.Start + Math.Max(d.Before.Count, d.After.Count) - 1) + ")");
             };
             field.Editor.UndoGroupEnded += id => { if (_active == session) Log("undo step " + id + " ended: the host closes its undo task"); };
-            field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) RefreshInspector(); };
-            field.Editor.CaretMoved += () => { if (_active == session) { UpdateWsLabel(); RefreshInspector(); } };
+            field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) { RefreshInspector(); UpdateEnvironmentButtons(); } };
+            field.Editor.CaretMoved += () => { if (_active == session) { UpdateWsLabel(); RefreshInspector(); UpdateEnvironmentButtons(); } };
+            field.LanguageAnalysisChanged += (o, e) =>
+            {
+                if (_active == session) Log("language service: " + field.LanguageTokens.Count + " tokens, " + field.LanguageDiagnostics.Count + " diagnostics" + string.Concat(field.LanguageDiagnostics.Select(d => "; " + d.Severity + " " + d.Code + " at " + d.Range.Start.Character + "-" + d.Range.End.Character)));
+            };
+            field.CompletionChanged += (o, e) =>
+            {
+                if (_active == session) Log("completion: " + (field.IsCompletionOpen ? field.CompletionItems.Count + " items, highlighted " + field.CompletionItems[field.CompletionIndex].Label : "closed"));
+            };
+            field.LanguageServiceFailed += error => Log("language service failed: " + error.Message);
             field.GotFocus += (s, e) => Activate(session);
 
             if (many)
@@ -667,6 +732,61 @@ namespace SIL.TextEditing.Playground
             _spelling = on ? new SampleSpelling(Log) { OffUiThread = _spellOffUiThread, Delay = _spellOffUiThread ? 15 : 0 } : null;
             foreach (var session in _sessions) session.Field.SpellChecking = _spelling;
             Log("spell checking: " + (on ? "on (English and French word lists)" : "off"));
+        }
+
+        // ------------------------------------------------------------ the environment box (a language service, ADR 0030)
+
+        void SetEnvironment(bool on)
+        {
+            _env = on ? new SampleEnvironmentService() : null;
+            _envClass.ItemsSource = _env?.Classes.Select(c => c.Abbreviation).ToList();
+            foreach (var session in _sessions)
+            {
+                session.Field.SingleLine = on;
+                session.Field.TokenStyles = on ? SampleTokenStyles.Environment() : null;
+                session.Field.LanguageService = _env;
+            }
+            Log("language service: " + (on ? "on (the environment notation, over a made-up phonology); the box is one line" : "off"));
+            UpdateEnvironmentButtons();
+        }
+
+        /// <summary>Enables each Insert button as the service says it may be used at the selection, as FieldWorks' Insert menu is enabled.</summary>
+        void UpdateEnvironmentButtons()
+        {
+            var field = _active?.Field;
+            bool on = _env != null && field != null;
+            _envSlash.IsEnabled = on && field!.CanInsert(SampleEnvironmentService.InsertKinds.Slash);
+            _envBar.IsEnabled = on && field!.CanInsert(SampleEnvironmentService.InsertKinds.Bar);
+            _envOptional.IsEnabled = on && field!.CanInsert(SampleEnvironmentService.InsertKinds.OptionalItem);
+            _envHash.IsEnabled = on && field!.CanInsert(SampleEnvironmentService.InsertKinds.WordBoundary);
+            _envClass.IsEnabled = on && field!.CanInsert(SampleEnvironmentService.InsertKinds.NaturalClass);
+        }
+
+        /// <summary>Types the text of an insert command at the selection as one undo step, if the service allows it there; an optional item leaves the caret between its parentheses.</summary>
+        public bool InsertEnvironment(string kind, string text)
+        {
+            var field = _active.Field;
+            if (!field.CanInsert(kind))
+            {
+                Log("insert " + kind + ": not allowed here");
+                return false;
+            }
+            field.Editor.CloseUndoGroup();
+            field.Editor.TypeText(text);
+            field.Editor.CloseUndoGroup();
+            if (kind == SampleEnvironmentService.InsertKinds.OptionalItem) field.Editor.SetCaret(new TextPosition(field.Editor.Caret.Paragraph, field.Editor.Caret.Offset - 1));
+            Log("insert " + kind + ": \"" + text + "\"");
+            field.Focus();
+            return true;
+        }
+
+        void EnvironmentClass(bool restore)
+        {
+            if (_env == null) { Log("natural classes: load the Environment scenario first"); return; }
+            if (restore) { if (!_env.Classes.Any(c => c.Abbreviation == "V")) _env.AddClass("V", "Vowels"); }
+            else _env.RemoveClass("V");
+            _envClass.ItemsSource = _env.Classes.Select(c => c.Abbreviation).ToList();
+            Log("natural classes: " + string.Join(" ", _env.Classes.Select(c => "[" + c.Abbreviation + "]")));
         }
 
         SpellingSuggestions? SpellingAtCaret(string action)
