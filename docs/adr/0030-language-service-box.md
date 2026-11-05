@@ -104,8 +104,8 @@ written from that behaviour and not from its code (ADR 0010):
   replacing a closing bracket that is already there) and the phonemes that start with a word being typed. The natural classes and
   segments are a made-up list.
 
-**Clean room.** The sample's insert rules are written from the observed behaviour as tables (the word boundary rule is a table in
-`SampleEnvironment.cs`: existing boundaries against where the new one may go), with `EnvironmentServiceTests` as the oracle. Those tests use
+**Clean room.** The sample's insert rules are written from the observed behaviour as tables (the word boundary rule is written out in
+`SampleEnvironment.cs` from the tests alone: the text that results must keep each boundary at an edge, at most one per edge), with `EnvironmentServiceTests` as the oracle. Those tests use
 the notation's own examples, several of them in the order and with the phoneme and class names of liblcm's `PhonEnvRecognizerTests`: data
 that is behaviour, not code. Only empty text has nothing to describe: whitespace alone is a syntax problem, as in FieldWorks.
 

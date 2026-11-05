@@ -561,44 +561,34 @@ namespace SIL.TextEditing.Playground
             return true;
         }
 
-        // The word boundary rule, as a table of what FieldWorks' Insert menu is seen to do (the tests are the oracle):
+        // The word boundary rule, written from EnvironmentServiceTests ("A_word_boundary_goes_in_at_the_edge_of_a_context_once") and the notation
+        // in ADR 0030, not from any other implementation:
         //
-        //   existing boundaries | where the one there is        | the new one may go
-        //   --------------------+-------------------------------+----------------------------------------------
-        //   none                |                               | at either edge of the environment
-        //   two                 |                               | nowhere
-        //   one                 | opens the environment         | at the closing edge
-        //   one                 | closes the environment        | at the opening edge
-        //   one                 | in the middle (no underscore) | only over that boundary, replacing it
+        //   A # may be typed only after the slash. Imagine the selection replaced by a # (a selection is typed over). In the text that results,
+        //   every # after the slash must stand at an edge of the environment: either it opens it (only spaces between the slash and it) or it
+        //   closes it (only spaces after it). With an underscore, an opening # must lie before it and a closing # after it. There may be one # at
+        //   the opening edge and one at the closing edge, so at most two, and when there are two the first opens and the second closes.
+        //   The insert is allowed exactly when the text that results obeys this.
         //
-        // "Opens" and "closes" come from the underscore when there is one (before it, after it) and from the text around it when there is not.
-
-        enum BoundaryRole { Opens, Closes, Middle }
-
-        static BoundaryRole RoleOfBoundary(string text, int slash, int boundary)
-        {
-            int bar = text.IndexOf('_');
-            if (bar >= 0) return boundary < bar ? BoundaryRole.Opens : BoundaryRole.Closes;
-            if (OnlySpace(text, slash + 1, boundary)) return BoundaryRole.Opens;
-            if (OnlySpace(text, boundary + 1, text.Length)) return BoundaryRole.Closes;
-            return BoundaryRole.Middle;
-        }
+        // The tests decide: / a _ b at both ends (yes), / # _ b at the start (no, a second one) and at the end (yes), / a _ # at the start (yes) and
+        // the end (no), / # _ # anywhere (no), /a_b in the middle (no), /_# between the underscore and the boundary (no), before the slash (no).
+        // The tests are silent about a selection that covers an existing boundary and about a text with no underscore; the rule above, being about
+        // the text that results, lets a # replace a boundary it covers (a selection over "# " at the start of "/ # _ b" may become one #), and
+        // treats a missing underscore as no constraint on which side a # is on.
 
         static bool CanInsertBoundary(string text, int a, int b)
         {
             int slash = text.IndexOf('/');
-            if (slash < 0 || Math.Min(a, b) <= slash) return false;
-            bool opensHere = OnlySpace(text, slash + 1, a), closesHere = OnlySpace(text, b, text.Length);
-            if (!opensHere && !closesHere) return false;
-            var boundaries = Enumerable.Range(0, text.Length).Where(i => text[i] == '#').ToList();
-            if (boundaries.Count == 0) return true;
-            if (boundaries.Count > 1) return false;
-            switch (RoleOfBoundary(text, slash, boundaries[0]))
-            {
-                case BoundaryRole.Opens: return closesHere;
-                case BoundaryRole.Closes: return opensHere;
-                default: return a <= boundaries[0] && b > boundaries[0];
-            }
+            if (slash < 0 || a <= slash) return false;
+            string result = text.Substring(0, a) + "#" + text.Substring(b);
+            int bar = result.IndexOf('_', slash + 1);
+            var hashes = new List<int>();
+            for (int i = slash + 1; i < result.Length; i++) if (result[i] == '#') hashes.Add(i);
+            if (hashes.Count > 2) return false;
+            bool Opens(int h) => OnlySpace(result, slash + 1, h) && (bar < 0 || h < bar);
+            bool Closes(int h) => OnlySpace(result, h + 1, result.Length) && (bar < 0 || h > bar);
+            if (hashes.Count == 1) return Opens(hashes[0]) || Closes(hashes[0]);
+            return Opens(hashes[0]) && Closes(hashes[1]);
         }
 
         // ------------------------------------------------------------------ completion

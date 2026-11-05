@@ -247,6 +247,15 @@ namespace SIL.TextEditing.Playground.Tests
         [InlineData("/ a _ #", 1, 1, true)]
         [InlineData("/ a _ #", 7, 7, false)]
         [InlineData("/ # _ #", 7, 7, false)]     // two already
+        [InlineData("/ # _ b", 1, 4, true)]      // a selection over the boundary there is gives one boundary, still at the edge
+        [InlineData("/ # _ b", 2, 3, true)]      // a selection that is the boundary itself
+        [InlineData("/ a # b", 3, 3, false)]     // no underscore: in the middle of the text
+        [InlineData("/ a", 1, 1, true)]          // no underscore: at either end
+        [InlineData("/ a", 3, 3, true)]
+        [InlineData("/ a _ b", 0, 7, false)]     // a selection that starts before the slash
+        [InlineData("/ a _ b", 7, 1, true)]      // a selection made backwards over the whole of the contexts leaves one boundary
+        [InlineData("/ a _ b", 4, 4, false)]     // just before the underscore, the end of the left context
+        [InlineData("/ a _ b", 5, 5, false)]     // just after it, the start of the right context
         public void A_word_boundary_goes_in_at_the_edge_of_a_context_once(string text, int anchor, int end, bool allowed) => Assert.Equal(allowed, Can("word-boundary", text, anchor, end));
 
         [Fact]
