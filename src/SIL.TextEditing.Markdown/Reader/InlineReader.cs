@@ -97,7 +97,8 @@ namespace SIL.TextEditing.Markdown.Reader
                 switch (child)
                 {
                     case LiteralInline literal:
-                        Add(literal.Content.ToString(), fmt);
+                        // Pandoc turns a raw tab in text into a space; a tab that is meant is a character reference.
+                        Add(literal.Content.ToString().Replace('\t', ' '), fmt);
                         break;
                     case HtmlEntityInline entity:
                         Add(entity.Transcoded.ToString(), fmt);

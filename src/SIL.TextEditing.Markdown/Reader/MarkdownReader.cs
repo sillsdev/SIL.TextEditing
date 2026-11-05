@@ -264,8 +264,16 @@ namespace SIL.TextEditing.Markdown.Reader
             {
                 if (block is ParagraphBlock paragraph)
                 {
-                    if (!first) runs.Add(new Run { Text = Chars.LineSeparatorText, Ws = _context.DefaultAnalysis });
+                    if (!first) {
+                        _context.Report(MarkdownDiagnosticIds.FieldBlockSyntax, MarkdownSeverity.Error,
+                            "A multi-string field such as the abstract is one paragraph. A blank line starts a second one; use a hard line break (a backslash at the end of the line) instead.",
+                            paragraph.Span.Start, paragraph.Span.End + 1);
+                        runs.Add(new Run { Text = Chars.LineSeparatorText, Ws = _context.DefaultAnalysis });
+                    }
                     first = false;
+                    if (_source.Substring(paragraph.Span.Start, Math.Min(3, _source.Length - paragraph.Span.Start)) == ":::")
+                        _context.Report(MarkdownDiagnosticIds.FieldBlockSyntax, MarkdownSeverity.Error,
+                            "A multi-string field such as the abstract can't hold a div. Escape the first colon, as in \\: .", paragraph.Span.Start, paragraph.Span.End + 1);
                     runs.AddRange(InlineReader.Read(paragraph.Inline, _context));
                     continue;
                 }

@@ -200,6 +200,28 @@
     "pandoc": false
   },
   {
+    "name": "a raw tab in text is a space, as in Pandoc, and a tab that is meant is a character reference",
+    "markdown": "a\tb&#9;c\n",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "a b\tc", "ws": "en" } ] } ],
+    "canonical": "a b&#x9;c\n"
+  },
+  {
+    "name": "a multi-string field is one paragraph: a blank line is an error that asks for a hard line break",
+    "mode": "inline",
+    "project": "standard",
+    "markdown": "one\n\ntwo",
+    "findings": [ { "id": "fwmd.field.block-syntax", "line": 3, "column": 1, "endLine": 3, "endColumn": 4 } ],
+    "pandoc": false
+  },
+  {
+    "name": "a multi-string field can't hold a div",
+    "mode": "inline",
+    "project": "standard",
+    "markdown": "::: Example\nx\n:::",
+    "findings": [ { "id": "fwmd.field.block-syntax", "line": 1, "column": 1, "endLine": 3, "endColumn": 4 } ],
+    "pandoc": false
+  },
+  {
     "name": "math between dollar signs is a finding, because Pandoc reads it and the notation has none",
     "markdown": "cost $x$ here\n",
     "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 1, "column": 6, "endLine": 1, "endColumn": 9, "fix": "\\$x\\$" } ],
