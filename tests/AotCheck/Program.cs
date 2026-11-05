@@ -6,6 +6,14 @@ using SIL.TextEditing.Avalonia;
 var clusters = GraphemeClusters.Starts("áb");
 Console.WriteLine(clusters.Count == 2 ? "ok" : "unexpected");
 
+// Runs the Markdown converter every way (MarkdownCheck.cs), so Markdig's parser, tables and our extension are linked and executed under AOT.
+{
+    var failures = MarkdownCheck.Run();
+    foreach (var failure in failures) Console.WriteLine("md FAILED: " + failure);
+    Console.WriteLine(failures.Count == 0 ? "md ok" : "md unexpected");
+    if (failures.Count > 0) return 1;
+}
+
 // Runs the libpalaso path under AOT: SLDR offline init (reads langtags JSON with Newtonsoft) and a definition.
 try
 {
