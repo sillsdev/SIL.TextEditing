@@ -3,6 +3,7 @@ using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Threading;
+using SIL.TextEditing.Markdown.Writer;
 using Xunit;
 
 namespace SIL.TextEditing.Markdown.Tests
@@ -255,31 +256,45 @@ namespace SIL.TextEditing.Markdown.Tests
 }
 namespace SIL.TextEditing.Markdown.Tests
 {
-    /// <summary>The writer's own paths are linear: only Markdig's slow paths (a quadratic <c>[a](</c> run, deep lists, a table read) are left, and the README says so.</summary>
+    /// <summary>The writer's own paths are linear: only Markdig's slow paths (a quadratic <c>[a](</c> run, deep lists, a table read) are left, and the README says so.
+    /// Counted, not timed (issue 141): the work is read from <see cref="WriterWork"/>, and four times the input must be about four times the work, not sixteen.</summary>
     public class WriterGrowthTests
     {
-        static long Millis(System.Action work)
+        /// <summary>The work the writer did on one document: the units its inline generator looked at, and the characters it read back to check them.</summary>
+        static (long Steps, long Characters) WorkOf(Paragraph[] paragraphs)
         {
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            work();
-            return watch.ElapsedMilliseconds;
+            WriterWork.Steps = 0;
+            WriterWork.Characters = 0;
+            MarkdownConverter.ToMarkdown(B.Doc(paragraphs), Hosts.Project());
+            return (WriterWork.Steps, WriterWork.Characters);
         }
 
         [Fact]
         public void RepeatedAmpersandsAreWrittenInLinearTime()
         {
-            var paragraph = B.Plain(string.Concat(System.Linq.Enumerable.Repeat("&a", 32_000)));
-            long ms = Millis(() => MarkdownConverter.ToMarkdown(B.Doc(paragraph), Hosts.Project()));
-            Assert.True(ms < 2500, "32,000 ampersands took " + ms + " ms");
+            var small = WorkOf(new[] { B.Plain(string.Concat(System.Linq.Enumerable.Repeat("&a", 8_000))) });
+            var large = WorkOf(new[] { B.Plain(string.Concat(System.Linq.Enumerable.Repeat("&a", 32_000))) });
+            Assert.True(small.Steps > 0);
+            Assert.True(large.Steps < 8 * small.Steps, "steps: " + small.Steps + " for 8,000 ampersands, " + large.Steps + " for 32,000");   // four times the input: about four times the work, not sixteen
         }
 
         [Fact]
         public void FourThousandTableRowsAreWrittenInLinearTime()
         {
+            // Above about three thousand rows Markdig cannot read the table back, so the writer writes it as divs; both sizes here take that path, and the
+            // test is about the writer's own work on it, so the check is twice the rows and twice the work.
+            var small = WorkOf(TableOfRows(4_000));
+            var large = WorkOf(TableOfRows(8_000));
+            Assert.True(small.Characters > 0);
+            Assert.True(large.Steps < 3 * small.Steps, "steps: " + small.Steps + " for 4,000 rows, " + large.Steps + " for 8,000");   // twice the rows: about twice the work, not four times
+            Assert.True(large.Characters < 3 * small.Characters, "characters read back: " + small.Characters + " for 4,000 rows, " + large.Characters + " for 8,000");
+        }
+
+        static Paragraph[] TableOfRows(int rows)
+        {
             var paragraphs = new System.Collections.Generic.List<Paragraph> { B.P("GDR Table Header", B.En("a\tb")) };
-            for (int i = 0; i < 3999; i++) paragraphs.Add(B.P("GDR Table Row", B.En("c" + i + "\td")));
-            long ms = Millis(() => MarkdownConverter.ToMarkdown(B.Doc(paragraphs.ToArray()), Hosts.Project()));
-            Assert.True(ms < 10000, "4,000 table rows took " + ms + " ms");
+            for (int i = 1; i < rows; i++) paragraphs.Add(B.P("GDR Table Row", B.En("c" + i + "\td")));
+            return paragraphs.ToArray();
         }
     }
 }
