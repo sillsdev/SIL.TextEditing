@@ -7,14 +7,14 @@
   numbers, run shapes, paragraph-key rules and clipboard formats are facts; the code is ours.
   Persisted compatibility mappings (bullet scheme to glyph, numbering limits) count as facts too, like property numbers; the
   code around them is still written from scratch.
-- **Layering.** `src/SIL.TextEditing` is UI-free and has no Avalonia or liblcm reference. `src/SIL.TextEditing.Avalonia`
+- **Layering.** `src/SIL.TextEditing` is UI-free and has no Avalonia or liblcm reference. The shared-layer split by dependency is in ADR 0031. `src/SIL.TextEditing.Avalonia`
   holds `RichTextField` and everything that touches Avalonia. Samples are samples and do not ship; `samples/SIL.TextEditing.Playground` is the one UI both hosts and `tests/SIL.TextEditing.Playground.Tests` use, so a new feature gets a playground control and a test that drives it.
 - **One source tree, two Avalonia versions.** netstandard2.0 builds against Avalonia 11.3.17 (FieldWorks, net48);
   net10.0 builds against Avalonia 12 (Motif). Versions live in `Directory.Packages.props` only. A per-target
   difference goes behind `#if NET10_0_OR_GREATER`, is small, and is listed in the README.
-- **Packages.** Only SIL.WritingSystems (libpalaso, ADR 0002; referenced by the Avalonia and LCModel projects), Avalonia (and its Headless, Skia, Desktop, Themes.Fluent and Win32.Interoperability packages; Themes.Fluent and Win32.Interoperability are samples-only; Desktop is for samples and test projects that need a real window, never for a shipped library), SIL.LCModel.Core (FieldWorks' pin; referenced by the `SIL.TextEditing.LCModel` project only, ADR 0016), Markdig.Signed 0.37.0 (referenced by the `SIL.TextEditing.Markdown` project only, ADRs 0011 and 0028) and the
+- **Packages.** Only SIL.WritingSystems (libpalaso, ADR 0002; referenced by the Avalonia and LCModel projects), Avalonia (and its Headless, Skia, Desktop, Themes.Fluent and Win32.Interoperability packages; Themes.Fluent and Win32.Interoperability are samples-only; Desktop is for samples and test projects that need a real window, never for a shipped library), SIL.LCModel.Core (FieldWorks' pin; referenced by `SIL.TextEditing.LCModel`, ADR 0016) and SIL.LCModel (FieldWorks' pin, hosts may float up; referenced by the planned `SIL.TextEditing.Project` only, ADR 0031), Markdig.Signed 0.37.0 (referenced by the `SIL.TextEditing.Markdown` project only, ADRs 0011 and 0028) and the
   xunit test stack. Ask before adding anything else.
-- **Warnings are errors, nullable is on.** `IsTrimmable` and `IsAotCompatible` stay on for net10.0 libraries, except `SIL.TextEditing.LCModel` (LCModel is not trim-safe; it is not for Motif's GUI).
+- **Warnings are errors, nullable is on.** `IsTrimmable` and `IsAotCompatible` stay on for net10.0 libraries, except `SIL.TextEditing.LCModel` and the planned `SIL.TextEditing.Project` (liblcm is not trim-safe; neither host publishes trimmed or native AOT, ADR 0031).
 - **No "Fw" prefixes** in names. Namespaces are `SIL.TextEditing` and `SIL.TextEditing.Avalonia`.
 - **Run model.** `Run` is shaped like one ITsString run (Ws and ObjData are fields, mapped by the adapter): text, writing-system id, an opaque `PropertyBag` keyed by FieldWorks
   property numbers, and `ObjData`. The editor never interprets a bag; it carries it through every edit.

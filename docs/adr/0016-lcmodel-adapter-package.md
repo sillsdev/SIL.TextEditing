@@ -11,3 +11,5 @@ a project.
 Owner decision, 2026-11-03.
 
 Refined 2026-11-04: the clipboard forms, and the order paste reads them in, are in ADR 0029.
+
+Amended by ADR 0031 (2026-11-05): `SIL.TextEditing.Project` may also reference `SIL.LCModel`, at FieldWorks' pin (hosts may float up). It is not trimmable or AOT-marked, as this adapter is not; the library still has no Avalonia or liblcm reference in the core projects.
