@@ -149,7 +149,7 @@ namespace SIL.TextEditing.LCModel.Tests
                 "\u0001", "a\u000Bb", "\u0008", "\u000C", "\u000E", "\u001F", "\uD800", "\uDC00", "\uFFFE", "\uFFFF", "ok\uD83D\uDE00", "\u0085", "\u2028",
             }) yield return s;
             // Object data: a type character, then a payload (a GUID is eight characters), for every type and some beyond.
-            for (int type = 0; type <= 10; type++)
+            for (int type = 0; type <= 255; type++)
                 foreach (var payload in new[] { "", "abcdefg", "abcdefgh", "abcdefghijklmnop", "C:\\a\\b", "a\u0001b", "<x/>" })
                     yield return (char)type + payload;
             // Packed values: BulNumFontInfo (147) is records of a property character and two characters of value, or a font family;
