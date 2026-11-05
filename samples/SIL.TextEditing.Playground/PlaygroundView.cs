@@ -243,9 +243,6 @@ namespace SIL.TextEditing.Playground
             _allowTables = BlockCheck(Names.AllowTables, "Tables", BlockFeatures.Tables);
             _allowLists = BlockCheck(Names.AllowLists, "Lists", BlockFeatures.Lists);
             _allowHeadings = BlockCheck(Names.AllowHeadings, "Headings", BlockFeatures.Headings);
-            toolbar.Children.Add(_allowTables);
-            toolbar.Children.Add(_allowLists);
-            toolbar.Children.Add(_allowHeadings);
             _leaveHandled = new CheckBox { Name = Names.HostHandlesLeave, Content = "Host takes leave requests", Focusable = false, Margin = new Thickness(2) };
             ToolTip.SetTip(_leaveHandled, "Tab, Shift+Tab, Ctrl+Tab and arrows at the field's edge raise LeaveRequested; when ticked the host marks it handled, so Tab does not move focus");
             toolbar.Children.Add(_leaveHandled);
@@ -407,6 +404,9 @@ namespace SIL.TextEditing.Playground
             bar.Children.Add(Tool(Names.Replace, "Replace", "Replace the selected match, then find the next", () => DoReplace()));
             bar.Children.Add(Tool(Names.ReplaceAll, "Replace All", "Replace every match in the field as one undo step", () => DoReplaceAll()));
             _findStatus = new TextBlock { Name = Names.FindStatus, Foreground = Brushes.DimGray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 2) };
+            bar.Children.Add(_allowTables);
+            bar.Children.Add(_allowLists);
+            bar.Children.Add(_allowHeadings);
             bar.Children.Add(_findStatus);
             return bar;
         }
