@@ -165,7 +165,7 @@
   {
     "name": "a div inside a div has no counterpart and is an error with the escape as the fix",
     "markdown": "::: {custom-style=Example}\n::: {custom-style=Normal}\nx\n:::\n:::\n",
-    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 2, "column": 1, "endLine": 2, "endColumn": 26, "fix": "\\::: {custom-style=Normal}" } ],
+    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 2, "column": 1, "endLine": 2, "endColumn": 26, "fix": "\\::: {custom-style=Normal}" }, { "id": "fwmd.syntax.unsupported-markup", "line": 5, "column": 1, "endLine": 5, "endColumn": 4, "fix": "\\:::" } ],
     "pandoc": false
   },
   {
@@ -191,6 +191,42 @@
     "project": "standard",
     "markdown": "---\nfwmd: 1\nwritingSystems:\n\ten:\n---\n\nx\n",
     "findings": [ { "id": "fwmd.syntax.malformed-attribute", "line": 4, "column": 1, "endLine": 4, "endColumn": 5 } ],
+    "pandoc": false
+  },
+  {
+    "name": "math between dollar signs is a finding, because Pandoc reads it and the notation has none",
+    "markdown": "cost $x$ here\n",
+    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 1, "column": 6, "endLine": 1, "endColumn": 9, "fix": "\\$x\\$" } ],
+    "pandoc": false
+  },
+  {
+    "name": "a citation is a finding",
+    "markdown": "see @doe now\n",
+    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 1, "column": 5, "endLine": 1, "endColumn": 6, "fix": "\\@" } ],
+    "pandoc": false
+  },
+  {
+    "name": "an inline note is a finding",
+    "markdown": "a^[note] b\n",
+    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 1, "column": 2, "endLine": 1, "endColumn": 4, "fix": "\\^[" } ],
+    "pandoc": false
+  },
+  {
+    "name": "double tildes are a finding, because Pandoc reads strikeout",
+    "markdown": "a ~~gone~~ b\n",
+    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 1, "column": 3, "endLine": 1, "endColumn": 11, "fix": "\\~\\~gone\\~\\~" } ],
+    "pandoc": false
+  },
+  {
+    "name": "attributes at the end of a heading are a finding",
+    "markdown": "# Title {#id}\n",
+    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 1, "column": 9, "endLine": 1, "endColumn": 14, "fix": "\\{#id}" } ],
+    "pandoc": false
+  },
+  {
+    "name": "a definition line is a finding",
+    "markdown": "term\n: meaning\n",
+    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 2, "column": 1, "endLine": 2, "endColumn": 10, "fix": "\\: meaning" } ],
     "pandoc": false
   }
 ]

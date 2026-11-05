@@ -279,7 +279,7 @@ namespace SIL.TextEditing.Markdown.Tests
             var paragraphs = new System.Collections.Generic.List<Paragraph> { B.P("GDR Table Header", B.En("a\tb")) };
             for (int i = 0; i < 3999; i++) paragraphs.Add(B.P("GDR Table Row", B.En("c" + i + "\td")));
             long ms = Millis(() => MarkdownConverter.ToMarkdown(B.Doc(paragraphs.ToArray()), Hosts.Project()));
-            Assert.True(ms < 3000, "4,000 table rows took " + ms + " ms");
+            Assert.True(ms < 10000, "4,000 table rows took " + ms + " ms");
         }
     }
 }

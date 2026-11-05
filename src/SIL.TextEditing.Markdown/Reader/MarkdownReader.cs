@@ -541,6 +541,7 @@ namespace SIL.TextEditing.Markdown.Reader
                 _context.RemoveParsed(block.Span.Start, block.Span.End + 1);
                 return;
             }
+            CheckPandoc(block.Span.Start, block.Span.End + 1);
             _paragraphs.Add(MakeParagraph(Names.Normal, new PropertyBag(), InlineReader.Read(block.Inline, _context), null));
         }
 
@@ -578,6 +579,29 @@ namespace SIL.TextEditing.Markdown.Reader
             return true;
         }
 
+        void CheckPandoc(int start, int end, bool lines = true)
+        {
+            if (start < 0) return;
+            if (end > _source.Length) end = _source.Length;
+            PandocConstructs.Find(_source, start, end, lines, (s, e, message, fix) =>
+                _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, message, s, e, fix));
+        }
+
+        void CheckHeading(HeadingBlock heading)
+        {
+            int start = heading.Span.Start, end = Math.Min(heading.Span.End + 1, _source.Length);
+            if (start < 0 || end <= start) return;
+            string line = _source.Substring(start, end - start).TrimEnd(Newlines);
+            int open = PandocConstructs.HeadingAttributes(line);
+            if (open >= 0)
+                _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error,
+                    "Pandoc reads a group in braces at the end of a heading as its attributes. Escape the opening brace.", start + open, start + line.Length,
+                    "\\" + line.Substring(open));
+            CheckPandoc(start, end, false);
+        }
+
+        static readonly char[] Newlines = { (char)10, (char)13 };
+
         void ReadHeading(HeadingBlock heading)
         {
             string? style = Names.Heading(heading.Level);
@@ -587,6 +611,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     heading.Span.Start, heading.Span.End + 1);
                 style = "Heading " + heading.Level;
             }
+            CheckHeading(heading);
             _paragraphs.Add(MakeParagraph(style, new PropertyBag(), InlineReader.Read(heading.Inline, _context), null));
         }
 
@@ -604,6 +629,7 @@ namespace SIL.TextEditing.Markdown.Reader
                         if (!first)
                             _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error, "A list item is one paragraph. Start a new item.", paragraph.Span.Start, paragraph.Span.End + 1);
                         first = false;
+                        CheckPandoc(paragraph.Span.Start, paragraph.Span.End + 1);
                         _paragraphs.Add(MakeParagraph(style, new PropertyBag(), InlineReader.Read(paragraph.Inline, _context), null));
                     }
                     else UnsupportedBlock(part, "A list item holds one paragraph; nested blocks are not supported.");
