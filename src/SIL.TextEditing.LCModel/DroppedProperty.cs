@@ -20,8 +20,13 @@ namespace SIL.TextEditing.LCModel
     /// corrupted record (ADR 0016, amended). The run model's bag still holds it.</summary>
     public sealed class DroppedProperty
     {
-        /// <summary>The stable id of this finding, for a host that counts or filters findings.</summary>
+        /// <summary>The stable id of a finding where the property was left out (<see cref="DroppedReason.PropertyNotLoadable"/> and
+        /// <see cref="DroppedReason.ValueNotLoadable"/>), for a host that counts or filters findings.</summary>
         public const string DiagnosticId = "textediting.lcm.unstorable-property";
+
+        /// <summary>The stable id of a finding where the adapter stored another value in its place
+        /// (<see cref="DroppedReason.ValueReplaced"/>): the host's data is kept, in a different form.</summary>
+        public const string ReplacedDiagnosticId = "textediting.lcm.replaced-property";
 
         public DroppedProperty(int number, bool isString, int? paragraphIndex, int? runIndex,
             DroppedReason reason = DroppedReason.PropertyNotLoadable, string? detail = null)
@@ -34,7 +39,8 @@ namespace SIL.TextEditing.LCModel
             Detail = detail;
         }
 
-        public string Id => DiagnosticId;
+        /// <summary><see cref="DiagnosticId"/>, or <see cref="ReplacedDiagnosticId"/> when <see cref="Reason"/> is <see cref="DroppedReason.ValueReplaced"/>.</summary>
+        public string Id => Reason == DroppedReason.ValueReplaced ? ReplacedDiagnosticId : DiagnosticId;
 
         /// <summary>The FieldWorks property number.</summary>
         public int Number { get; }
