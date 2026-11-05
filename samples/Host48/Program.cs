@@ -26,9 +26,33 @@ namespace SIL.TextEditing.Samples.Host48
             }
         }
 
-        protected override bool IsInputKey(Keys keyData) => (IsArrow(keyData) && ContainsFocus) || base.IsInputKey(keyData);
+        /// <summary>The field's own claim on a key (ADR 0030): Enter, Tab and Esc while its completion popup is open, so they reach the field and not the form's
+        /// default button, cancel button or Tab order; and Ctrl+Space. A host with a language service asks <c>RichTextField.WantsKey</c> in both overrides.</summary>
+        bool FieldWants(Keys keyData)
+        {
+            var view = Content as PlaygroundView;
+            if (view == null || !ContainsFocus) return false;
+            var mods = global::Avalonia.Input.KeyModifiers.None;
+            if ((keyData & Keys.Control) != 0) mods |= global::Avalonia.Input.KeyModifiers.Control;
+            if ((keyData & Keys.Shift) != 0) mods |= global::Avalonia.Input.KeyModifiers.Shift;
+            if ((keyData & Keys.Alt) != 0) mods |= global::Avalonia.Input.KeyModifiers.Alt;
+            global::Avalonia.Input.Key key;
+            switch (keyData & Keys.KeyCode)
+            {
+                case Keys.Enter: key = global::Avalonia.Input.Key.Enter; break;
+                case Keys.Tab: key = global::Avalonia.Input.Key.Tab; break;
+                case Keys.Escape: key = global::Avalonia.Input.Key.Escape; break;
+                case Keys.Space: key = global::Avalonia.Input.Key.Space; break;
+                case Keys.PageUp: key = global::Avalonia.Input.Key.PageUp; break;
+                case Keys.PageDown: key = global::Avalonia.Input.Key.PageDown; break;
+                default: return false;
+            }
+            return view.Field.WantsKey(key, mods);
+        }
 
-        protected override bool ProcessCmdKey(ref Message msg, Keys keyData) => !(IsArrow(keyData) && ContainsFocus) && base.ProcessCmdKey(ref msg, keyData);
+        protected override bool IsInputKey(Keys keyData) => ((IsArrow(keyData) && ContainsFocus) || FieldWants(keyData)) || base.IsInputKey(keyData);
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData) => !((IsArrow(keyData) && ContainsFocus) || FieldWants(keyData)) && base.ProcessCmdKey(ref msg, keyData);
     }
 
     static class Program
