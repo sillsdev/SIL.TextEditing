@@ -255,7 +255,9 @@ namespace SIL.TextEditing.Markdown.Tests
 }
 namespace SIL.TextEditing.Markdown.Tests
 {
-    /// <summary>The writer's own paths are linear: only Markdig's slow paths (a quadratic <c>[a](</c> run, deep lists, a table read) are left, and the README says so.</summary>
+    /// <summary>The writer's own paths are linear: only Markdig's slow paths (a quadratic <c>[a](</c> run, deep lists, a table read) are left, and the README says so.
+    /// They are timed, so they run alone, not beside the record gates' generated files and Pandoc processes.</summary>
+    [Collection(TimedTests.Name)]
     public class WriterGrowthTests
     {
         static long Millis(System.Action work)
@@ -281,5 +283,14 @@ namespace SIL.TextEditing.Markdown.Tests
             long ms = Millis(() => MarkdownConverter.ToMarkdown(B.Doc(paragraphs.ToArray()), Hosts.Project()));
             Assert.True(ms < 10000, "4,000 table rows took " + ms + " ms");
         }
+    }
+}
+namespace SIL.TextEditing.Markdown.Tests
+{
+    /// <summary>Tests that time themselves run in this collection, after the others and with nothing beside them.</summary>
+    [Xunit.CollectionDefinition(Name, DisableParallelization = true)]
+    public sealed class TimedTests
+    {
+        public const string Name = "Timed tests";
     }
 }
