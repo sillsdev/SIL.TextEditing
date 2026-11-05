@@ -256,6 +256,18 @@ namespace SIL.TextEditing.Playground.Tests
         [InlineData("/ a _ b", 7, 1, true)]      // a selection made backwards over the whole of the contexts leaves one boundary
         [InlineData("/ a _ b", 4, 4, false)]     // just before the underscore, the end of the left context
         [InlineData("/ a _ b", 5, 5, false)]     // just after it, the start of the right context
+        [InlineData("/ #", 1, 1, false)]         // no underscore, one boundary that opens: not a second at the same edge
+        [InlineData("/ #", 3, 3, true)]          // ... only at the very end
+        [InlineData("/ # a", 1, 1, false)]
+        [InlineData("/ # a", 5, 5, true)]
+        [InlineData("/ a #", 1, 1, true)]        // one that closes: the new one goes right after the slash only
+        [InlineData("/ a #", 5, 5, false)]
+        [InlineData("/#", 1, 1, false)]          // one that is both first and last counts as opening
+        [InlineData("/#", 2, 2, true)]
+        [InlineData("/ a # b", 1, 1, false)]     // one in the middle: no new one at an edge
+        [InlineData("/ a # b", 7, 7, false)]
+        [InlineData("/ a # b", 3, 5, false)]     // a selection over it puts the new one in the middle
+        [InlineData("/ a # b", 1, 7, true)]      // a selection over all of it leaves one boundary
         public void A_word_boundary_goes_in_at_the_edge_of_a_context_once(string text, int anchor, int end, bool allowed) => Assert.Equal(allowed, Can("word-boundary", text, anchor, end));
 
         [Fact]

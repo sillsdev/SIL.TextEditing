@@ -572,9 +572,11 @@ namespace SIL.TextEditing.Playground
         //
         // The tests decide: / a _ b at both ends (yes), / # _ b at the start (no, a second one) and at the end (yes), / a _ # at the start (yes) and
         // the end (no), / # _ # anywhere (no), /a_b in the middle (no), /_# between the underscore and the boundary (no), before the slash (no).
-        // The tests are silent about a selection that covers an existing boundary and about a text with no underscore; the rule above, being about
-        // the text that results, lets a # replace a boundary it covers (a selection over "# " at the start of "/ # _ b" may become one #), and
-        // treats a missing underscore as no constraint on which side a # is on.
+        // Where there is no underscore (once the selection is gone) and one boundary stays, that boundary claims its own edge, so the new one goes
+        // only at the opposite edge: an existing one that opens (only spaces between the slash and it; this is looked at first, so "/#" opens) leaves
+        // the very end, one that closes leaves the place right after the slash, and one in the middle leaves nowhere.
+        // The tests are silent about a selection that covers an existing boundary; the rule, being about the text that results, lets a # replace a
+        // boundary it covers (a selection over "# " at the start of "/ # _ b" may become one #).
 
         static bool CanInsertBoundary(string text, int a, int b)
         {
@@ -588,7 +590,15 @@ namespace SIL.TextEditing.Playground
             bool Opens(int h) => OnlySpace(result, slash + 1, h) && (bar < 0 || h < bar);
             bool Closes(int h) => OnlySpace(result, h + 1, result.Length) && (bar < 0 || h > bar);
             if (hashes.Count == 1) return Opens(hashes[0]) || Closes(hashes[0]);
-            return Opens(hashes[0]) && Closes(hashes[1]);
+            if (!(Opens(hashes[0]) && Closes(hashes[1]))) return false;
+            if (bar >= 0) return true;
+            // No underscore: the boundary that was there first keeps its edge, so the new one is at the other (the first of the two is the new one
+            // exactly when it is at a, and the existing one opens if only spaces lie between the slash and it).
+            bool newIsFirst = hashes[0] == a;
+            string rest = text.Remove(a, b - a);
+            int existing = newIsFirst ? hashes[1] - 1 : hashes[0];
+            bool existingOpens = OnlySpace(rest, slash + 1, existing);
+            return existingOpens ? !newIsFirst : newIsFirst;
         }
 
         // ------------------------------------------------------------------ completion
