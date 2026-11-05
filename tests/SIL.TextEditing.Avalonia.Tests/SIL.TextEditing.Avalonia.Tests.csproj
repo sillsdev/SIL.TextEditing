@@ -22,6 +22,7 @@
     <Compile Include="..\Common\TestDocs.cs" Link="TestDocs.cs" />
     <Compile Include="..\Common\FakeClipboardForm.cs" Link="FakeClipboardForm.cs" />
     <Compile Include="..\Common\FakeSpelling.cs" Link="FakeSpelling.cs" />
+    <Compile Include="..\Common\FakeLanguageService.cs" Link="FakeLanguageService.cs" />
     <Compile Include="..\Common\ReferenceSpellScanner.cs" Link="ReferenceSpellScanner.cs" />
   </ItemGroup>
 </Project>

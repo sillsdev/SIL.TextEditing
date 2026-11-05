@@ -92,6 +92,7 @@ namespace SIL.TextEditing.Avalonia
             InvalidateMeasure();
             InvalidateVisual();
             RequestSpellingIdle();
+            ScheduleLanguageIfWanted();   // the language service's answer was for the old text (LiveLanguage knows by the stamp)
         }
 
         bool _reportedReadOnly;
@@ -108,6 +109,7 @@ namespace SIL.TextEditing.Avalonia
         {
             bool now = Editor.IsReadOnly;
             if (now && _preedit != null) SetPreedit(null, null);
+            if (now) CloseCompletion();
             if (now != _reportedReadOnly)
             {
                 _reportedReadOnly = now;

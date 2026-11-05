@@ -1608,7 +1608,7 @@ namespace SIL.TextEditing.Avalonia
         /// run's text on every line it is on, in its under colour. Drawn after the text; <paramref name="top"/> is the paragraph's top in the control.</summary>
         public void DrawSquiggles(DrawingContext context, double top)
         {
-            if (_squiggles.Count == 0 && _spelling.Count == 0) return;
+            if (_squiggles.Count == 0 && _spelling.Count == 0 && _diagnostics.Count == 0) return;
             foreach (var li in Lines)
             {
                 if (li.IsEmpty) continue;
@@ -1653,9 +1653,9 @@ namespace SIL.TextEditing.Avalonia
         /// that is not, because a host's marks overlap, is read whole).</summary>
         IEnumerable<KeyValuePair<int, KeyValuePair<int, IBrush>>> RangesOn(LineInfo li)
         {
-            foreach (var list in new[] { _squiggles, _spelling })
+            foreach (var list in new[] { _squiggles, _spelling, _diagnostics })
             {
-                bool ordered = ReferenceEquals(list, _squiggles) || _spellingOrdered;
+                bool ordered = ReferenceEquals(list, _squiggles) || (ReferenceEquals(list, _spelling) ? _spellingOrdered : _diagnosticsOrdered);
                 for (int i = ordered ? FirstEndingAfter(list, li.Start) : 0; i < list.Count; i++)
                 {
                     if (ordered && list[i].Key >= li.End) break;
@@ -1666,6 +1666,31 @@ namespace SIL.TextEditing.Avalonia
         }
 
         bool _spellingOrdered = true;
+
+        // Diagnostics of the host's language service (ADR 0030), drawn with the spelling marks in the same way: start, then end and brush (effective offsets).
+        // They are a view of the text, kept here and never in the paragraph's runs.
+        readonly List<KeyValuePair<int, KeyValuePair<int, IBrush>>> _diagnostics = new List<KeyValuePair<int, KeyValuePair<int, IBrush>>>();
+        bool _diagnosticsOrdered = true;
+
+        /// <summary>Sets the diagnostic squiggles drawn under the text, in model offsets, with a brush each; they may overlap. Replaces the earlier ones; null or empty
+        /// clears them. As for spelling marks, one that an input method's text sits inside is not drawn.</summary>
+        internal void SetDiagnosticMarks(IReadOnlyList<(int Start, int End, IBrush Brush)>? marks)
+        {
+            _diagnostics.Clear();
+            _diagnosticsOrdered = true;
+            if (marks == null) return;
+            foreach (var m in marks)
+            {
+                if (PreeditAt >= 0 && m.Start < PreeditAt && m.End > PreeditAt) continue;
+                int start = PreeditAt >= 0 && m.Start >= PreeditAt ? m.Start + PreeditLength : m.Start;
+                var mark = new KeyValuePair<int, KeyValuePair<int, IBrush>>(start, new KeyValuePair<int, IBrush>(ToEffective(m.End), m.Brush));
+                if (_diagnostics.Count > 0 && (mark.Key < _diagnostics[_diagnostics.Count - 1].Key || mark.Value.Key < _diagnostics[_diagnostics.Count - 1].Value.Key)) _diagnosticsOrdered = false;
+                _diagnostics.Add(mark);
+            }
+        }
+
+        /// <summary>For a test: the diagnostic squiggles that will be drawn, as effective start and end offsets and brush.</summary>
+        internal IReadOnlyList<(int Start, int End, IBrush Brush)> DiagnosticMarksDrawn => _diagnostics.Select(m => (m.Key, m.Value.Key, m.Value.Value)).ToList();
 
         internal void SetSpellingMarks(IReadOnlyList<SpellingMark>? marks)
         {

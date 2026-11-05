@@ -80,7 +80,7 @@ namespace SIL.TextEditing.Avalonia
             _ime = new InputMethodClient(this);
             TextInputMethodClientRequested += (o, e) => e.Client = _ime;
             GotFocus += (o, e) => { InvalidateVisual(); ActiveWsChanged?.Invoke(Editor.ActiveWs, Editor.ActiveWs); };
-            LostFocus += (o, e) => { Editor.CloseUndoGroup(); InvalidateVisual(); };
+            LostFocus += (o, e) => { Editor.CloseUndoGroup(); CloseCompletion(); InvalidateVisual(); };
             Editor.Committed += d => RestartPauseTimer();
             ActualThemeVariantChanged += (o, e) =>
             {
@@ -278,6 +278,7 @@ namespace SIL.TextEditing.Avalonia
             }
             for (int i = 0; i < added; i++) { _layouts.Insert(start, null); _info.Insert(start, new ParaInfo()); }
             for (int i = 0; i < added && start + i < Editor.Document.Paragraphs.Count; i++) Watch(_info[start + i], Editor.Document.Paragraphs[start + i]);
+            LanguageAfterChange(start, removed, added);
             SpellAfterChange(start, added, spelling);
             ForgetNumbersFrom(start);
             RequestSpellingIdle();
@@ -374,6 +375,7 @@ namespace SIL.TextEditing.Avalonia
             _layouts[index] = layout;
             LayoutCount++;
             ApplySpelling(index, layout);
+            ApplyDiagnostics(index, layout);
             return layout;
         }
 
@@ -409,6 +411,9 @@ namespace SIL.TextEditing.Avalonia
             for (int i = 0; i < Editor.Document.Paragraphs.Count; i++) { _layouts.Add(null); _info.Add(new ParaInfo()); }
             WatchAll();
             RestartSpelling();       // the paragraphs may be other text: nothing checked before is trusted, and a failed writing system is tried again
+            _langState = null;
+            CloseCompletion();
+            RestartLanguageAnalysis();
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -471,6 +476,7 @@ namespace SIL.TextEditing.Avalonia
                     pl.DrawBox(context, y);
                     pl.DrawBackgrounds(context, y);
                     DrawFindHighlights(context, pl, i, y);
+                    DrawLanguageChips(context, pl, i, y);
                     if (Editor.HasSelection && i >= a.Paragraph && i <= b.Paragraph)
                     {
                         int s = i == a.Paragraph ? a.Offset : 0;
@@ -513,6 +519,7 @@ namespace SIL.TextEditing.Avalonia
             }
             if (IsFocused || ShowCaretAlways) context.DrawRectangle(ResolveCaretBrush(), null, CaretRect());
             ScheduleSpellingIfWanted();
+            ScheduleLanguageIfWanted();
         }
 
         // ------------------------------------------------ caret movement
@@ -582,12 +589,14 @@ namespace SIL.TextEditing.Avalonia
             RefreshSystemColours();   // the theme and the system may have changed while the field was away
             base.OnAttachedToVisualTree(e);
             WatchScrolling();
+            LanguageAttached();
         }
 
         protected override void OnDetachedFromVisualTree(global::Avalonia.VisualTreeAttachmentEventArgs e)
         {
             _onScreen = false;
             CancelBatch();   // a worker that is asking the host's checker stops: the field is going away
+            LanguageDetached();
             if (_platformSettings != null) _platformSettings.ColorValuesChanged -= OnPlatformColoursChanged;
             _platformSettings = null;
             StopWatchingScrolling();
@@ -624,6 +633,7 @@ namespace SIL.TextEditing.Avalonia
                 }
             }
             if (!_moving) { _goalX = -1; _hit = null; }
+            CompletionCaretMoved();
             InvalidateVisual();
             _ime.NotifyCaret();
             if (Editor.HasSelection)
@@ -796,6 +806,7 @@ namespace SIL.TextEditing.Avalonia
         /// <summary>Handles an editing key; returns false for keys it leaves to the host (Tab and the like).</summary>
         public bool HandleKey(Key key, KeyModifiers modifiers)
         {
+            if (HandleLanguageKey(key, modifiers)) return true;
             bool shift = (modifiers & KeyModifiers.Shift) != 0, ctrl = (modifiers & KeyModifiers.Control) != 0;
             var lastPara = _layouts.Count - 1;
             switch (key)
@@ -951,7 +962,11 @@ namespace SIL.TextEditing.Avalonia
                 _layouts[Editor.Caret.Paragraph]?.Dispose();
                 _layouts[Editor.Caret.Paragraph] = null;
             }
-            if (!AtHiddenEdge()) Editor.TypeText(text);
+            if (!AtHiddenEdge())
+            {
+                Editor.TypeText(text);
+                CompletionAfterTyping(text);
+            }
             e.Handled = true;
         }
 
@@ -1012,9 +1027,19 @@ namespace SIL.TextEditing.Avalonia
             Move(caret, true, false, before ? null : hit);
         }
 
+        protected override void OnPointerExited(PointerEventArgs e)
+        {
+            ClearLanguageHover();
+            base.OnPointerExited(e);
+        }
+
         protected override void OnPointerMoved(PointerEventArgs e)
         {
-            if (!_dragging) return;
+            if (!_dragging)
+            {
+                UpdateLanguageHover(e.GetPosition(this));
+                return;
+            }
             var loc = Locate(DragPoint(e.GetPosition(this)));
             if (_dragUnit == DragUnit.Character) Move(loc.Position, true, false, loc.Hit);
             else SelectUnit(loc, false);
@@ -1175,6 +1200,7 @@ namespace SIL.TextEditing.Avalonia
             if (text != null && !Editor.CanEdit) text = null;   // an input method cannot compose into text that may not be edited
             if (!string.IsNullOrEmpty(text) && AtHiddenEdge()) text = null;   // no composition at the end of hidden text
             _preedit = string.IsNullOrEmpty(text) ? null : text;
+            if (_preedit != null) CloseCompletion();   // an input method is composing: no popup over it
             _preeditCursor = cursor ?? (_preedit?.Length ?? 0);
             int pi = Editor.Caret.Paragraph;
             _layouts[pi]?.Dispose();

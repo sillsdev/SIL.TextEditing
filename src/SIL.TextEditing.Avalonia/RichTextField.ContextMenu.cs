@@ -69,12 +69,12 @@ namespace SIL.TextEditing.Avalonia
             if (pointer)
                 {
                 var loc = Locate(at);
-                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Pointer, at, WithSpelling(Editor.DescribeContext(loc.Character, false, PointerIsOverText(loc, at)), true)));
+                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Pointer, at, WithLanguage(WithSpelling(Editor.DescribeContext(loc.Character, false, PointerIsOverText(loc, at)), true))));
             }
             else
             {
                 var caret = CaretRect();
-                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Keyboard, new Point(caret.X, caret.Bottom), WithSpelling(Editor.DescribeContext(Editor.Caret, true), false)));
+                handler(this, new ContextMenuRequestedEventArgs(ContextMenuTrigger.Keyboard, new Point(caret.X, caret.Bottom), WithLanguage(WithSpelling(Editor.DescribeContext(Editor.Caret, true), false))));
             }
         }
     }
