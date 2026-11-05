@@ -102,6 +102,14 @@ namespace SIL.TextEditing.Markdown.Tests
         }
 
         [Fact]
+        public void HeadingAttributesAreAFindingButABlockOfTheNotationAtTheEndIsNot()
+        {
+            Assert.Equal("fwmd.syntax.unsupported-markup", Assert.Single(MarkdownConverter.Parse("# x {#id .c}", BodyOnly()).Diagnostics).Id);
+            Assert.Empty(MarkdownConverter.Parse("# x [y]{.v}", BodyOnly()).Diagnostics);
+            Assert.DoesNotContain(MarkdownConverter.Parse("# [y]{s147=\"ng {ws=en}\"}", BodyOnly()).Diagnostics, d => d.Id == "fwmd.syntax.unsupported-markup");
+        }
+
+        [Fact]
         public void AnOptionThatMustBeThereRefusesNull()
         {
             var options = new MarkdownOptions();

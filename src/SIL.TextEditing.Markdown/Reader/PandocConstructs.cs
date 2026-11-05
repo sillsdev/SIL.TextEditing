@@ -138,7 +138,8 @@ namespace SIL.TextEditing.Markdown.Reader
             if (slashes % 2 == 1) return -1;
             if (open > 0 && (trimmed[open - 1] == ']' || trimmed[open - 1] == ')')) return -1;
             string inner = trimmed.Substring(open + 1, trimmed.Length - open - 2).Trim();
-            if (inner.Length == 0) return -1;
+            if (inner.Length == 0 || inner.IndexOfAny(new[] { '{', '}', '"', '\'' }) >= 0) return -1;
+            if (open == 0 || (trimmed[open - 1] != ' ' && trimmed[open - 1] != '\t')) return -1;
             foreach (string token in inner.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 bool idOrClass = (token[0] == '#' || token[0] == '.') && token.Length > 1;
