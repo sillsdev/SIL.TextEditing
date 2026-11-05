@@ -84,6 +84,7 @@ namespace SIL.TextEditing.LCModel
             }
             return builder;
         }
+
         /// <summary>The runs of a string. An empty string yields one empty run, so its writing system survives.</summary>
         public static List<Run> ToRuns(ITsString text, IWritingSystemHandles writingSystems)
         {
@@ -195,8 +196,8 @@ namespace SIL.TextEditing.LCModel
             if (paragraph.Rtl != (hadRtl && rtl != 0))
                 bag.IntProps[PropRightToLeft] = new IntPropValue(0, paragraph.Rtl ? 1 : 0);
             // The bag may hold a direction liblcm refuses (a negative one) that agrees with Rtl. The editor shows Rtl, so store that.
-            if (bag.TryGetInt(PropRightToLeft, out int heldRtl) && bag.IntProps.TryGetValue(PropRightToLeft, out var held)
-                && LiblcmRefusals.ForInt(PropRightToLeft, held.Variation, heldRtl, true) != null)
+            if (bag.IntProps.TryGetValue(PropRightToLeft, out var held)
+                && LiblcmRefusals.ForInt(PropRightToLeft, held.Variation, held.Value, true) != null)
             {
                 int stored = paragraph.Rtl ? 1 : 0;
                 onDropped?.Invoke(new DroppedProperty(PropRightToLeft, false, paragraphIndex, null, DroppedReason.ValueReplaced,
