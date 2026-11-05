@@ -31,3 +31,5 @@ package. FieldWorks Markdown is a back end first (agents, files, drafting); on t
 the default.
 
 Owner decision, 2026-11-04.
+
+Amended by ADR 0031 (2026-11-05): "No HTML or RTF" is reversed; Word-compatible HTML and RTF copy and paste are planned (design pending).
