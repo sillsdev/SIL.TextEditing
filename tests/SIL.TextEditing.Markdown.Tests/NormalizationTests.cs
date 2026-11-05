@@ -9,7 +9,7 @@ namespace SIL.TextEditing.Markdown.Tests
     {
         const string Acute = "\u0301", DotBelow = "\u0323";
 
-        static string Dump(string markdown) => ModelDump.Of(MarkdownConverter.Parse(markdown).Document);
+        static string Dump(string markdown) => ModelDump.Of(MarkdownConverter.Parse(markdown, Hosts.Project()).Document);
 
         [Theory]
         [InlineData("caf\u00E9", "Normal| en\"cafe\u0301\"")]

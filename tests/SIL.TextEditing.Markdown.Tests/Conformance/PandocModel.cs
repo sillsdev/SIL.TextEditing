@@ -131,11 +131,11 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         void Table(List<object?> c, List<Paragraph> into)
         {
             var head = Json.Arr(c[3]);
-            foreach (var row in Json.Arr(head[1])) into.Add(Row(Json.Arr(row), Names.TableHeader));
+            foreach (var row in Json.Arr(head[1])) into.Add(Row(Json.Arr(row), Names.TableHeader!));
             foreach (var body in Json.Arr(c[4]))
             {
                 var b = Json.Arr(body);
-                foreach (var row in Json.Arr(b[3])) into.Add(Row(Json.Arr(row), Names.TableRow));
+                foreach (var row in Json.Arr(b[3])) into.Add(Row(Json.Arr(row), Names.TableRow!));
             }
         }
 

@@ -85,10 +85,20 @@ namespace SIL.TextEditing.Markdown.Tests
             Assert.Throws<ArgumentNullException>(() => names.BulletedList = null!);
             Assert.Throws<ArgumentNullException>(() => names.NumberedList = null!);
             Assert.Throws<ArgumentNullException>(() => names.BlockQuote = null!);
-            Assert.Throws<ArgumentNullException>(() => names.TableHeader = null!);
-            Assert.Throws<ArgumentNullException>(() => names.TableRow = null!);
             Assert.Throws<ArgumentNullException>(() => names.Hyperlink = null!);
             Assert.Equal("Heading 3", names.Heading3);
+        }
+
+        [Fact]
+        public void WithNoTableStylesAPipeTableIsAFindingAndRowsAreWrittenAsDivs()
+        {
+            var options = BodyOnly();
+            Assert.Null(options.StyleNames.TableHeader);
+            var parsed = MarkdownConverter.Parse("| a |\n|---|\n| b |", options);
+            Assert.Equal("fwmd.syntax.unsupported-markup", Assert.Single(parsed.Diagnostics).Id);
+            Assert.Equal(new[] { "Normal", "Normal" }, parsed.Document.Paragraphs.Select(p => p.Style).ToArray());
+            var document = B.Doc(B.P("Table Header", B.En("a")), B.P("Table Row", B.En("b")));
+            Assert.DoesNotContain("|", MarkdownConverter.ToMarkdown(document, options));
         }
 
         [Fact]

@@ -36,7 +36,7 @@ namespace SIL.TextEditing.Markdown.Tests
 
         static ScriptedHost Host(ScriptedHost.Resolve resolve) => new ScriptedHost(resolve);
 
-        static MarkdownOptions With(IObjectMapper host) => new MarkdownOptions { Objects = host, WriteFrontMatter = false };
+        static MarkdownOptions With(IObjectMapper host) => new MarkdownOptions { Objects = host, WriteFrontMatter = false, StyleNames = Hosts.Tables() };
 
         static readonly string Link = "[palit](/objects/" + EntryGuid + ")";
 

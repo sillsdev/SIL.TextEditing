@@ -606,6 +606,9 @@ namespace SIL.TextEditing.Markdown.Reader
 
         void ReadTable(Table table)
         {
+            if (Names.TableHeader == null || Names.TableRow == null)
+                _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error,
+                    "A pipe table needs table styles, and the host names none. Its rows are read as paragraphs.", table.Span.Start, table.Span.End + 1);
             ReportAlignments(table);
             int headerCells = -1;
             int rowNumber = 0; // the header is row 1, the delimiter row is not counted
@@ -643,7 +646,7 @@ namespace SIL.TextEditing.Markdown.Reader
                     if (c > 0) joined.Add(new Run { Text = "\t", Ws = _context.DefaultAnalysis });
                     joined.AddRange(cellRuns[c]);
                 }
-                _paragraphs.Add(MakeParagraph(isHeader ? Names.TableHeader : Names.TableRow, new PropertyBag(), joined, null));
+                _paragraphs.Add(MakeParagraph((isHeader ? Names.TableHeader : Names.TableRow) ?? Names.Normal, new PropertyBag(), joined, null));
             }
         }
 

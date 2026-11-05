@@ -14,7 +14,7 @@ namespace SIL.TextEditing.Markdown.Tests
         {
             var document = B.Doc(paragraphs);
             string markdown = MarkdownConverter.ToMarkdown(document, Hosts.Project());
-            var back = MarkdownConverter.Parse(markdown);
+            var back = MarkdownConverter.Parse(markdown, Hosts.Project());
             Assert.DoesNotContain(back.Diagnostics, d => d.Severity == MarkdownSeverity.Error);
             Assert.True(MarkdownConverter.AreEquivalent(document.Paragraphs, back.Document.Paragraphs), markdown);
             return markdown;
@@ -65,7 +65,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("| a | b |\n| --- | --- | --- |\n| 1 | 2 |", 2, 3, 2)]
         public void ADelimiterRowWithAnotherColumnCountThanTheHeaderIsAFinding(string markdown, int line, int delimiterCells, int headerCells)
         {
-            var result = MarkdownConverter.Parse(markdown);
+            var result = MarkdownConverter.Parse(markdown, Hosts.Project());
             var finding = Assert.Single(result.Diagnostics, d => d.Id == MarkdownDiagnosticIds.TableRagged);
             Assert.Equal(MarkdownSeverity.Error, finding.Severity);
             Assert.Equal(line, finding.Line);
@@ -81,7 +81,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [InlineData("a | b\n--- | ---\n1 | 2")]
         [InlineData("| a |\n|---|\n| 1 |")]
         public void ADelimiterRowOfTheHeadersWidthIsNoFinding(string markdown)
-            => Assert.Empty(MarkdownConverter.Parse(markdown).Diagnostics);
+            => Assert.Empty(MarkdownConverter.Parse(markdown, Hosts.Project()).Diagnostics);
 
         // Markdig reads a table in time and depth that grow with rows times (columns + 1); past about 10,200 it gives up, the parser
         // reports one fwmd.syntax.too-deep and keeps the lines as text, and the writer writes the table as fences, which read back.

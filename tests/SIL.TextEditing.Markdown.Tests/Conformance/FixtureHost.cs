@@ -37,6 +37,8 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
             if (project == null)
             {
                 host._known.AddRange(new[] { "en", "ceb", "ceb-x-old", "ar" });
+                host.TableHeaderStyle = "GDR Table Header"; // the tests supply table styles; the library has none
+                host.TableRowStyle = "GDR Table Row";
                 return host;
             }
             host.DefaultAnalysis = Json.OptStr(project, "analysis") ?? "en";

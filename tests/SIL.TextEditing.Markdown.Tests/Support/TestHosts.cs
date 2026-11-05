@@ -57,12 +57,16 @@ namespace SIL.TextEditing.Markdown.Tests
 
     internal static class Hosts
     {
+        /// <summary>The table styles the tests supply; the library names none.</summary>
+        public static MarkdownStyleNames Tables() => new MarkdownStyleNames { TableHeader = "GDR Table Header", TableRow = "GDR Table Row" };
+
         /// <summary>Options for a test of the body of a text: no front matter is written.</summary>
         public static MarkdownOptions Project(IObjectMapper? objects = null) => new MarkdownOptions
         {
             WritingSystems = new TestWritingSystems(),
             Objects = objects ?? new TestObjects(),
             WriteFrontMatter = false,
+            StyleNames = Tables(),
         };
     }
 }

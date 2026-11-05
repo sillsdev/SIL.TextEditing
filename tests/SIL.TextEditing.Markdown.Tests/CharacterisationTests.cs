@@ -54,7 +54,7 @@ namespace SIL.TextEditing.Markdown.Tests
         [Fact]
         public void APipeInAQuotedAttributeValueDoesNotEndTheCell()
         {
-            var result = MarkdownConverter.Parse("| a | b |\n| --- | --- |\n| [x]{custom-style=\"p|q\"} | y |");
+            var result = MarkdownConverter.Parse("| a | b |\n| --- | --- |\n| [x]{custom-style=\"p|q\"} | y |", Hosts.Project());
             Assert.Empty(result.Diagnostics);
             Assert.Equal("GDR Table Row", result.Document.Paragraphs[1].Style);
             Assert.Equal("x\ty", result.Document.Paragraphs[1].Text);

@@ -183,12 +183,12 @@ namespace SIL.TextEditing.Markdown
     }
 
     /// <summary>The paragraph styles the block notation maps to (spec 3.1) and the character style a link implies (spec 3.2).
-    /// The defaults are the names a new FieldWorks project already has, plus the two table styles a GDR template creates (spec 9); a host with other
-    /// table styles names them here.</summary>
+    /// The defaults are the names a new FieldWorks project already has. The table styles have no default: the host names them (spec 3.1), or has none.</summary>
     public sealed class MarkdownStyleNames
     {
         string _normal = "Normal", _heading1 = "Heading 1", _heading2 = "Heading 2", _heading3 = "Heading 3", _bulletedList = "Bulleted List",
-            _numberedList = "Numbered List", _blockQuote = "Block Quote", _tableHeader = "GDR Table Header", _tableRow = "GDR Table Row", _hyperlink = "Hyperlink";
+            _numberedList = "Numbered List", _blockQuote = "Block Quote", _hyperlink = "Hyperlink";
+        string? _tableHeader, _tableRow;
 
         // No name is null: a null would only show as a NullReferenceException deep in the reader.
         static string Name(string? value) => value ?? throw new ArgumentNullException(nameof(value));
@@ -201,8 +201,11 @@ namespace SIL.TextEditing.Markdown
         public string BulletedList { get => _bulletedList; set => _bulletedList = Name(value); }
         public string NumberedList { get => _numberedList; set => _numberedList = Name(value); }
         public string BlockQuote { get => _blockQuote; set => _blockQuote = Name(value); }
-        public string TableHeader { get => _tableHeader; set => _tableHeader = Name(value); }
-        public string TableRow { get => _tableRow; set => _tableRow = Name(value); }
+        /// <summary>The style of a pipe table's header row, named by the host (Motif's are its GDR template's). Null (the default): the host has no table styles, a pipe table is
+        /// <c>fwmd.syntax.unsupported-markup</c> and its rows are read as <see cref="Normal"/>, and the writer never writes a pipe table.</summary>
+        public string? TableHeader { get => _tableHeader; set => _tableHeader = value; }
+        /// <summary>The style of a pipe table's body rows; see <see cref="TableHeader"/>.</summary>
+        public string? TableRow { get => _tableRow; set => _tableRow = value; }
         /// <summary>The character style a link run has unless the notation says otherwise (<c>.nostyle</c>, or <c>custom-style=</c>).</summary>
         public string Hyperlink { get => _hyperlink; set => _hyperlink = Name(value); }
 

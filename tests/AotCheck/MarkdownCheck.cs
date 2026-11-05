@@ -12,6 +12,10 @@ internal static class MarkdownCheck
 {
     static readonly List<string> Failures = new List<string>();
 
+    static MarkdownOptions TableOptions() => new MarkdownOptions { StyleNames = Tables() };
+
+    static MarkdownStyleNames Tables() => new MarkdownStyleNames { TableHeader = "GDR Table Header", TableRow = "GDR Table Row" };
+
     static void Check(bool condition, string what)
     {
         if (!condition) Failures.Add(what);
@@ -48,7 +52,7 @@ internal static class MarkdownCheck
 
     static void DefaultHost()
     {
-        var parsed = MarkdownConverter.Parse(AllForms);
+        var parsed = MarkdownConverter.Parse(AllForms, TableOptions());
         Check(!parsed.HasErrors, "default host: no errors in the every-form text: " + string.Join("; ", parsed.Diagnostics));
         Check(parsed.FrontMatter != null && parsed.FrontMatter.Version == 1 && parsed.FrontMatter.Analysis == "en" && parsed.FrontMatter.WritingSystems.Count == 2, "default host: the front matter");
         var paragraphs = parsed.Document.Paragraphs;
@@ -71,13 +75,13 @@ internal static class MarkdownCheck
         Check(paragraphs.Any(p => p.Runs.Count == 0), "default host: an empty paragraph");
         Check(paragraphs.Any(p => p.Runs.Any(r => r.ObjData == "xyz")), "default host: generic object data");
 
-        string written = MarkdownConverter.ToMarkdown(parsed.Document);
+        string written = MarkdownConverter.ToMarkdown(parsed.Document, TableOptions());
         Check(written.StartsWith("---\nfwmd: 1\n", StringComparison.Ordinal), "default host: the written text starts with the front matter");
-        var again = MarkdownConverter.Parse(written);
+        var again = MarkdownConverter.Parse(written, TableOptions());
         Check(!again.HasErrors, "default host: the written text reads without errors");
         Check(MarkdownConverter.AreEquivalent(parsed.Document.Paragraphs, again.Document.Paragraphs), "default host: written then read is equivalent");
-        Check(MarkdownConverter.Canonicalize(written) == written, "default host: the written text is canonical");
-        Check(MarkdownConverter.ToMarkdown((IEnumerable<Paragraph>)paragraphs) == written, "default host: ToMarkdown of the paragraphs");
+        Check(MarkdownConverter.Canonicalize(written, TableOptions()) == written, "default host: the written text is canonical");
+        Check(MarkdownConverter.ToMarkdown((IEnumerable<Paragraph>)paragraphs, TableOptions()) == written, "default host: ToMarkdown of the paragraphs");
         Check(MarkdownConverter.AreEquivalent(paragraphs[0], again.Document.Paragraphs[0]), "default host: a paragraph is equivalent to itself read back");
         var bodyOnly = MarkdownConverter.ToMarkdown(parsed.Document, new MarkdownOptions { WriteFrontMatter = false });
         Check(!bodyOnly.StartsWith("---", StringComparison.Ordinal), "default host: the body alone");
@@ -123,7 +127,7 @@ internal static class MarkdownCheck
     static void CustomHost()
     {
         var host = new CheckHost();
-        var options = new MarkdownOptions { WritingSystems = host, Styles = host, Objects = host, Paths = host, WriteFrontMatter = false };
+        var options = new MarkdownOptions { WritingSystems = host, Styles = host, Objects = host, Paths = host, StyleNames = Tables(), WriteFrontMatter = false };
         string md = "Know [palit](/lexicon/palit(2)){.name guid=" + CheckHost.Entry + "} and [a rule](</grammar/phonological-rules/Nasal assimilation>){guid=" + CheckHost.Rule + "} and [by path](/lexicon/palit(2)) and ![a picture](/files/pictures/hut.jpg){guid=" + CheckHost.Picture + "}\n\n"
             + "::: {custom-style=Example}\n[mang]{ws=ceb} [old]{ws=old}\n:::\n";
         var parsed = MarkdownConverter.Parse(md, options);
@@ -136,7 +140,7 @@ internal static class MarkdownCheck
 
         foreach (var form in new[] { MarkdownLinkForm.RootPath, MarkdownLinkForm.FileRelative, MarkdownLinkForm.SilfwUrl, MarkdownLinkForm.MotifUrl, MarkdownLinkForm.ObjectAlias })
         {
-            var formOptions = new MarkdownOptions { WritingSystems = host, Styles = host, Objects = host, Paths = host, WriteFrontMatter = false, LinkForm = form, LinkBase = "/lists/GDR/GDR-47.fw.md", ProjectName = "Sena3" };
+            var formOptions = new MarkdownOptions { WritingSystems = host, Styles = host, Objects = host, Paths = host, StyleNames = Tables(), WriteFrontMatter = false, LinkForm = form, LinkBase = "/lists/GDR/GDR-47.fw.md", ProjectName = "Sena3" };
             var written = MarkdownConverter.ToMarkdown(parsed.Document, formOptions);
             var back = MarkdownConverter.Parse(written, formOptions);
             Check(!back.HasErrors, "custom host: " + form + " reads without errors: " + string.Join("; ", back.Diagnostics));
