@@ -350,6 +350,8 @@ namespace SIL.TextEditing
                         if (semi) r.Props.SetInt(TextPropertyNumbers.Editable, TextPropertyNumbers.EditableSemi);
                     }
             }
+            // A block the field does not allow becomes plain paragraphs first (ADR 0033), so a table's cell tabs are spaces before tabs are removed below.
+            var flattening = fragment != null ? FlattenFragment(fragment) : null;
             if (SingleParagraph && fragment != null)
             {
                 if (fragment.Count > 1) fragment = JoinIntoOne(fragment);
@@ -423,6 +425,7 @@ namespace SIL.TextEditing
             d.After.AddRange(newParas.Select(p => p.Clone()));
             bool sameProperties = (fragment == null || fragment.Count <= 1) && first.Style == last.Style && first.Props.ContentEquals(last.Props);
             Finish(d, caret, survivor == first ? new TextEdit(a, b, caret, first.ChangeStamp, last.ChangeStamp, sameProperties) : (TextEdit?)null);
+            RaiseBlocksFlattened(flattening);
         }
 
         /// <summary>Enter. At offset 0 the new empty paragraph (new identity) goes before and the original identity
@@ -448,6 +451,7 @@ namespace SIL.TextEditing
                 right = orig.Clone(false);
                 right.Delete(0, off);
             }
+            FlattenNewParagraph(off == 0 ? left : right);   // the new paragraph of the split starts plain when its block kind is off (ADR 0033)
             Document.Paragraphs[Caret.Paragraph] = left;
             Document.Paragraphs.Insert(Caret.Paragraph + 1, right);
             d.After.Add(left.Clone());
