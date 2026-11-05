@@ -83,7 +83,9 @@ namespace SIL.TextEditing.Markdown.Records
             for (int i = firstLineEnd; i < closeStart; i++) if (yamlText[i] == '\u2028' || yamlText[i] == '\u2029' || yamlText[i] == '\u0085') separators.Add(i);
             var tabLines = TabLines(yamlText, firstLineEnd, closeStart);
 
+            string original = yamlText;
             var parse = YamlTree.Parse(yamlText);
+            var reported = new List<int>();
             if (parse.Error != null && tabLines.Count > 0)
             {
                 // A tab in the indentation stops the parser. Read on as if each were a space, so the rest of the file is still checked.
@@ -92,20 +94,25 @@ namespace SIL.TextEditing.Markdown.Records
                 parse = YamlTree.Parse(spaced.ToString());
                 yamlText = spaced.ToString();
                 CollectBlocks(parse.Root);
-                foreach (int line in tabLines) ReportTab(line);
+                reported.AddRange(tabLines);
             }
             else
             {
                 CollectBlocks(parse.Root);
-                foreach (int line in tabLines) if (!InBlockContent(line)) ReportTab(line);
+                foreach (int line in tabLines) if (!InBlockContent(line)) reported.Add(line);
             }
+            // The fix gives two spaces for each tab, but only where that reads as the reader read the file: where it would move a key to another parent, or
+            // where the reader could not read the file at all, it gives none.
+            bool fixTabs = reported.Count > 0 && parse.Error == null && TabFixKeepsStructure(original, reported, parse.Root);
+            foreach (int line in reported) ReportTab(line, fixTabs);
             foreach (int at in separators)
             {
-                bool inRich = _blocks.Any(b => b.Start < at && at < b.End);
+                var holder = BlockAt(at);
+                bool inRich = holder != null && holder.Start < at && at < holder.End;
                 Error(RecordDiagnosticIds.LineSeparator, "U+" + ((int)_text[at]).ToString("X4", CultureInfo.InvariantCulture) + " is a line break to some YAML readers and not to others; write it as a character reference.",
                     at, at + 1, inRich ? "&#x" + ((int)_text[at]).ToString("X4", CultureInfo.InvariantCulture) + ";" : null);
             }
-            foreach (var comment in YamlTree.Comments(yamlText)) ReportComment(comment[0], comment[1]);
+            if (parse.Error == null) foreach (var comment in YamlTree.Comments(yamlText)) ReportComment(comment[0], comment[1]);
             foreach (int at in parse.LaterDocuments)
                 // The reader reads the first document only, so the fix that makes the file say what was read removes the rest of the front matter.
                 Error(RecordDiagnosticIds.SecondDocument, "A second YAML document starts here; a record file's front matter is one document, and the rest is not read.", LineStartOf(at), closeStart, string.Empty);
@@ -193,12 +200,57 @@ namespace SIL.TextEditing.Markdown.Records
             return lines;
         }
 
-        void ReportTab(int lineStart)
+        void ReportTab(int lineStart, bool withFix)
         {
             int i = lineStart;
             var fix = new StringBuilder();
             while (i < _text.Length && (_text[i] == ' ' || _text[i] == '\t')) { fix.Append(_text[i] == '\t' ? "  " : " "); i++; }
-            Error(RecordDiagnosticIds.Tab, "YAML is indented with spaces, not tabs.", lineStart, i, fix.ToString());
+            Error(RecordDiagnosticIds.Tab, "YAML is indented with spaces, not tabs.", lineStart, i, withFix ? fix.ToString() : null);
+        }
+
+        /// <summary>True when the text with two spaces for each tab of the reported lines parses to the same tree the reader read.</summary>
+        static bool TabFixKeepsStructure(string text, List<int> lines, YamlFrameNode? read)
+        {
+            var sb = new StringBuilder(text.Length + 16);
+            int from = 0;
+            foreach (int line in lines)
+            {
+                sb.Append(text, from, line - from);
+                int i = line;
+                while (i < text.Length && (text[i] == ' ' || text[i] == '\t')) { sb.Append(text[i] == '\t' ? "  " : " "); i++; }
+                from = i;
+            }
+            sb.Append(text, from, text.Length - from);
+            var fixedParse = YamlTree.Parse(sb.ToString());
+            return fixedParse.Error == null && Shape(fixedParse.Root) == Shape(read);
+        }
+
+        /// <summary>A tree's structure and values as text, without places.</summary>
+        static string Shape(YamlFrameNode? node)
+        {
+            var sb = new StringBuilder();
+            void Walk(YamlFrameNode? n)
+            {
+                if (n == null) { sb.Append('~'); return; }
+                switch (n.Kind)
+                {
+                    case YamlFrameKind.Mapping:
+                        sb.Append('{');
+                        foreach (var p in n.Pairs) { Walk(p.Key); sb.Append(':'); Walk(p.Value); sb.Append(','); }
+                        sb.Append('}');
+                        break;
+                    case YamlFrameKind.Sequence:
+                        sb.Append('[');
+                        foreach (var item in n.Items) { Walk(item); sb.Append(','); }
+                        sb.Append(']');
+                        break;
+                    default:
+                        sb.Append(n.Kind == YamlFrameKind.Alias ? "*" : "=").Append(n.Value.Length).Append(':').Append(n.Value);
+                        break;
+                }
+            }
+            Walk(node);
+            return sb.ToString();
         }
 
         void CollectBlocks(YamlFrameNode? node)
@@ -217,16 +269,27 @@ namespace SIL.TextEditing.Markdown.Records
         /// <summary>True when a line with a tab in its leading space is a block's content line and the tab comes after the block's indentation.</summary>
         bool InBlockContent(int lineStart)
         {
-            foreach (var block in _blocks)
+            var block = BlockAt(lineStart);
+            if (block == null || lineStart < NextLine(block.Start) || lineStart >= block.End) return false;
+            int indent = BlockIndent(block);
+            int i = lineStart;
+            while (i < _text.Length && _text[i] == ' ') i++;
+            return i - lineStart >= indent;
+        }
+
+        /// <summary>The last block that starts before <paramref name="offset"/>, or null: a binary search, since the blocks are in document order and do not
+        /// overlap (review of PR 147, P2-2).</summary>
+        YamlFrameNode? BlockAt(int offset)
+        {
+            int lo = 0, hi = _blocks.Count - 1, found = -1;
+            while (lo <= hi)
             {
-                int content = NextLine(block.Start);
-                if (lineStart < content || lineStart >= block.End) continue;
-                int indent = BlockIndent(block);
-                int i = lineStart;
-                while (i < _text.Length && _text[i] == ' ') i++;
-                return i - lineStart >= indent;
+                RecordWork.Steps++;
+                int mid = (lo + hi) / 2;
+                if (_blocks[mid].Start < offset) { found = mid; lo = mid + 1; }
+                else hi = mid - 1;
             }
-            return false;
+            return found < 0 ? null : _blocks[found];
         }
 
         /// <summary>The indentation of a block scalar's content: its first line that is not blank.</summary>
@@ -458,8 +521,10 @@ namespace SIL.TextEditing.Markdown.Records
         void ReadWritingSystems(YamlFrameNode node, RecordDocument document)
         {
             if (node.Kind != YamlFrameKind.Mapping) { if (!IsEmptyNode(node)) Shape(node, "a mapping from writing-system id to lang, dir and font"); return; }
+            var listed = new HashSet<string>(document.WritingSystems.Select(w => w.Key), StringComparer.Ordinal);
             foreach (var pair in node.Pairs)
             {
+                RecordWork.Steps++;
                 if (!pair.Key.IsScalar) continue;
                 string id = pair.Key.Value;
                 CheckKeySpelling(pair.Key, id);
@@ -484,7 +549,7 @@ namespace SIL.TextEditing.Markdown.Records
                 props.TryGetValue("lang", out var lang);
                 props.TryGetValue("dir", out var dir);
                 props.TryGetValue("font", out var font);
-                if (!document.WritingSystems.Any(w => w.Key == id))
+                if (listed.Add(id))
                     document.WritingSystems.Add(new KeyValuePair<string, WritingSystemInfo>(id, new WritingSystemInfo(lang ?? fallback.Language, dir ?? fallback.Direction, font ?? fallback.Font)));
             }
         }
@@ -700,12 +765,8 @@ namespace SIL.TextEditing.Markdown.Records
                     break;
                 }
                 case RecordFieldKind.Rich:
-                    if (node.Kind == YamlFrameKind.Scalar && node.Style == ScalarStyle.Folded)
-                    {
-                        value = raw.TrimEnd('\n');
-                        Error(RecordDiagnosticIds.Folded, "A folded block rewrites line ends; rich text is a literal block (|-).", valueStart, spellEnd, Canonical(field, value, blockIndent, path));
-                    }
-                    else value = block ? raw.TrimEnd('\n') : raw;
+                    // A folded rich value is reported below, once its paragraphs are read, so the fix can be spelled from them when the text cannot be.
+                    value = block ? raw.TrimEnd('\n') : raw;
                     break;
                 default:
                     if (node.Kind == YamlFrameKind.Scalar && node.Style == ScalarStyle.Folded)
@@ -725,25 +786,34 @@ namespace SIL.TextEditing.Markdown.Records
             }
             if (value == null) return null;
 
-            // The canonical spelling, and a finding when the file spells it otherwise.
-            if (checkSpelling && node.Kind == YamlFrameKind.Scalar && !(node.Style == ScalarStyle.Folded))
+            var scalar = new RecordScalar(value) { Path = path, Range = range };
+            int[] map = decoded ? Fallback(value, valueStart, spellEnd) : ValueMap(node, valueStart, value, spellEnd);
+            if (field.Kind == RecordFieldKind.Rich) scalar.Paragraphs = ReadRich(value, field, ws, map);
+
+            // The canonical spelling, and a finding when the file spells it otherwise. A value the writer cannot spell is an error, so a file read without one
+            // can always be written (review of PR 147, P2-1); its fix spells what was read, where that reads back the same.
+            if (checkSpelling && node.Kind == YamlFrameKind.Scalar)
             {
-                string? canonical = Canonical(field, value, blockIndent, path);
-                if (canonical != null && canonical != written)
+                string? canonical = Canonical(field, value, blockIndent, path, out string? problem);
+                bool folded = node.Style == ScalarStyle.Folded && field.Kind == RecordFieldKind.Rich;
+                if (canonical == null)
+                {
+                    string? fix = field.Kind == RecordFieldKind.Rich ? Respelled(field, ws, scalar.Paragraphs!, blockIndent, path) : null;
+                    if (folded) Error(RecordDiagnosticIds.Folded, "A folded block rewrites line ends; rich text is a literal block.", valueStart, spellEnd, fix);
+                    Error(RecordDiagnosticIds.Unwritable, "This value cannot be written in a record file: " + problem + "." + (fix == null ? string.Empty : " The fix writes what was read."),
+                        valueStart, spellEnd, fix);
+                }
+                else if (folded) Error(RecordDiagnosticIds.Folded, "A folded block rewrites line ends; rich text is a literal block.", valueStart, spellEnd, canonical);
+                else if (node.Style != ScalarStyle.Folded && canonical != written)
                 {
                     bool unquoted = node.Style == ScalarStyle.Plain && (field.IsQuotedText || field.Kind == RecordFieldKind.Rich);
-                    if (unquoted) Info(RecordDiagnosticIds.Unquoted, "A plain value is read as the text it spells; " + (field.Kind == RecordFieldKind.Rich ? "rich text is a literal block (|-)." : "text is double-quoted."), valueStart, spellEnd, canonical);
+                    if (unquoted) Info(RecordDiagnosticIds.Unquoted, "A plain value is read as the text it spells; " + (field.Kind == RecordFieldKind.Rich ? "rich text is a literal block." : "text is double-quoted."), valueStart, spellEnd, canonical);
                     else Info(RecordDiagnosticIds.ScalarStyle, "This value is written " + (canonical.IndexOf('\n') >= 0 ? "as a literal block" : canonical) + ".", valueStart, spellEnd, canonical);
                 }
             }
 
-            var scalar = new RecordScalar(value) { Path = path, Range = range };
-            int[] map = decoded ? Fallback(value, valueStart, spellEnd) : ValueMap(node, valueStart, value, spellEnd);
             switch (field.Kind)
             {
-                case RecordFieldKind.Rich:
-                    scalar.Paragraphs = ReadRich(value, field, ws, map);
-                    break;
                 case RecordFieldKind.Reference:
                     scalar.Target = ReadReference(value, node, map);
                     break;
@@ -761,17 +831,54 @@ namespace SIL.TextEditing.Markdown.Records
             return end;
         }
 
-        string? Canonical(RecordField field, string value, int blockIndent, string path)
+        string? Canonical(RecordField field, string value, int blockIndent, string path) => Canonical(field, value, blockIndent, path, out _);
+
+        string? Canonical(RecordField field, string value, int blockIndent, string path, out string? problem)
         {
+            problem = null;
             try
             {
                 string spelled = RecordFileWriter.Spell(field, value, blockIndent, path);
                 return spelled.EndsWith("\n", StringComparison.Ordinal) ? spelled.Substring(0, spelled.Length - 1) : spelled;
             }
-            catch (RecordWriteException)
+            catch (RecordWriteException e)
+            {
+                problem = e.Message.TrimEnd('.');
+                return null;
+            }
+        }
+
+        /// <summary>The paragraphs that were read, written again as FieldWorks Markdown, when that reads back to the same paragraphs; otherwise null.</summary>
+        string? RespelledText(RecordField field, string? ws, IReadOnlyList<Paragraph> paragraphs)
+        {
+            try
+            {
+                var options = LeafOptions(DefaultWs(field, ws));
+                string text = field.Paragraphs ? RecordScalar.Rich(paragraphs, options).Text
+                    : RecordScalar.RichInline(paragraphs.Count == 1 ? (IEnumerable<Run>)paragraphs[0].Runs : Array.Empty<Run>(), options).Text;
+                if (RecordProfile.LiteralProblem(text) != null) return null;
+                IReadOnlyList<Paragraph> again;
+                if (field.Paragraphs) again = MarkdownConverter.Parse(text, options).Document.Paragraphs;
+                else
+                {
+                    var p = new Paragraph { Style = options.StyleNames.Normal };
+                    p.Props.StrProps[TextPropertyNumbers.NamedStyle] = options.StyleNames.Normal;
+                    foreach (var run in MarkdownConverter.ParseInline(text, options).Runs) p.Runs.Add(run);
+                    if (p.Runs.Count > 0) p.DefaultWs = p.Runs[0].Ws;
+                    again = new[] { p };
+                }
+                return MarkdownConverter.AreEquivalent(paragraphs, again) ? text : null;
+            }
+            catch (MarkdownWriteException)
             {
                 return null;
             }
+        }
+
+        string? Respelled(RecordField field, string? ws, IReadOnlyList<Paragraph> paragraphs, int blockIndent, string path)
+        {
+            string? text = RespelledText(field, ws, paragraphs);
+            return text == null ? null : Canonical(field, text, blockIndent, path);
         }
 
         string DecodePlainBlock(string markdown, int start, int end, out bool markup)
@@ -969,14 +1076,15 @@ namespace SIL.TextEditing.Markdown.Records
                 offsets.Add(i);
                 value.Append(c);
             }
+            // Only spaces, tabs and line ends are trimmed: a no-break or ideographic space at the end is text (review of PR 147).
             string all = value.ToString();
             int last = all.Length - 1;
-            while (last >= 0 && char.IsWhiteSpace(all[last])) last--;
+            while (last >= 0 && IsBlank(all[last])) last--;
             int first = 0;
             for (int i = 0; i <= last; i++)
             {
                 if (all[i] == '\n') first = i + 1;
-                else if (!char.IsWhiteSpace(all[i])) break;
+                else if (!IsBlank(all[i])) break;
             }
             CheckBodyYaml(end);
             if (last < 0) return;
@@ -992,6 +1100,13 @@ namespace SIL.TextEditing.Markdown.Records
             }
             var scalar = new RecordScalar(text) { Path = bodyField.Name + (root.WritingSystem != null ? "." + root.WritingSystem : string.Empty), Range = new[] { map[0], map[text.Length] } };
             scalar.Paragraphs = ReadRich(text, bodyField, root.WritingSystem, map);
+            string? problem = RecordProfile.LiteralProblem(text);
+            if (problem != null)
+            {
+                string? fix = RespelledText(bodyField, root.WritingSystem, scalar.Paragraphs);
+                Error(RecordDiagnosticIds.Unwritable, "The body cannot be written in a record file: " + problem + "." + (fix == null ? string.Empty : " The fix writes what was read."),
+                    map[0], map[text.Length], fix);
+            }
             if (root.WritingSystem != null)
             {
                 var alts = document.Data[bodyField.Name] as RecordAlternatives ?? new RecordAlternatives { Path = bodyField.Name };
@@ -1000,6 +1115,8 @@ namespace SIL.TextEditing.Markdown.Records
             }
             else document.Data[bodyField.Name] = scalar;
         }
+
+        static bool IsBlank(char c) => c == ' ' || c == '\t' || c == '\n';
 
         /// <summary>A YAML block in the body (a <c>---</c> line after a blank line, a key on the next line, and a closing line), which Pandoc reads into the
         /// metadata: a second document.</summary>

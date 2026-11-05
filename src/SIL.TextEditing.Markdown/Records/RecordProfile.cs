@@ -76,10 +76,12 @@ namespace SIL.TextEditing.Markdown.Records
             return sb?.ToString() ?? markdown;
         }
 
-        /// <summary>Appends <c>|-</c> and the text's lines at <paramref name="indent"/> spaces (an empty line stays empty) to a line that already has its key.</summary>
-        public static void AppendLiteral(StringBuilder sb, string text, int indent)
+        /// <summary>Appends the block header and the text's lines at <paramref name="indent"/> spaces (an empty line stays empty) to a line that already has
+        /// its key. The header is <c>|</c> (clip) for a value of paragraphs, which Pandoc then reads as blocks, and <c>|-</c> for one paragraph or plain
+        /// text (owner decision R-8); the text never ends in a line end, so both read back as it is.</summary>
+        public static void AppendLiteral(StringBuilder sb, string text, int indent, bool paragraphs = false)
         {
-            sb.Append("|-\n");
+            sb.Append(paragraphs ? "|\n" : "|-\n");
             foreach (string line in text.Split('\n'))
             {
                 if (line.Length > 0) sb.Append(' ', indent).Append(line);

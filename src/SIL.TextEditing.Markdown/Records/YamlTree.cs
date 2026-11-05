@@ -39,9 +39,19 @@ namespace SIL.TextEditing.Markdown.Records
         public int? TooDeepAt;
     }
 
+    /// <summary>For the tests: how much work the record reader did, counted and not timed (as <c>WriterWork</c> is for the Markdown writer). Per thread.</summary>
+    internal static class RecordWork
+    {
+        [ThreadStatic] public static long Steps;
+    }
+
     /// <summary>Builds <see cref="YamlFrameNode"/> trees with YamlDotNet's event parser (its parser layer only, never the serializer: ADR 0032).</summary>
     internal static class YamlTree
     {
+        /// <summary>The most tokens or events one front matter of <paramref name="length"/> characters can give: every one but a few takes a character. A
+        /// scanner that keeps returning without reading on (YamlDotNet's scanner does, after some syntax errors) is stopped here.</summary>
+        static long Limit(int length) => 4L * length + 64;
+
         /// <summary>How deep the tree may nest; a record is never near it, and it keeps a hostile file from exhausting the stack.</summary>
         public const int MaxDepth = 64;
 
@@ -54,10 +64,13 @@ namespace SIL.TextEditing.Markdown.Records
             var stack = new List<YamlFrameNode>();
             int documents = 0;
             int skipDepth = 0;
+            long events = 0, limit = Limit(text.Length);
             try
             {
                 while (parser.MoveNext())
                 {
+                    RecordWork.Steps++;
+                    if (++events > limit) throw new YamlException("The YAML parser did not read on.");
                     var e = parser.Current!;
                     switch (e)
                     {
@@ -159,15 +172,20 @@ namespace SIL.TextEditing.Markdown.Records
         static readonly YamlFrameNode Pending = new YamlFrameNode();
 
         /// <summary>The comments in <paramref name="text"/>, as [start, end) ranges from the <c>#</c> to the end of the comment. Found by a scan of their own
-        /// with comments on, so the tree is built with YamlDotNet's default (comments skipped). Empty when the text does not scan.</summary>
+        /// with comments on, so the tree is built with YamlDotNet's default (comments skipped). The scan stops at the first error token (after some syntax
+        /// errors YamlDotNet's scanner returns error tokens for ever, review of PR 147) and after <see cref="Limit"/> tokens; the reader asks only for
+        /// text that parsed.</summary>
         public static List<int[]> Comments(string text)
         {
             var found = new List<int[]>();
+            long tokens = 0, limit = Limit(text.Length);
             try
             {
                 var scanner = new Scanner(new StringReader(text), skipComments: false);
                 while (scanner.MoveNext())
                 {
+                    RecordWork.Steps++;
+                    if (scanner.Current is YamlDotNet.Core.Tokens.Error || ++tokens > limit) break;
                     if (scanner.Current is YamlDotNet.Core.Tokens.Comment c) found.Add(new[] { (int)c.Start.Index, (int)c.End.Index });
                 }
             }

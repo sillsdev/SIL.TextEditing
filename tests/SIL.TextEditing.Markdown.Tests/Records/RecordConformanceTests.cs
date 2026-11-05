@@ -17,13 +17,17 @@ namespace SIL.TextEditing.Markdown.Tests.Records
 
         [Theory]
         [MemberData(nameof(Cases))]
-        public void RecordFixtureCase(string id)
+        public async System.Threading.Tasks.Task RecordFixtureCase(string id)
         {
             var c = RecordFixtures.Find(id);
             try
             {
-                if (c.IsRead) RunRead(c);
-                else RunWrite(c);
+                // A case that does not finish fails instead of hanging the run: the reader must end on any text (review of PR 147, P1-1). This is a limit,
+                // not a measurement; a case takes milliseconds.
+                var run = System.Threading.Tasks.Task.Run(() => { if (c.IsRead) RunRead(c); else RunWrite(c); });
+                var first = await System.Threading.Tasks.Task.WhenAny(run, System.Threading.Tasks.Task.Delay(TimeSpan.FromMinutes(2)));
+                if (first != run) Assert.Fail("The case did not finish.");
+                await run;
             }
             catch (Exception e) when (!(e is OutOfMemoryException))
             {
@@ -122,8 +126,10 @@ namespace SIL.TextEditing.Markdown.Tests.Records
                 Severity = d.Severity == MarkdownSeverity.Error ? "error" : d.Severity == MarkdownSeverity.Warning ? "warning" : "suggestion",
                 Line = d.Line, Column = d.Column, EndLine = d.EndLine, EndColumn = d.EndColumn,
             }).ToList();
-            var expectedText = c.Findings.Select(f => f.ToString()).ToList();
-            var actualText = actual.Select(f => f.ToString()).ToList();
+            // A syntax error's place is the YAML parser's own, which another implementation need not share: only its id and line are compared.
+            string Compared(ExpectedFinding f) => f.Id == RecordDiagnosticIds.YamlSyntax ? f.Id + " " + f.Severity + " line " + f.Line : f.ToString();
+            var expectedText = c.Findings.Select(Compared).ToList();
+            var actualText = actual.Select(Compared).ToList();
             Assert.True(expectedText.SequenceEqual(actualText), "Findings differ.\nExpected:\n" + string.Join("\n", expectedText) + "\nActual:\n" + string.Join("\n", actualText)
                 + "\nAs fixture JSON:\n" + FixtureJson(diagnostics) + "\nMessages:\n" + string.Join("\n", diagnostics.Select(d => d.Id + " [" + d.Severity + "] " + d.Message)));
             for (int i = 0; i < c.Findings.Count; i++)

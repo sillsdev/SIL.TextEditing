@@ -148,7 +148,7 @@
           "type": "object",
           "additionalProperties": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "computed": {
@@ -177,13 +177,13 @@
         },
         "morph-type": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "environments": {
           "type": "array",
           "items": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "environment-strings": {
@@ -217,18 +217,18 @@
           "type": "object",
           "additionalProperties": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "grammatical-info": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "semantic-domains": {
           "type": "array",
           "items": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "examples": {
@@ -239,7 +239,7 @@
         },
         "scientific-name": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "features": {
           "type": "string",
@@ -265,12 +265,12 @@
           "type": "object",
           "additionalProperties": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "reference": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "translations": {
           "type": "array",
@@ -290,13 +290,13 @@
         },
         "type": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "translation": {
           "type": "object",
           "additionalProperties": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         }
       },
@@ -316,7 +316,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         }
       },
@@ -331,11 +331,11 @@
         },
         "title": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "type": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "date-of-event": {
           "type": "string",
@@ -345,7 +345,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "conclusions": {
@@ -390,7 +390,7 @@
           "type": "object",
           "additionalProperties": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "discussion": {
@@ -413,11 +413,11 @@
         },
         "title": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "type": {
           "type": "string",
-          "contentMediaType": "text/x-fieldworks-markdown"
+          "contentMediaType": "text/x-fieldworks-markdown-inline"
         },
         "date-of-event": {
           "type": "string",
@@ -427,7 +427,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "conclusions": {
@@ -468,7 +468,7 @@
           "type": "object",
           "additionalProperties": {
             "type": "string",
-            "contentMediaType": "text/x-fieldworks-markdown"
+            "contentMediaType": "text/x-fieldworks-markdown-inline"
           }
         },
         "guid-of-source": {

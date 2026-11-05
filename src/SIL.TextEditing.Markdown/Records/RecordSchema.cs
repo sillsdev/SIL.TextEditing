@@ -82,8 +82,8 @@ namespace SIL.TextEditing.Markdown.Records
                 switch (Kind)
                 {
                     case RecordFieldKind.Text: return "text/plain";
-                    case RecordFieldKind.Rich:
-                    case RecordFieldKind.Reference: return RecordSchema.MarkdownMediaType;
+                    case RecordFieldKind.Rich: return Paragraphs ? RecordSchema.MarkdownMediaType : RecordSchema.InlineMarkdownMediaType;
+                    case RecordFieldKind.Reference: return RecordSchema.InlineMarkdownMediaType;
                     case RecordFieldKind.Notation: return "text/x-fieldworks-" + Notation;
                     default: return null;
                 }
@@ -160,8 +160,11 @@ namespace SIL.TextEditing.Markdown.Records
     /// tests build one by hand with <see cref="RecordSchemaBuilder"/>.</summary>
     public sealed class RecordSchema
     {
-        /// <summary>The media type of FieldWorks Markdown text.</summary>
+        /// <summary>The media type of FieldWorks Markdown text of paragraphs (an StText; a body).</summary>
         public const string MarkdownMediaType = "text/x-fieldworks-markdown";
+
+        /// <summary>The media type of one paragraph of inline FieldWorks Markdown (a MultiString or String, and a reference's link).</summary>
+        public const string InlineMarkdownMediaType = "text/x-fieldworks-markdown-inline";
 
         readonly Dictionary<string, RecordKind> _kinds;
         readonly Dictionary<string, RecordObjectType> _types;
@@ -303,6 +306,9 @@ namespace SIL.TextEditing.Markdown.Records
         RecordObjectTypeBuilder Add(RecordField field)
         {
             if (string.IsNullOrEmpty(field.Name)) throw new ArgumentException("A field has a name.");
+            // A field path joins names with / and puts a writing system after a dot; a fragment starts with #.
+            foreach (char c in field.Name)
+                if (c == '.' || c == '/' || c == '#' || c < ' ' || char.IsWhiteSpace(c)) throw new ArgumentException("A field name has no '.', '/', '#', space or control character: " + field.Name);
             if (field.Name == "guid" && HasGuid) throw new ArgumentException("guid is the identity key of " + Name + "; it is not declared as a field.");
             if (_fields.Any(f => f.Name == field.Name)) throw new ArgumentException("The field " + Name + "." + field.Name + " is declared twice.");
             _fields.Add(field);

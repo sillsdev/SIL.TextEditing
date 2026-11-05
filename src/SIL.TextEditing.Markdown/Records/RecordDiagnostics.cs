@@ -74,6 +74,9 @@ namespace SIL.TextEditing.Markdown.Records
         /// <summary>Error: formatting or another writing system in a plain-text value written as a block (a block holds plain text as FieldWorks Markdown so
         /// that control characters can be carried).</summary>
         public const string PlainFieldMarkup = "fwmd.record.plain-field-markup";
+        /// <summary>Error: a value or body the reader can read but the writer cannot spell in the profile (a rich value whose first line starts with a space, or
+        /// that holds a tab, a control character or a line separator). Fix: what was read, written again, where that reads back the same.</summary>
+        public const string Unwritable = "fwmd.record.unwritable";
         /// <summary>Error: a <c>root:</c> that is not a project path, or whose segments after the record's do not walk the schema.</summary>
         public const string BadRoot = "fwmd.record.bad-root";
         /// <summary>Error: a key in <c>record-data:</c> outside the field a partial file's <c>root:</c> names.</summary>
@@ -90,7 +93,7 @@ namespace SIL.TextEditing.Markdown.Records
         {
             YamlSyntax, Tab, LineSeparator, DuplicateKey, Anchor, Alias, Tag, MergeKey, Folded, SecondDocument, TooDeep, CommentDropped, Unquoted, ScalarStyle,
             Flow, Empty, KeyOrder, NotARecord, UnknownKey, UnknownKind, SchemaMismatch, UnknownField, WrongShape, NotAnInteger, NotABoolean, BadGuid,
-            DuplicateGuid, NotAReference, PlainFieldMarkup, BadRoot, OutsideRoot, UnexpectedBody, BodyInFrame, Notation,
+            DuplicateGuid, NotAReference, PlainFieldMarkup, Unwritable, BadRoot, OutsideRoot, UnexpectedBody, BodyInFrame, Notation,
         };
     }
 

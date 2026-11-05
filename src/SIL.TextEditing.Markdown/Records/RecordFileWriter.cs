@@ -217,7 +217,7 @@ namespace SIL.TextEditing.Markdown.Records
                     string? problem = RecordProfile.LiteralProblem(text);
                     if (problem != null) throw new RecordWriteException("The rich value at " + path + " cannot be written as a literal block: " + problem + ".");
                     var sb = new StringBuilder();
-                    RecordProfile.AppendLiteral(sb, text, blockIndent);
+                    RecordProfile.AppendLiteral(sb, text, blockIndent, field.Paragraphs);
                     return sb.ToString();
                 }
                 default:
@@ -225,8 +225,14 @@ namespace SIL.TextEditing.Markdown.Records
                     if (RecordProfile.CanQuote(text)) return RecordProfile.Quote(text);
                     // Plain text with a control character: one paragraph of inline FieldWorks Markdown, which spells it as a character reference
                     // (report 17, section 3.3, rule 2), in a block.
-                    var options = new MarkdownOptions { WritingSystems = new FixedWritingSystems("x", "x") };
-                    string markdown = RecordProfile.ForBlock(MarkdownConverter.ToInlineMarkdown(new[] { new Run { Text = text, Ws = "x" } }, options));
+                    // NormalizeText off, as the reader reads it: the text is kept as it is (U+FFFE included).
+                    var options = new MarkdownOptions { WritingSystems = new FixedWritingSystems("x", "x"), NormalizeText = false };
+                    string markdown;
+                    try { markdown = RecordProfile.ForBlock(MarkdownConverter.ToInlineMarkdown(new[] { new Run { Text = text, Ws = "x" } }, options)); }
+                    catch (Exception e) when (e is ArgumentException || e is MarkdownWriteException)
+                    {
+                        throw new RecordWriteException("The text at " + path + " cannot be written: " + e.Message);
+                    }
                     string? problem = RecordProfile.LiteralProblem(markdown);
                     if (problem != null) throw new RecordWriteException("The text at " + path + " cannot be written: " + problem + ".");
                     var sb = new StringBuilder();

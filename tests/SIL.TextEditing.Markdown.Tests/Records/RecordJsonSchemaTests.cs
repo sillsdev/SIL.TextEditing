@@ -36,8 +36,9 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             var defs = Json.Obj(root["definitions"]);
             Dictionary<string, object?> Prop(string type, string field) => Json.Obj(Json.Obj(Json.Obj(defs[type])["properties"])[field]);
             Assert.Equal("text/plain", Json.Str(Json.Obj(Prop("sense", "gloss")["additionalProperties"])["contentMediaType"]));
-            Assert.Equal(RecordSchema.MarkdownMediaType, Json.Str(Json.Obj(Prop("sense", "definition")["additionalProperties"])["contentMediaType"]));
-            Assert.Equal(RecordSchema.MarkdownMediaType, Json.Str(Prop("sense", "grammatical-info")["contentMediaType"]));
+            Assert.Equal(RecordSchema.InlineMarkdownMediaType, Json.Str(Json.Obj(Prop("sense", "definition")["additionalProperties"])["contentMediaType"]));
+            Assert.Equal(RecordSchema.InlineMarkdownMediaType, Json.Str(Prop("sense", "grammatical-info")["contentMediaType"]));
+            Assert.Equal(RecordSchema.MarkdownMediaType, Json.Str(Prop("notebook-record", "conclusions")["contentMediaType"]));
             Assert.Equal("text/x-fieldworks-feature-structure", Json.Str(Prop("sense", "features")["contentMediaType"]));
             Assert.Equal("text/x-fieldworks-environment", Json.Str(Json.Obj(Prop("allomorph", "environment-strings")["items"])["contentMediaType"]));
             Assert.Equal("integer", Json.Str(Prop("entry", "homograph-number")["type"]));

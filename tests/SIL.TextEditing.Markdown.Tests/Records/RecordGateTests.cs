@@ -231,6 +231,38 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             Assert.Equal(c.CanonicalText, RecordFileWriter.Write(crlf.Document!, c.Schema));
         }
 
+        public static IEnumerable<object[]> CleanReadCases() => RecordFixtures.All().Where(c => c.IsRead && !c.HasErrors).Select(c => new object[] { c.Id });
+
+        /// <summary>Reading then writing is total: a file the reader finds no error in can be written (review of PR 147, P2-1).</summary>
+        [Theory]
+        [MemberData(nameof(CleanReadCases))]
+        public void AFixtureThatReadsWithoutAnErrorCanBeWritten(string id)
+        {
+            var c = RecordFixtures.Find(id);
+            var read = RecordFileReader.Read(c.Text!, c.Schema, RecordFixtures.Options(c));
+            Assert.False(read.HasErrors);
+            string written = RecordFileWriter.Write(read.Document!, c.Schema);
+            var again = RecordFileReader.Read(written, c.Schema, RecordFixtures.Options(c));
+            Assert.False(again.HasErrors, string.Join("\n", again.Diagnostics));
+            RecordConformanceTests.AssertDocuments(read.Document!, again.Document!, c.Schema, "written and read again");
+        }
+
+        [Theory]
+        [InlineData("a\uFFFEb")]
+        [InlineData("a\uFFFFb")]
+        [InlineData("\uD800")]
+        public void PlainTextTheProfileCannotSpellIsRefusedWithARecordWriteExceptionOrWrittenLosslessly(string text)
+        {
+            var document = new RecordDocument("lexicon/entry");
+            document.Data.Set("citation-form", new RecordAlternatives().Add("ceb", new RecordScalar(text)));
+            string written;
+            try { written = RecordFileWriter.Write(document, Schema); }
+            catch (RecordWriteException) { return; }
+            var read = RecordFileReader.Read(written, Schema);
+            Assert.False(read.HasErrors, string.Join("\n", read.Diagnostics));
+            RecordConformanceTests.AssertDocuments(document, read.Document!, Schema, written);
+        }
+
         [Fact]
         public void TheWriterRefusesWhatTheSchemaDoesNotHave()
         {
@@ -422,7 +454,8 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             {
                 case RecordFieldKind.Integer:
                 case RecordFieldKind.Boolean: style = "plain"; break;
-                case RecordFieldKind.Rich: style = "block"; break;
+                // A value of paragraphs is a clip block (|, owner decision R-8), which keeps one final line end; one paragraph is |-.
+                case RecordFieldKind.Rich: style = "block"; if (field.Paragraphs) text += "\n"; break;
                 case RecordFieldKind.Text:
                 case RecordFieldKind.Notation:
                     if (Quotable(text)) style = "quoted";
@@ -470,9 +503,8 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             ComparePandoc(text, Schema, options, "seed " + seed);
         }
 
-        /// <summary>Pandoc reads the file (its metadata view is not authoritative for the frame, ADR 0032, so the frame is compared by shape), and reads each rich
-        /// value of one plain paragraph and the body as the FieldWorks Markdown reader does. Pandoc reads a <c>|-</c> block (a string with no final line end) as
-        /// inline Markdown, so for a rich value of several paragraphs or a heading only that it is inlines is checked.</summary>
+        /// <summary>Pandoc reads the file (its metadata view is not authoritative for the frame, ADR 0032, so the frame is compared by shape), and reads every rich
+        /// value and the body as the FieldWorks Markdown reader does: a value of paragraphs (a <c>|</c> block) as blocks, one paragraph (<c>|-</c>) as inlines.</summary>
         static void ComparePandoc(string text, RecordSchema schema, RecordReadOptions options, string what)
         {
             var read = RecordFileReader.Read(text, schema, options);
@@ -567,11 +599,17 @@ namespace SIL.TextEditing.Markdown.Tests.Records
             string t = Json.Str(meta["t"]);
             Assert.True(t == "MetaInlines" || t == "MetaString" || t == "MetaBool" || t == "MetaBlocks", what + " at " + path + ": Pandoc reads " + t);
             if (field.Kind != RecordFieldKind.Rich) return;
-            Assert.Equal("MetaInlines", t);
             var paragraphs = value.Paragraphs!;
-            // Pandoc reads a metadata string with no final line end (every |- block) as inline Markdown, so only a value of one plain paragraph means the
-            // same to it; a heading, a list or several paragraphs in the frame are inlines to Pandoc (ADR 0032, open question).
-            if (paragraphs.Count != 1 || paragraphs[0].Style != options.Markdown.StyleNames.Normal) return;
+            if (field.Paragraphs)
+            {
+                // A clip block (|) ends in a line end, so Pandoc reads it as blocks: every paragraph, heading, list and table, as the reader does (R-8).
+                Assert.True(t == "MetaBlocks", what + " at " + path + ": Pandoc reads a value of paragraphs as " + t);
+                var blocks = PandocModel.Convert(Document(Json.Arr(meta["c"]), ws, vernacular), LeafOptions(options, ws, vernacular));
+                ConformanceTests.AssertParagraphs(paragraphs, blocks, what + ": Pandoc reading the rich value at " + path);
+                return;
+            }
+            // One paragraph is a |- block, with no final line end, which Pandoc reads as inlines.
+            Assert.Equal("MetaInlines", t);
             var actual = PandocModel.Convert(Document(new List<object?> { new Dictionary<string, object?> { ["t"] = "Para", ["c"] = meta["c"] } }, ws, vernacular), LeafOptions(options, ws, vernacular));
             ConformanceTests.AssertParagraphs(paragraphs.Select(p => Plain(p)).ToList(), actual.Select(p => Plain(p)).ToList(), what + ": Pandoc reading the rich value at " + path);
         }
