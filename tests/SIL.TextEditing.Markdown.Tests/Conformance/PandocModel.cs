@@ -121,6 +121,7 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
 
         void ListItem(List<object?> blocks, string style, List<Paragraph> into)
         {
+            if (blocks.Count == 0) { into.Add(ParagraphOf(new List<object?>(), style, null)); return; } // a marker with nothing after it
             if (blocks.Count != 1) throw new PandocMismatch("a list item with " + blocks.Count + " blocks");
             var block = Json.Obj(blocks[0]);
             string type = Json.Str(block["t"]);

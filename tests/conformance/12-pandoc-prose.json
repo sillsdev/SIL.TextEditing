@@ -504,5 +504,19 @@
     "project": "standard",
     "markdown": "The data show this pattern\n___ marks a word boundary\n",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "The data show this pattern ___ marks a word boundary", "ws": "en" } ] } ]
-  }
+  },
+  {"name":"an empty list item that comes first is an empty paragraph in the list style, as in Pandoc","project":"standard","markdown":"-\n\nText\n","paragraphs":[{"style":"Bulleted List","typingWs":"en"},{"style":"Normal","runs":[{"text":"Text","ws":"en"}]}]},
+  {"name":"an empty numbered list item that comes first is an empty paragraph","project":"standard","markdown":"1.\n\nText\n","paragraphs":[{"style":"Numbered List","typingWs":"en"},{"style":"Normal","runs":[{"text":"Text","ws":"en"}]}]},
+  {"name":"an empty list item in the middle of a list is kept","project":"standard","markdown":"- a\n-\n- b\n","paragraphs":[{"style":"Bulleted List","runs":[{"text":"a","ws":"en"}]},{"style":"Bulleted List","typingWs":"en"},{"style":"Bulleted List","runs":[{"text":"b","ws":"en"}]}]},
+  {"name":"an empty numbered list item in the middle of a list is kept","project":"standard","markdown":"1. a\n2.\n3. b\n","paragraphs":[{"style":"Numbered List","runs":[{"text":"a","ws":"en"}]},{"style":"Numbered List","typingWs":"en"},{"style":"Numbered List","runs":[{"text":"b","ws":"en"}]}]},
+  {"name":"a file that holds only a hyphen is one empty paragraph","project":"standard","markdown":"-\n","paragraphs":[{"style":"Bulleted List","typingWs":"en"}]},
+  {"name":"a lone marker between paragraphs (a hyphen) is an empty list paragraph","project":"standard","markdown":"p\n\n-\n\nq\n","paragraphs":[{"style":"Normal","runs":[{"text":"p","ws":"en"}]},{"style":"Bulleted List","typingWs":"en"},{"style":"Normal","runs":[{"text":"q","ws":"en"}]}]},
+  {"name":"a file that holds only a star is one empty paragraph","project":"standard","markdown":"*\n","paragraphs":[{"style":"Bulleted List","typingWs":"en"}]},
+  {"name":"a lone marker between paragraphs (a star) is an empty list paragraph","project":"standard","markdown":"p\n\n*\n\nq\n","paragraphs":[{"style":"Normal","runs":[{"text":"p","ws":"en"}]},{"style":"Bulleted List","typingWs":"en"},{"style":"Normal","runs":[{"text":"q","ws":"en"}]}]},
+  {"name":"a file that holds only a plus is one empty paragraph","project":"standard","markdown":"+\n","paragraphs":[{"style":"Bulleted List","typingWs":"en"}]},
+  {"name":"a lone marker between paragraphs (a plus) is an empty list paragraph","project":"standard","markdown":"p\n\n+\n\nq\n","paragraphs":[{"style":"Normal","runs":[{"text":"p","ws":"en"}]},{"style":"Bulleted List","typingWs":"en"},{"style":"Normal","runs":[{"text":"q","ws":"en"}]}]},
+  {"name":"a file that holds only a number and a period is one empty paragraph","project":"standard","markdown":"1.\n","paragraphs":[{"style":"Numbered List","typingWs":"en"}]},
+  {"name":"a lone marker between paragraphs (a number and a period) is an empty list paragraph","project":"standard","markdown":"p\n\n1.\n\nq\n","paragraphs":[{"style":"Normal","runs":[{"text":"p","ws":"en"}]},{"style":"Numbered List","typingWs":"en"},{"style":"Normal","runs":[{"text":"q","ws":"en"}]}]},
+  {"name":"a file that holds only a number and a parenthesis is one empty paragraph","project":"standard","markdown":"1)\n","paragraphs":[{"style":"Numbered List","typingWs":"en"}]},
+  {"name":"a lone marker between paragraphs (a number and a parenthesis) is an empty list paragraph","project":"standard","markdown":"p\n\n1)\n\nq\n","paragraphs":[{"style":"Normal","runs":[{"text":"p","ws":"en"}]},{"style":"Numbered List","typingWs":"en"},{"style":"Normal","runs":[{"text":"q","ws":"en"}]}]}
 ]

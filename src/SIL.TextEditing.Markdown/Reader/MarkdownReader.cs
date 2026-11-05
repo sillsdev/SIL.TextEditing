@@ -544,6 +544,7 @@ namespace SIL.TextEditing.Markdown.Reader
         void ReadParagraph(ParagraphBlock block, string text)
         {
             string raw = text.Substring(block.Span.Start, block.Span.Length);
+            if (TryLoneMarkers(raw)) return;
             if (TryEmptyMarker(raw, block.Span.Start))
             {
                 // Markdig read the line as text before the marker was recognised, so a quoted value that looks like a link or a
@@ -553,6 +554,23 @@ namespace SIL.TextEditing.Markdown.Reader
             }
             CheckPandoc(block.Span.Start, block.Span.End + 1, true, NearTable(block));
             _paragraphs.Add(MakeParagraph(Names.Normal, new PropertyBag(), InlineReader.Read(block.Inline, _context), null));
+        }
+
+        static readonly System.Text.RegularExpressions.Regex LoneMarker = new System.Text.RegularExpressions.Regex(@"^ {0,3}(?:[-*+]|[0-9]{1,9}[.)])[ \t]*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        /// <summary>Lines that hold only a list marker are empty list items, which Pandoc reads too: empty paragraphs in the list's style. Markdig reads a lone marker
+        /// that follows a paragraph as text, so the reader takes it here.</summary>
+        bool TryLoneMarkers(string raw)
+        {
+            var lines = raw.Split('\n');
+            foreach (string line in lines) if (!LoneMarker.IsMatch(line.TrimEnd('\r'))) return false;
+            foreach (string line in lines)
+            {
+                string t = line.Trim();
+                string style = t[0] >= '0' && t[0] <= '9' ? Names.NumberedList : Names.BulletedList;
+                _paragraphs.Add(MakeParagraph(style, new PropertyBag(), new List<Run>(), null));
+            }
+            return true;
         }
 
         /// <summary>A paragraph that is exactly <c>[]{.empty ...}</c> is an empty paragraph (spec 3.1). The attributes may name its writing system
@@ -652,6 +670,8 @@ namespace SIL.TextEditing.Markdown.Reader
                     }
                     else UnsupportedBlock(part, "A list item holds one paragraph; nested blocks are not supported.");
                 }
+                // A marker with nothing after it is an empty list item in Pandoc too: an empty paragraph in the list's style.
+                if (item.Count == 0) _paragraphs.Add(MakeParagraph(style, new PropertyBag(), new List<Run>(), null));
             }
         }
 
