@@ -11,6 +11,8 @@
     <TargetDir>$(MSBuildProjectDirectory)\</TargetDir>
   </PropertyGroup>
   <ItemGroup>
+    <!-- LiblcmRefusalSweepTests drive the real serializers through the same handle-to-factory shim the adapter uses. -->
+    <InternalsVisibleTo Include="SIL.TextEditing.LCModel.Tests" />
     <PackageReference Include="SIL.LCModel.Core" />
     <!-- SIL.LCModel.Core asks for SIL.WritingSystems 17.0.0; reference it directly so the pinned 18 (ADR 0002) resolves. -->
     <PackageReference Include="SIL.WritingSystems" />

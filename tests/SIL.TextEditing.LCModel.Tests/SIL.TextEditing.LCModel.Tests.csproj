@@ -13,5 +13,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <ProjectReference Include="..\..\src\SIL.TextEditing.LCModel\SIL.TextEditing.LCModel.csproj" />
+    <ProjectReference Include="..\..\src\SIL.TextEditing.Markdown\SIL.TextEditing.Markdown.csproj" />
   </ItemGroup>
 </Project>

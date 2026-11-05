@@ -53,35 +53,36 @@ namespace SIL.TextEditing.LCModel
             return bag;
         }
 
-        // Integer properties liblcm's text-props writer writes and its reader refuses ("Unknown Prop attribute"): hyphenate, maxLines,
-        // cellBorderWidth, cellSpacing, cellPadding, setRowDefaults, relLineHeight, directionDepth, and ktptMarginTop (written "MarginTop",
-        // read only as "marginTop"). They are facts about the format, pinned by LiblcmPersistenceTests against the real reader.
-        static readonly HashSet<int> RefusedInts = new HashSet<int> { 50, 129, 150, 151, 152, 153, 154, 159, 160 };
-        const int PropEditable = (int)FwTextPropType.ktptEditable;
+        /// <summary>Whether liblcm refuses the integer property by number (see <see cref="LiblcmRefusals.IsPropertyRefused"/>). Kept for hosts
+        /// that ask before they build; the conversions below also refuse values (<see cref="LiblcmRefusals.ForInt"/>).</summary>
+        public static bool IsRefusedByLiblcm(int tpt, bool inStyleRules) => LiblcmRefusals.IsPropertyRefused(tpt, inStyleRules);
 
-        /// <summary>Whether liblcm's reader refuses the integer property, which would make the project load as a corrupted record.
-        /// <paramref name="inStyleRules"/> says it is a paragraph's StyleRules, where liblcm also refuses ktptEditable (155); on a run it
-        /// ignores it. A property liblcm silently drops (ktptTableRule 161, unknown numbers, tabList, tabDef) is not refused: it is lost on
-        /// reload, but harmlessly, and the bag carries it for every other use.</summary>
-        public static bool IsRefusedByLiblcm(int tpt, bool inStyleRules) => RefusedInts.Contains(tpt) || (inStyleRules && tpt == PropEditable);
-
-        // A builder of what the bag holds that liblcm can load back. Refused properties are reported and left out; the bag is not touched.
+        // A builder of what the bag holds that liblcm can load back. Refused properties and values are reported and left out; the bag is not touched.
         static ITsPropsBldr FillBuilder(PropertyBag bag, bool inStyleRules, int? paragraphIndex, int? runIndex, Action<DroppedProperty>? onDropped)
         {
             var builder = TsStringUtils.MakePropsBldr();
             foreach (var kv in bag.IntProps)
             {
-                if (IsRefusedByLiblcm(kv.Key, inStyleRules))
+                var refusal = LiblcmRefusals.ForInt(kv.Key, kv.Value.Variation, kv.Value.Value, inStyleRules);
+                if (refusal != null)
                 {
-                    onDropped?.Invoke(new DroppedProperty(kv.Key, false, paragraphIndex, runIndex));
+                    onDropped?.Invoke(new DroppedProperty(kv.Key, false, paragraphIndex, runIndex, refusal.Reason, refusal.Detail));
                     continue;
                 }
                 builder.SetIntPropValues(kv.Key, kv.Value.Variation, kv.Value.Value);
             }
-            foreach (var kv in bag.StrProps) builder.SetStrPropValue(kv.Key, kv.Value);
+            foreach (var kv in bag.StrProps)
+            {
+                var refusal = LiblcmRefusals.ForString(kv.Key, kv.Value, inStyleRules);
+                if (refusal != null)
+                {
+                    onDropped?.Invoke(new DroppedProperty(kv.Key, true, paragraphIndex, runIndex, refusal.Reason, refusal.Detail));
+                    continue;
+                }
+                builder.SetStrPropValue(kv.Key, kv.Value);
+            }
             return builder;
         }
-
         /// <summary>The runs of a string. An empty string yields one empty run, so its writing system survives.</summary>
         public static List<Run> ToRuns(ITsString text, IWritingSystemHandles writingSystems)
         {
@@ -155,7 +156,12 @@ namespace SIL.TextEditing.LCModel
             var builder = FillBuilder(run.Props, false, paragraphIndex, runIndex, onDropped);
             int ws = writingSystems.GetHandle(run.Ws);
             if (ws != 0) builder.SetIntPropValues(PropWs, 0, ws);
-            if (run.ObjData != null) builder.SetStrPropValue(PropObjData, run.ObjData);
+            if (run.ObjData != null)
+            {
+                var refusal = LiblcmRefusals.ForString(PropObjData, run.ObjData, false);
+                if (refusal != null) onDropped?.Invoke(new DroppedProperty(PropObjData, true, paragraphIndex, runIndex, refusal.Reason, refusal.Detail));
+                else builder.SetStrPropValue(PropObjData, run.ObjData);
+            }
             return builder.GetTextProps();
         }
 
@@ -204,8 +210,8 @@ namespace SIL.TextEditing.LCModel
         }
 
         /// <summary>A document as paragraphs for the host to store: the key each paragraph carries (null for a new one,
-        /// which the host then assigns), its string and its StyleRules. A property liblcm refuses on load is left out and
-        /// reported to <paramref name="onDropped"/> (<see cref="IsRefusedByLiblcm"/>).</summary>
+        /// which the host then assigns), its string and its StyleRules. A property or value liblcm cannot load back is left out and
+        /// reported to <paramref name="onDropped"/> (<see cref="LiblcmRefusals"/>).</summary>
         public static List<TextParagraph> ToTextParagraphs(Document document, IWritingSystemHandles writingSystems,
             Action<DroppedProperty>? onDropped = null)
         {
