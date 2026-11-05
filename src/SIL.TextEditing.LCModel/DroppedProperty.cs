@@ -9,6 +9,10 @@ namespace SIL.TextEditing.LCModel
         /// <summary>liblcm accepts the property but refuses this value: its reader throws on it, its writer throws on it, or a save
         /// after a load throws (ADR 0016, amended for issue 139).</summary>
         ValueNotLoadable,
+
+        /// <summary>liblcm refuses the value, and the model holds the same fact in a typed field (<see cref="Paragraph.Rtl"/>), so the adapter
+        /// stored the typed field's value instead of leaving the property out. <see cref="DroppedProperty.Detail"/> says what.</summary>
+        ValueReplaced,
     }
 
     /// <summary>A property the adapter left out of the string or StyleRules it built, because liblcm cannot load it back (its XML reader
@@ -54,7 +58,9 @@ namespace SIL.TextEditing.LCModel
         public string? Detail { get; }
 
         public string Message => (IsString ? "String" : "Integer") + " property " + Number
-            + (Reason == DroppedReason.PropertyNotLoadable
+            + (Reason == DroppedReason.ValueReplaced
+                ? " was replaced: liblcm cannot load the value in the bag back" + (Detail == null ? "" : " (" + Detail + ")") + "."
+                : Reason == DroppedReason.PropertyNotLoadable
                 ? " is not stored: liblcm refuses it when it loads the project, which would report a corrupted record."
                 : " is not stored: liblcm cannot load this value back" + (Detail == null ? "" : " (" + Detail + ")")
                     + ", which would report a corrupted record.");

@@ -193,6 +193,15 @@ namespace SIL.TextEditing.LCModel
             bool hadRtl = bag.TryGetInt(PropRightToLeft, out int rtl);
             if (paragraph.Rtl != (hadRtl && rtl != 0))
                 bag.IntProps[PropRightToLeft] = new IntPropValue(0, paragraph.Rtl ? 1 : 0);
+            // The bag may hold a direction liblcm refuses (a negative one) that agrees with Rtl. The editor shows Rtl, so store that.
+            if (bag.TryGetInt(PropRightToLeft, out int heldRtl) && bag.IntProps.TryGetValue(PropRightToLeft, out var held)
+                && LiblcmRefusals.ForInt(PropRightToLeft, held.Variation, heldRtl, true) != null)
+            {
+                int stored = paragraph.Rtl ? 1 : 0;
+                onDropped?.Invoke(new DroppedProperty(PropRightToLeft, false, paragraphIndex, null, DroppedReason.ValueReplaced,
+                    "stored " + stored + " to match the paragraph direction"));
+                bag.IntProps[PropRightToLeft] = new IntPropValue(0, stored);
+            }
             if (bag.Count == 0) return null;
             var rules = FillBuilder(bag, true, paragraphIndex, null, onDropped).GetTextProps();
             return rules.IntPropCount == 0 && rules.StrPropCount == 0 ? null : rules;

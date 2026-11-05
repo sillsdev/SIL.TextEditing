@@ -357,6 +357,23 @@ namespace SIL.TextEditing.LCModel.Tests
         }
 
         [Fact]
+        public void A_refused_rightToLeft_is_replaced_by_the_direction_the_editor_shows()
+        {
+            var parse = MarkdownConverter.Parse("::: {rightToLeft=-1}\ntext\n:::\n");
+            var paragraph = parse.Document.Paragraphs[0];
+            Assert.True(paragraph.Rtl);
+            var dropped = new List<DroppedProperty>();
+            var rules = TsStringConversion.ToStyleRules(paragraph, dropped.Add)!;
+
+            var d = Assert.Single(dropped);
+            Assert.Equal((128, DroppedReason.ValueReplaced), (d.Number, d.Reason));
+            Assert.Contains("replaced", d.Message);
+            Assert.True(LiblcmOracle.Loads(true, rules));
+            var back = TsStringUtils.GetTextProps(XElement.Parse(TsStringUtils.GetXmlRep(rules, null!)), null!);
+            Assert.Equal(1, back.GetIntPropValues(Rtl, out _));
+            Assert.Equal(-1, paragraph.Props.IntProps[Rtl].Value);   // the bag is untouched
+        }
+        [Fact]
         public void A_copied_fragment_loads_back_without_the_refused_property()
         {
             var p = new Paragraph { Runs = new RunList(new[] { RunWith(160) }), DefaultWs = "en" };
@@ -421,7 +438,8 @@ namespace SIL.TextEditing.LCModel.Tests
                         run.Props.IntProps[tpt] = new IntPropValue(variation, value);
                         loads = LiblcmOracle.LoadsString(TsStringConversion.ToTsString(new List<Run> { run }, H, "en", dropped.Add));
                     }
-                    var expected = LiblcmRefusals.IsPropertyRefused(tpt, styleRules) ? DroppedReason.PropertyNotLoadable : DroppedReason.ValueNotLoadable;
+                    var expected = LiblcmRefusals.IsPropertyRefused(tpt, styleRules) ? DroppedReason.PropertyNotLoadable
+                        : styleRules && tpt == Rtl ? DroppedReason.ValueReplaced : DroppedReason.ValueNotLoadable;
                     if (!loads || dropped.Count != 1 || dropped[0].Number != tpt || dropped[0].Reason != expected)
                         failures.Add($"{(styleRules ? "StyleRules" : "run")} {tpt} var {variation} value {value}");
                 }
