@@ -86,7 +86,7 @@ namespace SIL.TextEditing.Markdown
         public string? LinkBase { get; set; }
 
         /// <summary>For <see cref="MarkdownLinkForm.MotifUrl"/>: the Known project's name in <c>motif://projects/&lt;project&gt;/...</c>. The reader takes a Motif
-        /// link that names another project to be a cross-project link.</summary>
+        /// link that names another project to be a cross-project link; with no name set every named project is another, so the link keeps its project in the stored URL.</summary>
         public string? ProjectName { get; set; }
 
         /// <summary>The <c>database=</c> a <c>silfw://</c> URL names for this project. Default: <c>this$</c>, which FieldWorks writes for the current project.</summary>

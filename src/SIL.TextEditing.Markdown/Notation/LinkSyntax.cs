@@ -78,8 +78,9 @@ namespace SIL.TextEditing.Markdown.Notation
                                 else d.Guid = g;
                             }
                     }
-                    // Without a project name from the host, a Motif link is taken to be about this project: the core cannot know better, and must not invent a foreign one.
-                    if (options.ProjectName != null && !string.Equals(project, options.ProjectName, StringComparison.Ordinal)) d.Project = project;
+                    // A Motif link names a project, and only the host knows which one is this one. Without ProjectName every named project is taken to be another,
+                    // so the link keeps its project in the stored URL instead of silently becoming a link into this project.
+                    if (!string.Equals(project, options.ProjectName, StringComparison.Ordinal)) d.Project = project;
                     return d;
                 }
             }

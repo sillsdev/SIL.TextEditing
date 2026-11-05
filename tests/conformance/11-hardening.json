@@ -256,5 +256,6 @@
     "markdown": "term\n: meaning\n",
     "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 2, "column": 1, "endLine": 2, "endColumn": 10, "fix": "\\: meaning" } ],
     "pandoc": false
-  }
+  },
+  {"name":"a motif link into a project, read with no project name from the host, is never taken for a link into this one","project":"standard","markdown":"[palit](motif://projects/Other/lexicon/palit(2)?guid=7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d){.name url=\"silfw://localhost/link?database%3dOther%26tool%3dlexiconEdit%26guid%3d7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d%26tag%3d\"}\n","paragraphs":[{"style":"Normal","runs":[{"text":"palit","ws":"en","props":{"s133":"Hyperlink"},"link":{"guid":"7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d","tool":"lexiconEdit","database":"Other"}}]}],"canonical":"[palit](/objects/7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d){.name url=\"silfw://localhost/link?database%3dOther%26tool%3dlexiconEdit%26guid%3d7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d%26tag%3d\"}\n"}
 ]
