@@ -152,6 +152,23 @@
     "pandoc": false
   },
   {
+    "name": "a span that contains a link is a span, as Pandoc reads it",
+    "project": "standard",
+    "markdown": "[see [palit](/lexicon/palit(2)){guid=7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d} here]{.v}\n",
+    "paragraphs": [ { "style": "Normal", "runs": [
+      { "text": "see ", "ws": "ceb" },
+      { "text": "palit", "ws": "ceb", "props": { "s133": "Hyperlink" }, "link": { "guid": "7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d", "tool": "lexiconEdit" } },
+      { "text": " here", "ws": "ceb" }
+    ] } ],
+    "canonical": "[see&#x20;]{.v}[palit](/lexicon/palit(2)){.v .name guid=7d2c9a10-3e4f-4a5b-8c6d-7e8f9a0b1c2d}[&#x20;here]{.v}\n"
+  },
+  {
+    "name": "a div inside a div has no counterpart and is an error with the escape as the fix",
+    "markdown": "::: {custom-style=Example}\n::: {custom-style=Normal}\nx\n:::\n:::\n",
+    "findings": [ { "id": "fwmd.syntax.unsupported-markup", "line": 2, "column": 1, "endLine": 2, "endColumn": 26, "fix": "\\::: {custom-style=Normal}" } ],
+    "pandoc": false
+  },
+  {
     "name": "a tab in the front matter's indentation is malformed, because Pandoc refuses it",
     "project": "standard",
     "markdown": "---\nfwmd: 1\nwritingSystems:\n\ten:\n---\n\nx\n",

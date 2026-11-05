@@ -325,7 +325,13 @@ namespace SIL.TextEditing.Markdown.Reader
                         fences.Add(open);
                         open = null;
                     }
-                    else open.Lines.Add(new[] { lineStart, lineEnd });
+                    else
+                    {
+                        if (IsFenceLike(lineStart, lineEnd))
+                            _context.Report(MarkdownDiagnosticIds.UnsupportedMarkup, MarkdownSeverity.Error,
+                                "A div inside a div has no counterpart in FieldWorks text. Escape the first colon, as in \\: , if this is text.", lineStart, lineEnd, "\\" + _source.Substring(lineStart, lineEnd - lineStart));
+                        open.Lines.Add(new[] { lineStart, lineEnd });
+                    }
                 }
                 pos = next;
             }
@@ -381,6 +387,16 @@ namespace SIL.TextEditing.Markdown.Reader
                 SpanParser.ReportBadBlock(_context, status, i, errorPos, error);
             }
             return true;
+        }
+
+        /// <summary>A line of three or more colons followed by anything: Pandoc would read it as the fence of a nested div.</summary>
+        bool IsFenceLike(int lineStart, int lineEnd)
+        {
+            int i = lineStart;
+            while (i < lineEnd && i - lineStart < 3 && _source[i] == ' ') i++;
+            int colons = i;
+            while (i < lineEnd && _source[i] == ':') i++;
+            return i - colons >= 3;
         }
 
         bool IsCloser(int lineStart, int lineEnd, int openColons)

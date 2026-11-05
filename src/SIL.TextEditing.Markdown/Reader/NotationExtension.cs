@@ -124,7 +124,7 @@ namespace SIL.TextEditing.Markdown.Reader
             var context = ReaderContext.From(processor.Context);
             if (context == null) return false;
             var open = processor.Inline?.FirstParentOfType<LinkDelimiterInline>();
-            if (open == null || open.IsImage || !open.IsActive) return false;
+            if (open == null || open.IsImage) return false;
             int braceAt = slice.Start + 1;
             var status = AttributeScanner.TryScan(slice.Text, braceAt, slice.End + 1, out var block, out int errorPos, out string error);
             int delta = processor.GetSourcePosition(braceAt) - braceAt;
