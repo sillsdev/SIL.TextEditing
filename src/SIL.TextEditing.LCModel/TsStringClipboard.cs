@@ -31,7 +31,7 @@ namespace SIL.TextEditing.LCModel
 
         /// <summary>The XML for a fragment, as <c>DocumentEditor.GetFragment</c> returns it, paragraphs joined with the separator.</summary>
         public static string FragmentToXml(IReadOnlyList<Paragraph> fragment, IWritingSystemHandles writingSystems,
-            string paragraphSeparator = FieldWorksParagraphSeparator)
+            string paragraphSeparator = FieldWorksParagraphSeparator, Action<DroppedProperty>? onDropped = null)
         {
             var joined = new List<Run>();
             for (int i = 0; i < fragment.Count; i++)
@@ -40,7 +40,7 @@ namespace SIL.TextEditing.LCModel
                 joined.AddRange(fragment[i].Runs);
             }
             string defaultWs = fragment.Count > 0 ? fragment[0].DefaultWs : "en";
-            return ToXml(TsStringConversion.ToTsString(joined, writingSystems, defaultWs), writingSystems);
+            return ToXml(TsStringConversion.ToTsString(joined, writingSystems, defaultWs, onDropped), writingSystems);
         }
 
         /// <summary>The paragraphs a pasted payload holds, ready for <c>DocumentEditor.Paste</c>; none carries a key. With the
