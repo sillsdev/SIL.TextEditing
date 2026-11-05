@@ -1,6 +1,8 @@
 using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.VisualTree;
 using Xunit;
 
 namespace SIL.TextEditing.Playground.Tests
@@ -74,7 +76,7 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
-        public void Typing_an_error_while_a_slow_analysis_is_out_never_leaves_a_squiggle_for_text_that_is_not_there() => Headless.Run(() =>
+        public void Editing_an_error_away_leaves_no_squiggle_for_text_that_is_not_there() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Environment))
             {
@@ -107,6 +109,22 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.False(s.Field.CompletionPopupIsOpen);
                 Assert.DoesNotContain("Enter passed to the host", s.Log);
                 Assert.Equal(new TextPosition(0, 5), s.Editor.Caret);
+            }
+        });
+
+        [Fact]
+        public void A_click_on_a_row_of_the_popup_accepts_that_item() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.Environment))
+            {
+                Replace(s, "/ ");
+                s.Type("[");
+                Assert.True(s.Field.CompletionPopupIsOpen);
+                var row = s.Field.CompletionRow(2)!;
+                var at = row.TranslatePoint(new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), s.Window)!.Value;
+                s.MouseClick(at);
+                Assert.Equal("/ [+son]", s.ParagraphText(0));
+                Assert.False(s.Field.IsCompletionOpen);
             }
         });
 

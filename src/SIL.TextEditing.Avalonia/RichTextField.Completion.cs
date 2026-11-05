@@ -249,6 +249,9 @@ namespace SIL.TextEditing.Avalonia
         internal IReadOnlyList<string> CompletionRowNames() =>
             _complRows == null || _completion == null ? new string[0] : _complRows.Children.Select(r => AutomationProperties.GetName(r) ?? string.Empty).ToList();
 
+        /// <summary>For a test: the row of the popup at an index of the shown window, as a control to click.</summary>
+        internal Control? CompletionRow(int shown) => _complRows != null && shown >= 0 && shown < _complRows.Children.Count ? _complRows.Children[shown] : null;
+
         internal bool CompletionPopupIsOpen => _complPopup != null && _complPopup.IsOpen;
     }
 }
