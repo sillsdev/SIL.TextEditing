@@ -124,9 +124,19 @@
     "canonical": "&#x20;&#x20;a&#x20;&#x20;b&#x20;\n"
   },
   {
-    "name": "a no-break space, a tab and a form feed outside a table are numeric references",
+    "name": "a no-break space is &nbsp;; a tab and a form feed outside a table are numeric references",
     "paragraphs": [ { "style": "Normal", "runs": [ { "text": "a\u00a0b\tc\fd", "ws": "en" } ] } ],
-    "canonical": "a&#xA0;b&#x9;c&#xC;d\n"
+    "canonical": "a&nbsp;b&#x9;c&#xC;d\n"
+  },
+  {
+    "name": "an invisible character is a numeric reference, so that it can be seen: zero-width space, joiners, word joiner, soft hyphen, bidi marks and isolates, grapheme joiner",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "a\u200bb\u200cc\u200dd\u2060e\u00adf\u200eg\u200fh\u061ci\u2067j\u2069k\u202bl\u202cm\u034fn", "ws": "en" } ] } ],
+    "canonical": "a&#x200B;b&#x200C;c&#x200D;d&#x2060;e&#xAD;f&#x200E;g&#x200F;h&#x61C;i&#x2067;j&#x2069;k&#x202B;l&#x202C;m&#x34F;n\n"
+  },
+  {
+    "name": "a zero-width joiner inside an emoji sequence stays literal; one between letters is a reference",
+    "paragraphs": [ { "style": "Normal", "runs": [ { "text": "\ud83d\udc69\u200d\ud83d\udcbb \ud83c\udff3\ufe0f\u200d\ud83c\udf08 \u0915\u094d\u200d\u0937", "ws": "en" } ] } ],
+    "canonical": "\ud83d\udc69\u200d\ud83d\udcbb \ud83c\udff3\ufe0f\u200d\ud83c\udf08 \u0915\u094d&#x200D;\u0937\n"
   },
   {
     "name": "the object replacement character outside an object run is a reference",

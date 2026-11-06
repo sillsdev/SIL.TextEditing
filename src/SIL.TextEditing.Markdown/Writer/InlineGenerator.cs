@@ -509,7 +509,9 @@ namespace SIL.TextEditing.Markdown.Writer
                 if (c == ' ') { _units.Add(new Unit { Text = " ", Lit = true, Ch = ' ', Cp = ' ', IsSpace = true, Scope = _scope }); continue; }
                 if (char.IsHighSurrogate(c) && k + 1 < n && char.IsLowSurrogate(text[k + 1])) { Lit(char.ConvertToUtf32(c, text[k + 1]), text.Substring(k, 2)); k++; continue; }
                 if (char.IsSurrogate(c)) { Syn("[]{.surrogate x=" + ((int)c).ToString("X4", CultureInfo.InvariantCulture) + "}"); continue; }
-                if (c < ' ' || (c >= '\x7F' && c <= '\x9F') || char.IsWhiteSpace(c) || c == Chars.ObjectReplacement || c == Chars.ByteOrderMark)
+                if (c == Chars.NoBreakSpace) { Syn("&nbsp;"); continue; }
+                if (c < ' ' || (c >= '\x7F' && c <= '\x9F') || char.IsWhiteSpace(c) || c == Chars.ObjectReplacement || c == Chars.ByteOrderMark
+                    || Chars.IsInvisible(c) && !(c == Chars.ZeroWidthJoiner && Chars.JoinsEmoji(text, k)))
                 {
                     Syn(Ref(c));
                     continue;

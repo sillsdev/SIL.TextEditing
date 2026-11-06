@@ -484,7 +484,13 @@ The writer escapes a character only where Pandoc would read it as markup:
 
 White space and line breaks:
 
-- Leading, trailing and repeated spaces are `&#x20;`. A no-break space, a tab and a form feed outside a table are numeric references.
+- Leading, trailing and repeated spaces are `&#x20;`. A no-break space is `&nbsp;`. A tab and a form feed outside a table are numeric references.
+- A character that draws nothing but changes how text breaks, joins or runs is a numeric reference, so that a person or an agent editing the
+  text can see it: zero-width space `&#x200B;`, zero-width non-joiner `&#x200C;` and joiner `&#x200D;`, word joiner `&#x2060;`, soft hyphen
+  `&#xAD;`, the marks LRM `&#x200E;`, RLM `&#x200F;` and ALM `&#x61C;`, the bidi embeddings, overrides and isolates (U+202A–U+202E,
+  U+2066–U+2069), the invisible operators (U+2061–U+2064), the Mongolian vowel separator `&#x180E;` and the combining grapheme joiner
+  `&#x34F;`. A zero-width joiner between two emoji (a family or a profession emoji) stays literal. Variation selectors stay literal: they
+  follow a visible character. The reader takes either spelling.
 - U+FFFC outside an object run is `&#xFFFC;`.
 - A hard line break (U+2028) is `\` at the end of the line. At the start or end of a paragraph, or next to another, it is `&#x2028;`.
 - A literal backslash at the end of a paragraph is `\\`.
