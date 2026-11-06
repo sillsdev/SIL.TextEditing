@@ -41,6 +41,7 @@ namespace SIL.TextEditing.Playground.Tests
             {
                 s.Caret(0, 0);
                 s.Type("Look: ");
+                Headless.Pump();   // the Markdown is written again once the dispatcher is idle
                 Assert.StartsWith("Look: The word [كتاب]{ws=ar}", s.View.MarkdownText);
             }
         });
@@ -66,6 +67,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.Contains("[kitabu]{.v}", s.View.MarkdownText);
 
                 Assert.True(s.View.UndoLast());
+                Headless.Pump();
                 Assert.Equal(before, s.ParagraphText(0));
                 Assert.Equal(BookLine, s.View.MarkdownText.Split('\n')[0]);
             }
@@ -89,6 +91,57 @@ namespace SIL.TextEditing.Playground.Tests
 
                 s.Click(PlaygroundView.Names.MarkdownRevert);
                 Assert.Equal(BookLine, s.View.MarkdownText.Split('\n')[0]);
+            }
+        });
+
+        [Fact]
+        public void A_heading_made_on_the_first_line_is_applied_and_undone_exactly() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.MixedBidi))
+            {
+                var key = s.ParagraphKey(0);
+                s.View.MarkdownText = "# " + s.View.MarkdownText;
+                Assert.True(s.View.ApplyMarkdown(), s.View.MarkdownStatusText);
+                Assert.Equal("Heading 1", s.Editor.Document.Paragraphs[0].Style);
+                Assert.Equal(key, s.ParagraphKey(0));
+                Assert.StartsWith("# The word", s.View.MarkdownText);
+
+                Assert.True(s.View.UndoLast());
+                Headless.Pump();
+                Assert.Equal(string.Empty, s.Editor.Document.Paragraphs[0].Style);
+                Assert.Equal(BookLine, s.View.MarkdownText.Split('\n')[0]);
+            }
+        });
+
+        [Fact]
+        public void A_heading_the_field_does_not_allow_is_made_plain() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.MixedBidi))
+            {
+                s.Editor.BlockFeatures = BlockFeatures.All & ~BlockFeatures.Headings;
+                s.View.MarkdownText = s.View.MarkdownText + "\n# A new heading\n";
+                Assert.True(s.View.ApplyMarkdown(), s.View.MarkdownStatusText);
+                var added = s.Editor.Document.Paragraphs[s.Editor.Document.Paragraphs.Count - 1];
+                Assert.Equal("A new heading", added.Text);
+                Assert.Equal(string.Empty, added.Style);
+                Assert.Contains("now plain paragraphs", s.View.MarkdownStatusText);
+            }
+        });
+
+        [Fact]
+        public void An_edit_that_would_replace_read_only_text_is_refused() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.ReadOnlyRuns))
+            {
+                int done = s.View.Undo.Done.Count;
+                var before = s.ParagraphText(0);
+                var edited = s.View.MarkdownText + "\nOne more line.\n";
+                s.View.MarkdownText = edited;
+                Assert.False(s.View.ApplyMarkdown());
+                Assert.Contains("read-only text", s.View.MarkdownStatusText);
+                Assert.Equal(done, s.View.Undo.Done.Count);
+                Assert.Equal(before, s.ParagraphText(0));
+                Assert.Equal(edited, s.View.MarkdownText);
             }
         });
 

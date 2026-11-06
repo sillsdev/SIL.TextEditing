@@ -19,7 +19,7 @@ namespace SIL.TextEditing.Playground
 {
     /// <summary>
     /// The shared playground: a <see cref="RichTextField"/> (or many), a scenario picker, a writing-system bar, format and
-    /// undo buttons, copy and paste, a live inspector of the model and an event log. Both sample hosts and the
+    /// undo buttons, copy and paste, a Markdown tab (the field as FieldWorks Markdown, editable), a model tab (the runs) and an event log. Both sample hosts and the
     /// integration tests use this one control. Controls are named (see the <c>Names</c> class) so tests and screen
     /// readers can find them.
     /// </summary>
@@ -147,6 +147,7 @@ namespace SIL.TextEditing.Playground
         readonly SampleMarkdown _markdownHost;
         bool _markdownEdited;
         bool _settingMarkdown;
+        bool _markdownRefreshPosted;
         readonly TextBox _logBox;
         Session _active;
         bool _syncing;
@@ -444,6 +445,7 @@ namespace SIL.TextEditing.Playground
         /// <summary>Shows the active field as Markdown, unless the tab is hidden or holds edits that were neither applied nor reverted.</summary>
         void RefreshMarkdown()
         {
+            _markdownRefreshPosted = false;
             if (_markdownEdited || !ShowsMarkdown) return;
             _settingMarkdown = true;
             try { _markdown.Text = MarkdownConverter.ToMarkdown(_active.Field.Editor.Document, _markdownHost.Options()); }
@@ -451,38 +453,83 @@ namespace SIL.TextEditing.Playground
             _markdownStatus.Text = string.Empty;
         }
 
-        /// <summary>Reads the Markdown tab and, when it has no error, replaces the field's paragraphs with what it says as one undo step.
-        /// Returns true when the field changed.</summary>
+        /// <summary>After an edit in the field: the Markdown is written again once the dispatcher is idle, so a burst of typing writes it once, not per key.</summary>
+        void PostMarkdownRefresh()
+        {
+            if (_markdownRefreshPosted || _markdownEdited || !ShowsMarkdown) return;
+            _markdownRefreshPosted = true;
+            Dispatcher.UIThread.Post(RefreshMarkdown, DispatcherPriority.Background);
+        }
+
+        /// <summary>Before the tab shows another field or scenario: edits that were not applied are dropped, and the log says so.</summary>
+        void DropMarkdownEdits(string why)
+        {
+            if (_markdownEdited) Log("markdown: edits not applied were dropped (" + why + ")");
+            _markdownEdited = false;
+        }
+
+        /// <summary>Reads the Markdown tab and, when it has no error, puts what it says in the field as one host undo step. The host applies the
+        /// change itself, as a delta its undo stack records (ADR 0003), so every paragraph's style, direction and properties are exactly what the
+        /// Markdown says. Before that it does what the field would: it refuses a change to a read-only field, to read-only text or that would give a
+        /// single-paragraph field more than one paragraph, and makes new blocks the field does not allow plain (ADR 0033). A paragraph keeps the key of
+        /// the old paragraph at its place. Returns true when the field changed.</summary>
         public bool ApplyMarkdown()
         {
             var editor = _active.Field.Editor;
             var result = MarkdownConverter.Parse(MarkdownText, _markdownHost.Options());
             var errors = result.Diagnostics.Where(d => d.Severity == MarkdownSeverity.Error).ToList();
             if (errors.Count > 0)
-            {
-                _markdownStatus.Text = "Not applied: " + string.Join("; ", errors.Select(d => d.Id + " at line " + d.Line + ", column " + d.Column + ": " + d.Message));
-                Log("markdown: not applied, " + errors.Count + " error(s): " + string.Join(", ", errors.Select(d => d.Id)));
-                return false;
-            }
+                return NotApplied(string.Join("; ", errors.Select(d => d.Id + " at line " + d.Line + ", column " + d.Column + ": " + d.Message)),
+                    errors.Count + " error(s): " + string.Join(", ", errors.Select(d => d.Id)));
+
+            var old = editor.Document.Paragraphs;
             var paragraphs = result.Document.Paragraphs.ToList();
-            bool changed = !MarkdownConverter.AreEquivalent(editor.Document.Paragraphs, paragraphs);
-            if (changed && _active.Field.IsReadOnly)
+            var fresh = paragraphs.Where(n => !old.Any(o => MarkdownConverter.AreEquivalent(o, n))).ToList();
+            var flattening = BlockFlattener.Flatten(fresh, editor.BlockFeatures, editor.BlockRecognizer);
+            if (MarkdownConverter.AreEquivalent(old, paragraphs))
             {
-                _markdownStatus.Text = "Not applied: the field is read-only.";
+                _markdownEdited = false;
+                RefreshMarkdown();
+                _markdownStatus.Text = "No change: the Markdown says what the field already holds." + Findings(result);
+                Log("markdown: no change");
                 return false;
             }
-            _markdownEdited = false;
-            if (changed)
+            int last = old.Count - 1;
+            if (editor.IsReadOnly) return NotApplied("the field is read-only.", "the field is read-only");
+            if (!editor.CanEditRange(new TextPosition(0, 0), new TextPosition(last, old[last].Length)))
+                return NotApplied("the field holds read-only text, which an edit as Markdown would replace.", "read-only text");
+            if (editor.SingleParagraph && paragraphs.Count > 1)
+                return NotApplied("the field holds one paragraph and the Markdown has " + paragraphs.Count + ".", "one paragraph only");
+
+            for (int i = 0; i < paragraphs.Count && i < old.Count; i++) paragraphs[i].Key = old[i].Key;
+            var delta = new EditDelta
             {
-                int last = editor.Document.Paragraphs.Count - 1;
-                editor.ReplaceRange(new TextPosition(0, 0), new TextPosition(last, editor.Document.Paragraphs[last].Length), paragraphs, "edit as Markdown");
-            }
+                Start = 0,
+                Before = old.Select(o => o.Clone()).ToList(),
+                After = paragraphs,
+                CaretBefore = editor.Caret,
+                CaretAfter = new TextPosition(0, 0),
+                Label = "edit as Markdown",
+            };
+            editor.Apply(delta);
+            _active.Undo.Done.Add(delta);
+            _active.Undo.Undone.Clear();
+            _markdownEdited = false;
             RefreshMarkdown();
-            _markdownStatus.Text = (changed ? "Applied as one undo step." : "No change: the Markdown says what the field already holds.")
-                + (result.Diagnostics.Count > 0 ? " Findings: " + string.Join(", ", result.Diagnostics.Select(d => d.Id)) + "." : string.Empty);
-            Log("markdown: " + (changed ? "applied as one undo step" : "no change"));
-            return changed;
+            _markdownStatus.Text = "Applied as one undo step." + (flattening.Total > 0 ? " The field does not allow " + flattening + "; they are now plain paragraphs." : string.Empty) + Findings(result);
+            Log("markdown: applied as one undo step" + (flattening.Total > 0 ? ", " + flattening + " made plain" : string.Empty));
+            return true;
         }
+
+        bool NotApplied(string status, string log)
+        {
+            _markdownStatus.Text = "Not applied: " + status;
+            Log("markdown: not applied, " + log);
+            return false;
+        }
+
+        static string Findings(MarkdownParseResult result) =>
+            result.Diagnostics.Count > 0 ? " Findings: " + string.Join(", ", result.Diagnostics.Select(d => d.Id)) + "." : string.Empty;
 
         /// <summary>Drops edits in the Markdown tab and shows the field again.</summary>
         public void RevertMarkdown()
@@ -784,7 +831,7 @@ namespace SIL.TextEditing.Playground
             UpdateFindHighlight();
             UpdateWsLabel();
             RefreshInspector();
-            _markdownEdited = false;
+            DropMarkdownEdits("scenario loaded");
             RefreshMarkdown();
             if (TopLevel.GetTopLevel(this) != null) Dispatcher.UIThread.Post(() => _active.Field.Focus());
         }
@@ -846,7 +893,7 @@ namespace SIL.TextEditing.Playground
                 if (_active == session && d.Label != "type") Log("edit: " + d.Label + " (paragraphs " + d.Start + ".." + (d.Start + Math.Max(d.Before.Count, d.After.Count) - 1) + ")");
             };
             field.Editor.UndoGroupEnded += id => { if (_active == session) Log("undo step " + id + " ended: the host closes its undo task"); };
-            field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) { RefreshInspector(); RefreshMarkdown(); UpdateEnvironmentButtons(); } };
+            field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) { RefreshInspector(); PostMarkdownRefresh(); UpdateEnvironmentButtons(); } };
             field.Editor.CaretMoved += () => { if (_active == session) { UpdateWsLabel(); RefreshInspector(); UpdateEnvironmentButtons(); } };
             field.LanguageAnalysisChanged += (o, e) =>
             {
@@ -886,7 +933,7 @@ namespace SIL.TextEditing.Playground
             Log("focus: field " + session.Number);
             UpdateWsLabel();
             RefreshInspector();
-            _markdownEdited = false;
+            DropMarkdownEdits("focus moved to field " + session.Number);
             RefreshMarkdown();
         }
 

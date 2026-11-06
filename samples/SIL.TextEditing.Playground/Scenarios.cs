@@ -50,7 +50,7 @@ namespace SIL.TextEditing.Playground
         {
             new Scenario(MixedBidi, "An LTR paragraph with Arabic inside, an RTL paragraph with Latin and digits inside, and a plain Arabic one. Try arrows, mouse selection and typing at the boundaries.", _ => One(MixedDoc())),
             new Scenario(IndicThai, "Hindi conjuncts and vowel signs, Tamil, and Thai with stacked marks. Carets must stop on clusters, never inside one.", _ => One(IndicDoc())),
-            new Scenario(Unicode, "Decomposed accents (NFD) next to composed ones, stacked combining marks, surrogate pairs, emoji sequences and private-use characters. The inspector shows the exact code units.", _ => One(Stored(UnicodeDoc(), System.Text.NormalizationForm.FormD))),
+            new Scenario(Unicode, "Decomposed accents (NFD) next to composed ones, stacked combining marks, surrogate pairs, emoji sequences and private-use characters. The Model tab shows the exact code units.", _ => One(Stored(UnicodeDoc(), System.Text.NormalizationForm.FormD))),
             new Scenario(Picture, "Inline picture objects (U+FFFC with object data), in LTR text, in RTL text and side by side. Backspace or Delete removes a picture whole. Use Picture to insert one.", _ => One(PictureDoc())),
             new Scenario(Drawing, "Every drawing property of a FieldWorks text string, from the run's own properties and from the host's named styles (the playground keeps a small stylesheet). Pick a style in the toolbar to apply it.", _ => One(DrawingDoc())),
             new Scenario(Paragraphs, "Every paragraph drawing property from the host's paragraph styles and from a paragraph's own properties: alignment, first-line and hanging indents, margins, spacing, line height, colour, borders, a line limit, bullets and numbers. Pick a paragraph style in the toolbar to try one on the paragraph at the caret.", _ => One(ParagraphsDoc())),
@@ -60,7 +60,7 @@ namespace SIL.TextEditing.Playground
             new Scenario(Environment, "A phonological environment, the way FieldWorks writes one: a slash, the left context, an underscore and the right context, with natural classes in square brackets, segments, optional items in parentheses and the word boundary #. The box is one line (Enter goes to the host) and its text is the stored value: the colours are chips drawn behind plain text (in a light or a dark theme), problems are squiggles that are never saved in the text, and a host language service (the sample, over a made-up phonology: segments p t k b d g m n s l r h a e i o u ai ts; classes C, V, +son and +lab, +vd) explains them. Hover for help; Ctrl+Space, or typing [, offers completions (arrows, Enter or Tab, Esc); right-click a problem for its fix; the Insert buttons are enabled as FieldWorks' Insert menu is. Try / [X] _ , / (a _ , / _ _ , / chr _ , then Drop class V and Restore class V.", _ => One(EnvironmentDoc())),
             new Scenario(Long, "200 paragraphs in mixed writing systems: scrolling, caret at the far end, and cost of edits in a long document.", _ => One(LongDoc(200))),
             new Scenario(FindReplace, "Text for the find bar: repeated words in several cases, an accented word stored composed, decomposed and bare, words in two writing systems, a picture, and a read-only label. Try Match case, Match diacritics, Whole word, a regular expression, Highlight all, Replace and Replace All (one undo step). Right-click a word, a picture or a selection to see what a context menu is told.", _ => One(FindDoc())),
-            new Scenario(ManyFields, "N small fields in one window: tab between them by clicking, undo is per field, the inspector follows the focused field.", ManyDocs, many: true),
+            new Scenario(ManyFields, "N small fields in one window: tab between them by clicking, undo is per field, the Markdown and Model tabs follow the focused field.", ManyDocs, many: true),
             new Scenario(Empty, "One empty paragraph: type from scratch.", _ => One(EmptyDoc())),
         };
 
@@ -304,7 +304,7 @@ namespace SIL.TextEditing.Playground
 
         static Document OpaqueDoc()
         {
-            var styled = Para("en", false, "en", "A paragraph with a style (see the inspector).");
+            var styled = Para("en", false, "en", "A paragraph with a style (see the Model tab).");
             styled.Style = "Block Quote";
 
             var p = new Paragraph { DefaultWs = "en" };
