@@ -7,7 +7,7 @@ writing systems, styles, every text property, links and pictures.
 | | |
 |---|---|
 | File name | `*.fw.md` (`MarkdownFrontMatter.FileExtension`). Only a hint: the front matter decides. |
-| Clipboard id | `FieldWorks Markdown` (`ClipboardForms.FieldWorksMarkdownId`); see [Clipboard](clipboard.md). |
+| Clipboard id | `FieldWorks Markdown` (`ClipboardForms.FieldWorksMarkdownId`). The form itself is planned (#168); see [Clipboard](clipboard.md). |
 | Version | `fwmd: 1` (`MarkdownFrontMatter.CurrentVersion`). |
 | API | `MarkdownConverter.ToMarkdown`, `Parse`, `Canonicalize`, `ToInlineMarkdown`, `ParseInline`, `AreEquivalent` in `SIL.TextEditing.Markdown`. |
 | Defined by | The conformance fixtures in `tests/conformance` (their README explains the case format) and ADRs 0011, 0018, 0028 and 0029. The parser does not define the format. |
@@ -160,15 +160,58 @@ Every text property has a key, so nothing is lost. A property with a FieldWorks 
 | `spellcheck` | 26 | `normal`, `donotcheck`, `forcecheck` |
 | `editable` | 155 | `no`, `yes`, `semi` |
 | `fontsize`, `offset` | 6, 7 | millipoints; add `fontsizeUnit=rel` (or `offsetUnit=rel`) for a relative value |
-| `firstIndent`, `leadingIndent`, `trailingIndent`, `spaceBefore`, `spaceAfter`, `tabDef`, `MarginTop`, `padLeading`, `padTrailing`, `padTop`, `padBottom`, `borderTop`, `borderBottom`, `borderLeading`, `borderTrailing` | 18–23, 50, 134–141 | millipoints, with a `...Unit` key as above. `marginTop` is read too. |
+| the measures in the first table below | see below | millipoints, with a `...Unit` key as above. `marginTop` is read for `MarginTop`. |
 | `lineHeight` | 24 | millipoints, with `lineHeightUnit=rel` and `lineHeightType=exact` (default `atLeast`) |
-| `forecolor`, `backcolor`, `undercolor`, `paracolor`, `borderColor` | 8, 9, 10, 25, 142 | `#rrggbb`, `transparent` or a colour name (`black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) |
-| `rightToLeft`, `directionDepth`, `bulNumScheme`, `bulNumStartAt`, `keepWithNext`, `keepTogether`, `widowOrphan` | 128, 129, 143, 144, 148, 149, 162 | a whole number |
-| `fontFamily`, `tabList`, `tags`, `fontVariations`, `bulNumTxtBef`, `bulNumTxtAft` | strings 1, 4, 5, 130, 145, 146 | text |
+| the colours in the first table below | see below | `#rrggbb`, `transparent` or a colour name (`black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`) |
+| the whole numbers in the first table below | see below | a whole number |
+| the strings in the second table below | see below | text |
 | `custom-style` | string 133 | a character style on a span, a paragraph style on a div |
 | `pN` | integer N | `value:variant`, such as `p150=1:default`. The variant is `default`, `mpt`, `rel`, `enum`, `ninch` or a number. |
 | `sN` | string N | text |
 | `sNx` | string N | the text as hex: four uppercase digits per UTF-16 code unit |
+
+Integer properties:
+
+| Key | Number |
+|---|---|
+| `firstIndent` | 18 |
+| `leadingIndent` | 19 |
+| `trailingIndent` | 20 |
+| `spaceBefore` | 21 |
+| `spaceAfter` | 22 |
+| `tabDef` | 23 |
+| `MarginTop` | 50 |
+| `padLeading` | 134 |
+| `padTrailing` | 135 |
+| `padTop` | 136 |
+| `padBottom` | 137 |
+| `borderTop` | 138 |
+| `borderBottom` | 139 |
+| `borderLeading` | 140 |
+| `borderTrailing` | 141 |
+| `forecolor` | 8 |
+| `backcolor` | 9 |
+| `undercolor` | 10 |
+| `paracolor` | 25 |
+| `borderColor` | 142 |
+| `rightToLeft` | 128 |
+| `directionDepth` | 129 |
+| `bulNumScheme` | 143 |
+| `bulNumStartAt` | 144 |
+| `keepWithNext` | 148 |
+| `keepTogether` | 149 |
+| `widowOrphan` | 162 |
+
+String properties:
+
+| Key | Number |
+|---|---|
+| `fontFamily` | 1 |
+| `tabList` | 4 |
+| `tags` | 5 |
+| `fontVariations` | 130 |
+| `bulNumTxtBef` | 145 |
+| `bulNumTxtAft` | 146 |
 
 - A named key is used only when it spells the value exactly. Otherwise the writer uses `pN`. A relative font size is written
   `fontsize=150 fontsizeUnit=rel`; `p6=150:rel` is read too.
@@ -184,7 +227,7 @@ Every text property has a key, so nothing is lost. A property with a FieldWorks 
 
 ### Quoting
 
-A value is bare when it holds only letters, digits and `- _ . : # /`. Any other value is in double quotes. Inside quotes, `\"` and `\\`
+A value is bare when it holds only ASCII letters (`A`–`Z`, `a`–`z`), digits and `- _ . : # /`. Any other letter, such as `É`, needs quotes. Any other value is in double quotes. Inside quotes, `\"` and `\\`
 are the only escapes. A `}`, a space or an `=` inside quotes is text.
 
 <!-- fixture: 02-attributes.json | a quoted value escapes only a double quote and a backslash | markdown -->
