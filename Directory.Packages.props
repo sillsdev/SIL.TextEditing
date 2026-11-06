@@ -4,6 +4,8 @@
     <!-- FieldWorks pins Avalonia 11.3.17 (net48 via netstandard2.0); Motif pins Avalonia 12.1.2 (net10.0). -->
     <AvaloniaV11>11.3.17</AvaloniaV11>
     <AvaloniaV12>12.1.2</AvaloniaV12>
+    <!-- A local stacked liblcm build can be selected with -p:SilLcmVersion=<stamped version> (mirrors FieldWorks). -->
+    <SilLcmVersion Condition="'$(SilLcmVersion)' == ''">11.0.0-beta0180</SilLcmVersion>
   </PropertyGroup>
 
   <!-- Avalonia 12 for every net10.0 flavour; Avalonia 11 for net48 and netstandard2.0. These are item conditions, not
@@ -35,7 +37,7 @@
 
   <!-- FieldWorks pins this LCModel version (ADR 0016); hosts may float up. -->
   <ItemGroup>
-    <PackageVersion Include="SIL.LCModel.Core" Version="11.0.0-beta0180" />
+    <PackageVersion Include="SIL.LCModel.Core" Version="$(SilLcmVersion)" />
   </ItemGroup>
 
   <!-- ADR 0011: the Markdown parser; referenced by SIL.TextEditing.Markdown only. -->
