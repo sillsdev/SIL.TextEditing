@@ -4,24 +4,24 @@ Pictures of the playground (`samples/SIL.TextEditing.Playground`) for the README
 
 ## The headless ones
 
-Rendered by `tests/SIL.TextEditing.Playground.Tests/ScreenshotGenerator.cs`: a 1280 x 800 headless Avalonia 12 window (net10.0, Skia, Fluent light theme, the playground's own fonts: Segoe UI, Nirmala UI, Leelawadee UI), cropped to the field and the inspector beside it. The test is skipped unless `TEXTEDITING_SCREENSHOTS=1`, so the normal test run never writes here.
+Rendered by `tests/SIL.TextEditing.Playground.Tests/ScreenshotGenerator.cs`: a 1280 x 800 headless Avalonia 12 window (net10.0, Skia, Fluent light theme, the playground's own fonts: Segoe UI, Nirmala UI, Leelawadee UI), cropped to the field and the tabs beside it (Markdown, or Model for the run dump). The test is skipped unless `TEXTEDITING_SCREENSHOTS=1`, so the normal test run never writes here.
 
 ```powershell
 $env:TEXTEDITING_SCREENSHOTS=1; dotnet test tests\SIL.TextEditing.Playground.Tests -c Release -f net10.0 --filter ScreenshotGenerator
 ```
 
-- `bidi-selection.png`: Latin and Arabic in one paragraph, one selection running across the direction changes ("Latin and Arabic" scenario).
+- `bidi-selection.png`: Latin and Arabic in one paragraph, one selection running across the direction changes ("Latin and Arabic" scenario), with the same text as FieldWorks Markdown in the Markdown tab.
 - `indic-thai-shaping.png`: Hindi, Tamil and Thai shaped correctly, with a Devanagari conjunct selected as one cluster.
 - `nfd-surrogates.png`: composed and decomposed accents, stacked marks, and emoji (surrogate pairs and a ZWJ family), with the emoji selected.
 - `inline-pictures.png`: inline picture objects (U+FFFC) in left-to-right and right-to-left text, selected along with the text around them.
-- `unknown-properties-inspector.png`: runs that carry properties the editor does not understand (9001, 9002), a paragraph style and a character style, and the live inspector showing the run model.
+- `unknown-properties-inspector.png`: runs that carry properties the editor does not understand (9001, 9002), a paragraph style and a character style, and the Model tab showing the runs and their property numbers.
 - `environment-box.png`: the phonological-environment box, one line with coloured chips and a squiggle on a class the language service rejects.
 - `environment-fix-menu.png`: right-click on a problem in the environment box: the service's message, its fix ("Insert the closing parenthesis") and the Insert items.
 - `spelling-squiggles.png`: red squiggles on misspelled words, blue on a word that glues two writing systems, nothing on do-not-check or read-only text.
 - `spelling-context-menu.png`: the context menu on a misspelled word: the word, its suggestions, Find, Cut, Copy, Paste and Copy as.
 - `copy-as-submenu.png`: the "Copy as" submenu open (plain text, a debug dump of the runs, and a disabled Markdown entry when no converter is registered).
 - `block-features.png`: a heading, a bulleted list and a table (as table-styled paragraphs, one column for now) with the Tables, Lists and Headings switches visible and on.
-- `long-document.png`: the 200-paragraph scenario scrolled to the caret in the middle, mixed writing systems; the inspector says "paragraphs 200".
+- `long-document.png`: the 200-paragraph scenario scrolled to the caret in the middle, mixed writing systems; the Markdown tab shows the document as FieldWorks Markdown from its start.
 - `many-fields.png`: fifty small fields in one window, in English, French, Swahili and Arabic.
 
 ## The real windows

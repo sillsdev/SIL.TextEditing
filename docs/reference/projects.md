@@ -34,15 +34,15 @@ The `ITsString` adapter and the TsString XML clipboard form. See [The LCModel ad
 Samples do not ship.
 
 - **`samples/SIL.TextEditing.Playground`** (netstandard2.0, net10.0): the shared playground UI. A `RichTextField`, scenario picker,
-  writing-system bar, format and undo buttons, block-feature switches (tables, lists, headings; ADR 0033), live model inspector and event
-  log. Both hosts and the integration tests use it.
+  writing-system bar, format and undo buttons, block-feature switches (tables, lists, headings; ADR 0033), a Markdown tab (the field as FieldWorks
+  Markdown, editable, applied as one undo step), a model tab and an event log. Both hosts and the integration tests use it.
 - **`samples/Playground.Desktop`** (net48, net10.0): plain Avalonia desktop app showing the playground. Avalonia 11.3.17 on net48, Avalonia
   12 on net10.0 (Motif's shape).
 - **`samples/Host48`** (net48): WinForms form hosting the playground through `WinFormsAvaloniaControlHost` between two WinForms TextBoxes,
   Avalonia 11.3.17: FieldWorks' shape.
 
 The playground loads ready-made documents (Latin and Arabic, Indic and Thai shaping, NFD and surrogates, inline pictures, unknown
-properties, an environment box with a language service, 200 paragraphs, many fields) and shows what the model holds in a live inspector.
+properties, an environment box with a language service, 200 paragraphs, many fields) and shows each as FieldWorks Markdown and as the runs the model holds.
 
 ## Test projects
 
