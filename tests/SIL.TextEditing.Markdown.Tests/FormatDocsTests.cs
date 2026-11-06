@@ -21,6 +21,10 @@ namespace SIL.TextEditing.Markdown.Tests
         static readonly Regex FixtureComment = new Regex(@"<!-- fixture: (?<file>[^|]+?) \| (?<name>.+?) \| (?<field>markdown|canonical|file) -->\n```[a-z]*\n(?<text>.*?)\n```",
             RegexOptions.Singleline | RegexOptions.CultureInvariant);
 
+        // <!-- fixture-excerpt: records/blocks.schema.json --> before a fenced block that is part of that fixture file, as it stands.
+        static readonly Regex ExcerptComment = new Regex(@"<!-- fixture-excerpt: (?<file>[^ ]+) -->\n```[a-z]*\n(?<text>.*?)\n```",
+            RegexOptions.Singleline | RegexOptions.CultureInvariant);
+
         static string RepositoryRoot()
         {
             var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -68,6 +72,23 @@ namespace SIL.TextEditing.Markdown.Tests
             }
             Assert.True(problems.Count == 0, string.Join("\n", problems));
             Assert.True(checkedExamples > 0, "No example in docs/formats is marked with its fixture.");
+        }
+
+        [Fact]
+        public void EveryMarkedExcerptIsPartOfItsFixtureFile()
+        {
+            var problems = new List<string>();
+            foreach (string doc in Directory.GetFiles(FormatsDirectory, "*.md"))
+            {
+                foreach (Match m in ExcerptComment.Matches(ReadText(doc)))
+                {
+                    string file = m.Groups["file"].Value;
+                    string path = Path.Combine(RepositoryRoot(), "tests", "conformance", file.Replace('/', Path.DirectorySeparatorChar));
+                    if (!File.Exists(path)) problems.Add(Path.GetFileName(doc) + ": " + file + ": no such fixture file");
+                    else if (ReadText(path).IndexOf(m.Groups["text"].Value, StringComparison.Ordinal) < 0) problems.Add(Path.GetFileName(doc) + ": " + file + ": the excerpt is not in the file");
+                }
+            }
+            Assert.True(problems.Count == 0, string.Join("\n", problems));
         }
     }
 }
