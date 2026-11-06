@@ -8,7 +8,8 @@ using Xunit;
 
 namespace SIL.TextEditing.Markdown.Tests
 {
-    /// <summary>Keeps the format documentation in docs/formats honest: every finding id the source can report is in the catalogue (findings.md), and every
+    /// <summary>Keeps the format documentation in docs/formats honest: every finding id the source can report has a row in the catalogue (findings.md) and every
+    /// id in a table of findings.md or tables.md is in the source; every fixture marker is well-formed; and every
     /// example marked with a fixture comment is, character for character, the text of that fixture case. Both read the repository from disk, so they find the
     /// ids of every project (the LCModel adapter's too) without referencing it.</summary>
     public class FormatDocsTests
@@ -36,16 +37,64 @@ namespace SIL.TextEditing.Markdown.Tests
 
         static string FormatsDirectory => Path.Combine(RepositoryRoot(), "docs", "formats");
 
-        [Fact]
-        public void EveryFindingIdInTheSourceIsInTheCatalogue()
+        // An id in the first column of a table row: | `fwmd.table.ragged` | ...
+        static readonly Regex TableRowId = new Regex(@"^\| `((?:fwmd|textediting)\.[a-z0-9.-]*[a-z0-9])` \|", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+        // Any line that starts a fixture marker, well-formed or not.
+        static readonly Regex AnyMarker = new Regex(@"<!--\s*fixture", RegexOptions.CultureInvariant);
+
+        static SortedSet<string> SourceIds()
         {
-            string catalogue = ReadText(Path.Combine(FormatsDirectory, "findings.md"));
             var ids = new SortedSet<string>(StringComparer.Ordinal);
             foreach (string path in Directory.GetFiles(Path.Combine(RepositoryRoot(), "src"), "*.cs", SearchOption.AllDirectories))
                 foreach (Match m in IdLiteral.Matches(ReadText(path))) ids.Add(m.Groups[1].Value);
+            return ids;
+        }
+
+        static List<string> TableIds(string doc) => TableRowId.Matches(ReadText(Path.Combine(FormatsDirectory, doc))).Cast<Match>().Select(m => m.Groups[1].Value).ToList();
+
+        [Fact]
+        public void EveryFindingIdInTheSourceIsInTheCatalogue()
+        {
+            var ids = SourceIds();
             Assert.NotEmpty(ids);
-            var missing = ids.Where(id => catalogue.IndexOf("`" + id + "`", StringComparison.Ordinal) < 0).ToList();
-            Assert.True(missing.Count == 0, "docs/formats/findings.md does not list: " + string.Join(", ", missing));
+            var listed = new HashSet<string>(TableIds("findings.md"), StringComparer.Ordinal);
+            var missing = ids.Where(id => !listed.Contains(id)).ToList();
+            Assert.True(missing.Count == 0, "docs/formats/findings.md has no table row for: " + string.Join(", ", missing));
+        }
+
+        [Fact]
+        public void EveryFindingIdTheDocsListIsInTheSource()
+        {
+            var ids = SourceIds();
+            var catalogue = new HashSet<string>(TableIds("findings.md"), StringComparer.Ordinal);
+            var problems = new List<string>();
+            foreach (string doc in new[] { "findings.md", "tables.md" })
+            {
+                var listed = TableIds(doc);
+                Assert.True(listed.Count > 0, doc + " lists no finding id in a table.");
+                foreach (string id in listed)
+                {
+                    if (!ids.Contains(id)) problems.Add(doc + ": " + id + " is not in the source");
+                    if (!catalogue.Contains(id)) problems.Add(doc + ": " + id + " is not in findings.md");
+                }
+            }
+            Assert.True(problems.Count == 0, string.Join("\n", problems));
+        }
+
+        [Fact]
+        public void EveryFixtureMarkerIsWellFormed()
+        {
+            var problems = new List<string>();
+            foreach (string doc in Directory.GetFiles(FormatsDirectory, "*.md"))
+            {
+                string text = ReadText(doc);
+                int markers = AnyMarker.Matches(text).Count;
+                int understood = FixtureComment.Matches(text).Count + ExcerptComment.Matches(text).Count;
+                if (markers != understood)
+                    problems.Add(Path.GetFileName(doc) + ": " + markers + " fixture markers, but only " + understood + " are a well-formed marker followed by a fenced block");
+            }
+            Assert.True(problems.Count == 0, string.Join("\n", problems));
         }
 
         [Fact]
