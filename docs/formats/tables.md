@@ -98,29 +98,28 @@ A field's block features say whether it may hold tables, lists and headings (ADR
 - `StyleBlockRecognizer.Default` names no table style. A host that turns tables off gives the field a recogniser that knows its table
   styles, such as `MarkdownStyleNames.ToBlockRecognizer()`.
 
-Owner decision Q79 sets the planned defaults, which the planned `SIL.TextEditing.Project` will compute from liblcm metadata: tables (and
+The owner's decision in ADR 0033 sets the planned defaults, which the planned `SIL.TextEditing.Project` will compute from liblcm metadata: tables (and
 lists and headings) on in every multi-paragraph field, except the interlinear baseline (`Text.Contents`) and Scripture; off in a field of
 one paragraph. Hosts may override per field. The enforcement is built; the defaults from liblcm are not.
 
 ## Planned: real tables in the field
 
-> **Planned. Not built.** The owner decisions are R-4 and Q73 to Q79 (2026-11-05, `decisions-2026-11-05-records.md`). The design is in
-> research report 19 (`19-tables.md`). Issue 152 and later carry the work.
+> **Planned. Not built.** ADR 0031 lists real tables as a planned addition. The work is tracked from issue #152.
 
-**Decided by the owner:**
+The owner decided on 2026-11-05:
 
-| Decision | |
-|---|---|
-| R-4 | The field edits real tables. They are stored so that the core data model does not change and older FieldWorks versions can still open and read the text. The tab-separated row stays possible as a storage form only if the design picks it. |
-| Q73 | Storage: one paragraph per row, with the cells separated by a ` \| ` run in a separator character style. |
-| Q74 | The Markdown side stays a standard pipe table. Storage reuses the existing `Table Row` paragraph style, plus a header-row style and a `Table Cell Separator` character style. The host can rename them. Not the USFM table markers. |
-| Q75 | Tab moves to the next cell. Tab in the last cell adds a row (Word's convention). |
-| Q76 | Enter and Shift+Enter both insert a hard line break (U+2028) in a cell. Enter on an empty last row leaves the table. |
-| Q77, Q77′ | Nothing more in 1.0. Alignment, widths and merged cells are dropped from the plan unless asked for again. Keep the caption. |
-| Q78 | Tab-separated text pasted at a paragraph boundary becomes a table. "Paste as table" is offered too. |
-| Q79 | Which fields allow tables (above). Built: the block-features switch and its enforcement. |
+- The field edits real tables. They are stored so that the core data model does not change and older FieldWorks versions can still open
+  and read the text.
+- Each row is one paragraph. Cells are separated by a ` | ` run in a separator character style.
+- The Markdown side stays a standard pipe table. Storage reuses the existing `Table Row` paragraph style, plus a header-row style and a
+  `Table Cell Separator` character style. The host can rename them. USFM table markers are not used.
+- Tab moves to the next cell. Tab in the last cell adds a row, as in Word.
+- Enter and Shift+Enter both insert a hard line break (U+2028) in a cell. Enter on an empty last row leaves the table.
+- Nothing more in the first version: no alignment, widths or merged cells unless asked for again. The caption is kept.
+- Tab-separated text pasted at a paragraph boundary becomes a table. "Paste as table" is offered too.
+- Which fields allow tables is above. The block-features switch and its enforcement are built (ADR 0033).
 
-**Proposed in research report 19**, not decided:
+**Proposed, not decided:**
 
 - **The boundary rule.** A cell boundary is each `|` inside a run in the separator style; the spaces around it are padding. The rule counts
   bars, not runs, because two separators around an empty cell merge into one run (` |  | `). A `|` without the style is cell text.
