@@ -9,14 +9,44 @@ record kind with a main long-text field, that field is the Markdown body below t
 | File name | `*.fw.md`, like any FieldWorks Markdown file. A top-level `record:` key is what makes it a record file. |
 | API | `RecordFileReader.Read(text, schema, options)` and `RecordFileWriter.Write(document, schema)` in `SIL.TextEditing.Markdown.Records`. |
 | Schema | A `RecordSchema`, which is data. `RecordSchema.ToJsonSchema()` publishes it as a JSON Schema for editors. |
-| Defined by | The fixtures in `tests/conformance/records` (README "Record files"), ADRs 0032 and 0033, owner decisions R-2, R-5 to R-10 and Q79. |
-| Status | Shipped: the frame, the schema, the findings and the fixtures (slice R1a). Planned: export from liblcm, diffs and shape checks, and the schema built from liblcm metadata (`SIL.TextEditing.Project`, ADR 0031). |
+| Defined by | The fixtures in `tests/conformance/records` (README "Record files"), ADRs 0032 and 0033. |
+| Status | Shipped: the frame, the schema, the findings and the fixtures. Planned: export from liblcm, diffs and shape checks, and the schema built from liblcm metadata (`SIL.TextEditing.Project`, ADR 0031). |
 
 `MarkdownConverter.Parse` refuses a record file with one finding, `fwmd.record.record-file`, so a host cannot write back only its body.
 Read it with `RecordFileReader`.
 
 The examples are copied from the fixtures, and `FormatDocsTests` checks them. They use the fixtures' schema `test.schema.json`
 (`records/schemas.json`, entry `test`) unless they say otherwise.
+
+## Editing a record file by hand
+
+1. Keep the lines `---`, `fwmd: 1`, `record:` and `schema:` as they are, and add no other top-level key.
+2. Put plain text in double quotes. Inside the quotes, write `\"` for a quote and `\` for a backslash; nothing else needs escaping.
+3. Write rich text as a block: `|-` after the key, then the text on the next lines, indented two spaces more than the key. A field that
+   holds several paragraphs takes `|` instead, with a blank line between paragraphs.
+4. Indent with spaces, never tabs.
+5. To empty a field, delete its line. Do not leave `key:` with nothing after it.
+6. Do not change a `guid:`, and keep `guid=` on every link: the GUID is what the project matches.
+7. Do not use YAML comments, anchors (`&x`), aliases (`*x`), tags or `>` blocks. Comments are dropped; the others are errors.
+8. Read the file back with `RecordFileReader` (a command-line check is planned, #161). [Findings](findings.md) says what each finding
+   means.
+
+A small partial file. It holds one sense's gloss in two writing systems. The Norwegian id `no` is quoted, because YAML 1.1 readers take a bare `no` as
+"false":
+
+<!-- fixture: records/01-frame.json | a partial file whose root names a plain field: record-data holds that field only; the writing system no is a quoted key | file -->
+```markdown
+---
+fwmd: 1
+record: "lexicon/entry"
+schema: "test.schema.json"
+root: "/lexicon/palit(2)/senses/1#gloss"
+record-data:
+  gloss:
+    en: "buy"
+    "no": "kjøper"
+---
+```
 
 ## A whole record
 
@@ -61,7 +91,7 @@ On 3 May the speakers used [kaon]{.v} for every meal.
 
 ## The frame
 
-The front matter has these keys, and no others (owner decision R-5). The writer writes them in this order.
+The front matter has these keys, and no others. The writer writes them in this order.
 
 | Key | Value |
 |---|---|
@@ -119,7 +149,7 @@ record-data:
 ---
 ```
 
-- **Keys are bare** when they are a letter followed by letters, digits, `-`, `_` and `/`, and are not a word YAML 1.1 reads as a Boolean or
+- **Keys are bare** when they are an ASCII letter followed by ASCII letters, digits, `-`, `_` and `/`, and are not a word YAML 1.1 reads as a Boolean or
   null. So the Norwegian writing system `no` is written `"no"`
   (`records/01-frame.json`, "a partial file whose root names a plain field: record-data holds that field only; the writing system no is a
   quoted key").
@@ -176,7 +206,7 @@ record-data:
 
 ## Rich text: `|` and `|-`
 
-A rich value is FieldWorks Markdown, written as a literal block in place (owner decisions R-6 and R-8). The block header follows the field:
+A rich value is FieldWorks Markdown, written as a literal block in place (ADR 0032). The block header follows the field:
 
 | Field | Header | Pandoc reads it as | Read with |
 |---|---|---|---|
@@ -184,7 +214,8 @@ A rich value is FieldWorks Markdown, written as a literal block in place (owner 
 | A rich field of one paragraph (a MultiString or String) | `\|-` (strip) | inlines | `MarkdownConverter.ParseInline` |
 | Plain text that needs a block (above) | `\|-` | inlines | `ParseInline` |
 
-- A value never ends in a line end, so the clip block's one final line end belongs to the header, not to the value.
+- A `|` block keeps one line end after its last line, and a `|-` block keeps none. Either way the value itself never ends with a line end:
+  the reader drops that one line end, and the writer adds it back for `|`.
 - Unmarked text in an alternative of a per-writing-system field means that alternative's writing system. In a field in one writing system
   it means the field's default (`analysis` or `vernacular`, from the file's front matter). `.v` is the file's vernacular.
 - Block syntax in a field of one paragraph is `fwmd.field.block-syntax`.
@@ -218,9 +249,10 @@ Here `comment` is a field of one paragraph, so the writer writes `|-`.
 
 ## Partial files
 
-`root:` names what the file holds. Agents write partial files by default (owner decision Q62).
+`root:` names what the file holds. Agents usually write partial files.
 
-- The first `PathSegments` segments of the path name the record (2 for `lexicon/entry`: `/lexicon/palit(2)`).
+- The first few segments of the path name the record. How many depends on the record kind: two for `lexicon/entry`
+  (`/lexicon/palit(2)`), three for `lists/item` (`/lists/GDR/GDR-47`).
 - Each further segment is a field of an owned object, followed by a 1-based index for a sequence: `/lexicon/palit(2)/senses/1`.
   `record-data` then holds that object's fields.
 - A fragment names a field, and after a dot one writing system: `#gloss`, `#definition.en`.
@@ -253,7 +285,7 @@ to pay money for [something]{.v}
 - Findings inside a rich value or the body keep the FieldWorks Markdown ids, placed in the file. Every id is in [Findings](findings.md).
 - `RecordReadOptions.Markdown` gives the project's writing systems, styles and objects for the rich values. `RecordReadOptions.Notations`
   is the host's `INotationChecker` for notation fields.
-- Not checked yet: whether a reference resolves, its target's class, collection order, deletes and moves (R2).
+- Not checked yet: whether a reference resolves, its target's class, collection order, deletes and moves. They are planned.
 
 ## Block features
 
@@ -306,13 +338,13 @@ conformance README documents:
 | `Sequence` | `Objects`, `References`, `Texts`, `Notations` | a list |
 
 - An object type has fields in canonical order and `HasGuid` (default true).
-- A record kind has a name (`record:`), a root type, `PathSegments` and an optional body field (`RecordSchemaBuilder.Kind`).
+- A record kind has a name (`record:`), a root type, how many path segments name a record (`pathSegments`) and an optional body field (`RecordSchemaBuilder.Kind`).
 - A text field in one writing system has a default: `RecordWritingSystem.Analysis` or `Vernacular`.
 - A field name has no `.`, `/`, `#`, space or control character, because those delimit field paths (`senses/1/definition.en`).
 
 ## JSON Schema export
 
-`RecordSchema.ToJsonSchema()` writes a JSON Schema (draft-07) of the front matter, for editors and checkers (owner decision R-7). The same
+`RecordSchema.ToJsonSchema()` writes a JSON Schema (draft-07) of the front matter, for editors and checkers. The same
 schema always gives the same bytes. `records/test.schema.json` is the fixtures' `test` schema, byte for byte.
 
 - `$id` is the schema's id. `record` is an enum of the kinds. `schema` is a constant. Unknown front-matter keys are not allowed.
@@ -344,8 +376,8 @@ schema always gives the same bytes. `records/test.schema.json` is the fixtures' 
         },
 ```
 
-VS Code's YAML extension does not validate Markdown front matter by itself. Until a FieldWorks extension exists, Motif's checker and its
-command line validate record files against the JSON Schema (owner decision R-10).
+VS Code's YAML extension does not validate Markdown front matter by itself. Validating record files against the JSON Schema from the
+command line is planned: the fwmd CLI (#161).
 
 ## What the tests hold the format to
 
