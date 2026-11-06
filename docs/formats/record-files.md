@@ -21,7 +21,7 @@ The examples are copied from the fixtures, and `FormatDocsTests` checks them. Th
 ## Editing a record file by hand
 
 1. Keep the lines `---`, `fwmd: 1`, `record:` and `schema:` as they are, and add no other top-level key.
-2. Put plain text in double quotes. Inside the quotes, write `\"` for a quote and `\` for a backslash; nothing else needs escaping.
+2. Put plain text in double quotes. Inside the quotes, write `\"` for a quote and `\\` for a backslash; nothing else needs escaping.
 3. Write rich text as a block: `|-` after the key, then the text on the next lines, indented two spaces more than the key. A field that
    holds several paragraphs takes `|` instead, with a blank line between paragraphs.
 4. Indent with spaces, never tabs.
