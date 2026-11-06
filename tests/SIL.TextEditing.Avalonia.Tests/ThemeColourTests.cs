@@ -211,7 +211,7 @@ namespace SIL.TextEditing.Avalonia.Tests
         [Fact]
         public void A_host_that_sets_only_the_foreground_keeps_the_themes_page() => Headless.Run(() =>
         {
-            // The contract (README): a colour the host sets is kept, and the other follows the theme, so a black foreground on a dark theme is
+            // The contract (docs/reference/rendering.md): a colour the host sets is kept, and the other follows the theme, so a black foreground on a dark theme is
             // black on the dark page. A host that sets one sets the other, or resets it.
             var (window, field) = Themed();
             window.RequestedThemeVariant = ThemeVariant.Dark;

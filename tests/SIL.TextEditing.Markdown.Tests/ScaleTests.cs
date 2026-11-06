@@ -256,7 +256,7 @@ namespace SIL.TextEditing.Markdown.Tests
 }
 namespace SIL.TextEditing.Markdown.Tests
 {
-    /// <summary>The writer's own paths are linear: only Markdig's slow paths (a quadratic <c>[a](</c> run, deep lists, a table read) are left, and the README says so.
+    /// <summary>The writer's own paths are linear: only Markdig's slow paths (a quadratic <c>[a](</c> run, deep lists, a table read) are left, and docs/reference/markdown.md says so.
     /// Counted, not timed (issue 141): the work is read from <see cref="WriterWork"/>, and four times the input must be about four times the work, not sixteen.</summary>
     public class WriterGrowthTests
     {

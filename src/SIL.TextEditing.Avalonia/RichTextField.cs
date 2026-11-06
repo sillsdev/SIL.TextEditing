@@ -263,7 +263,7 @@ namespace SIL.TextEditing.Avalonia
         /// writing system at the caret, because the keyboard then in effect belongs to whatever had focus before and the
         /// writing system here may not have changed. While the field lacks focus it raises nothing, as FieldWorks' views do not
         /// set the keyboard without focus: a change made then (a host setting the caret in a background field, say) is reported
-        /// once, as the focus-gain event, with the writing system the field has by then. See the README, "Keyboards", for what
+        /// once, as the focus-gain event, with the writing system the field has by then. See docs/reference/editing.md, "Keyboards", for what
         /// a host does on focus in and out.
         ///
         /// <para>On Windows, FieldWorks sets the keyboard on focus gain only when focus comes from a window of the same process, so
