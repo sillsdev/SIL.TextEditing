@@ -19,10 +19,10 @@ namespace SIL.TextEditing.Playground
         Popup _selectionBar = null!;
         StackPanel _selectionMore = null!;
         ComboBox _selectionWs = null!;
-        bool _selectionBarShown;
+        int _selectionBarGeneration;   // a posted open runs only if nothing has hidden or moved the bar since it was posted
 
         /// <summary>True while the selection bar is shown over the active field's selection.</summary>
-        public bool SelectionBarOpen => _selectionBarShown;
+        public bool SelectionBarOpen => _selectionBar.IsOpen;
 
         /// <summary>Whether the bar appears over a selection (default true).</summary>
         public bool SelectionBarEnabled
@@ -60,6 +60,7 @@ namespace SIL.TextEditing.Playground
                 SetWritingSystem(SampleWritingSystems.All[_selectionWs.SelectedIndex].Tag);
                 _active.Field.Focus();
             };
+            _selectionWs.DropDownClosed += (s, e) => _active.Field.Focus();   // Esc too: typing goes back to the field
             simple.Children.Add(_selectionWs);
             simple.Children.Add(StyleBox(Names.BarCharStyle, SampleStyles.CharacterStyles, "Character style", name => ApplyCharacterStyle(name), "Style"));
             var more = new ToggleButton { Name = Names.BarMore, Content = "More", Focusable = false, Padding = new Thickness(8, 3) };
@@ -93,6 +94,7 @@ namespace SIL.TextEditing.Playground
                 PlacementAnchor = PopupAnchor.TopLeft,
                 PlacementGravity = PopupGravity.TopRight,
                 IsLightDismissEnabled = false,
+                TakesFocusFromNativeControl = false,   // in WinForms (Host48) opening it must not take focus from the field
                 Child = frame,
                 VerticalOffset = -4,
             };
@@ -108,39 +110,52 @@ namespace SIL.TextEditing.Playground
             return button;
         }
 
-        /// <summary>Hides the bar until the selection changes again: a context menu replaces it.</summary>
+        /// <summary>Hides the bar until the selection changes again: a context menu replaces it, and focus leaving the field hides it.</summary>
         void HideSelectionBar()
         {
+            _selectionBarGeneration++;
             _selectionBar.IsOpen = false;
-            _selectionBarShown = false;
         }
 
-        /// <summary>Shows the bar over the active field's caret while it has a selection, and hides it otherwise. Called when the caret moves, the
-        /// document changes or another field becomes active; it waits for layout so the caret's place is current.</summary>
+        /// <summary>Shows the bar over the active field's caret while it has a selection whose caret shows, and hides it otherwise. Called when the
+        /// caret moves, the document changes, the view scrolls, read-only changes or another field becomes active; the open waits for layout so the
+        /// caret's place is current.</summary>
         void UpdateSelectionBar()
         {
             var field = _active?.Field;
             bool show = _selectionBarEnabled && field != null && field.Editor.HasSelection && !field.IsReadOnly && TopLevel.GetTopLevel(this) != null;
             if (!show)
             {
-                if (_selectionBarShown) _selectionBar.IsOpen = false;
-                _selectionBarShown = false;
+                HideSelectionBar();
                 return;
             }
+            bool outer = _syncing;
             _syncing = true;
-            int ws = SampleWritingSystems.All.ToList().FindIndex(w => w.Tag == field!.Editor.SelectionWs);
-            _selectionWs.SelectedIndex = ws;
-            _syncing = false;
+            _selectionWs.SelectedIndex = SampleWritingSystems.All.ToList().FindIndex(w => w.Tag == field!.Editor.SelectionWs);
+            _syncing = outer;
+            int generation = ++_selectionBarGeneration;
             Dispatcher.UIThread.Post(() =>
             {
-                if (!_selectionBarEnabled || _active?.Field != field || !field!.Editor.HasSelection) return;
+                if (generation != _selectionBarGeneration || !_selectionBarEnabled || _active?.Field != field || !field!.Editor.HasSelection) return;
+                var caret = field.CaretRect();
+                if (!field.VisibleBounds.Intersects(caret)) { _selectionBar.IsOpen = false; return; }   // the selection's end is scrolled out of sight
                 _selectionBar.PlacementTarget = field;
-                _selectionBar.PlacementRect = field.CaretRect();
+                _selectionBar.PlacementRect = caret;
                 try { _selectionBar.IsOpen = true; }
-                catch (System.InvalidOperationException) { return; }   // no overlay layer (a window with no theme): the bar is not shown
-                _selectionBarShown = true;
+                catch (System.InvalidOperationException) { }   // no overlay layer (a window with no theme): the bar is not shown
             }, DispatcherPriority.Background);
-            _selectionBarShown = true;
+        }
+
+        /// <summary>Focus moved: the bar stays while focus is in the field or in the bar itself (a box's drop-down), and goes otherwise.</summary>
+        void SelectionBarFocusMoved()
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as global::Avalonia.LogicalTree.ILogical;
+                bool inBar = focused != null && (focused == _selectionBar || focused.GetLogicalAncestors().Contains(_selectionBar));
+                if (_active?.Field.IsFocused == true || inBar) return;
+                HideSelectionBar();
+            }, DispatcherPriority.Background);
         }
     }
 }

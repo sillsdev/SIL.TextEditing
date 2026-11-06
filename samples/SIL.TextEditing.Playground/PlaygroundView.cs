@@ -160,7 +160,7 @@ namespace SIL.TextEditing.Playground
         bool _developerMode;
         CheckBox _developerCheck = null!;
         Control _developerPanel = null!;
-        Control _logArea = null!;
+        Control _logSplitter = null!;
         Grid _rightGrid = null!;
         TabItem _modelTab = null!;
         bool _settingMarkdown;
@@ -261,7 +261,8 @@ namespace SIL.TextEditing.Playground
         void ApplyDeveloperMode()
         {
             _developerPanel.IsVisible = _developerMode;
-            _logArea.IsVisible = _developerMode;
+            _logSplitter.IsVisible = _developerMode;
+            _logBox.IsVisible = _developerMode;
             _rightGrid.RowDefinitions[2].Height = _developerMode ? new GridLength(1, GridUnitType.Star) : new GridLength(0);   // the Markdown takes the whole height
             _modelTab.IsVisible = _developerMode;
             if (!_developerMode) ShowsMarkdown = true;
@@ -322,6 +323,7 @@ namespace SIL.TextEditing.Playground
                 if (_syncing) return;
                 _active.Field.IsReadOnly = _readOnlyCheck.IsChecked == true;
                 Log("field read-only: " + (_active.Field.IsReadOnly ? "on" : "off"));
+                UpdateSelectionBar();
             };
             toolbar.Children.Add(_readOnlyCheck);
             _singleParagraphCheck = new CheckBox { Name = Names.SingleParagraph, Content = "Single paragraph", Focusable = false, Margin = new Thickness(2) };
@@ -439,14 +441,12 @@ namespace SIL.TextEditing.Playground
             _inspectorTabs.SelectedIndex = 0;
             _inspectorTabs.SelectionChanged += (s, e) => { if (ShowsMarkdown) RefreshMarkdown(); };
             Grid.SetRow(_inspectorTabs, 0);
-            var logArea = new DockPanel();
-            DockPanel.SetDock(splitter, Dock.Top);
-            logArea.Children.Add(splitter);
-            logArea.Children.Add(_logBox);
-            _logArea = logArea;
-            Grid.SetRow(logArea, 2);
+            Grid.SetRow(splitter, 1);   // a GridSplitter works only as a direct child of its Grid
+            Grid.SetRow(_logBox, 2);
+            _logSplitter = splitter;
             right.Children.Add(_inspectorTabs);
-            right.Children.Add(logArea);
+            right.Children.Add(splitter);
+            right.Children.Add(_logBox);
             var rightBorder = new Border { Margin = new Thickness(4), Child = right };
 
             var body = new Grid();
@@ -864,6 +864,7 @@ namespace SIL.TextEditing.Playground
         {
             var box = new ComboBox { Name = name, MinWidth = 140, Margin = new Thickness(2), IsTabStop = false, ItemsSource = styles, SelectedIndex = -1, PlaceholderText = placeholder };
             ToolTip.SetTip(box, tip);
+            box.DropDownClosed += (s, e) => _active.Field.Focus();   // Esc too: typing goes back to the field
             box.SelectionChanged += (s, e) =>
             {
                 if (_syncing || !(box.SelectedItem is string style)) return;
@@ -990,6 +991,8 @@ namespace SIL.TextEditing.Playground
             };
             field.LanguageServiceFailed += error => Log("language service failed: " + error.Message);
             field.GotFocus += (s, e) => Activate(session);
+            field.LostFocus += (s, e) => { if (_active == session) SelectionBarFocusMoved(); };
+            field.EffectiveViewportChanged += (s, e) => { if (_active == session && field.Editor.HasSelection) UpdateSelectionBar(); };   // the bar follows scrolling
 
             if (many)
             {

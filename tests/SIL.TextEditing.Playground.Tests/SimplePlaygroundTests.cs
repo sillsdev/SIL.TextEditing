@@ -105,6 +105,45 @@ namespace SIL.TextEditing.Playground.Tests
         });
 
         [Fact]
+        public void The_bar_goes_when_the_field_turns_read_only_or_focus_moves_to_the_markdown() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.MixedBidi))
+            {
+                s.Select(0, 0, 8);
+                Headless.Pump();
+                Assert.True(s.View.SelectionBarOpen);
+                s.Find<CheckBox>(PlaygroundView.Names.ReadOnly).IsChecked = true;
+                Headless.Pump();
+                Assert.False(s.View.SelectionBarOpen);
+                s.Find<CheckBox>(PlaygroundView.Names.ReadOnly).IsChecked = false;
+                Headless.Pump();
+                Assert.True(s.View.SelectionBarOpen);
+
+                s.Find<TextBox>(PlaygroundView.Names.MarkdownSource).Focus();
+                Headless.Pump();
+                Assert.False(s.View.SelectionBarOpen);
+            }
+        });
+
+        [Fact]
+        public void Closing_a_box_of_the_bar_gives_focus_back_to_the_field() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.MixedBidi, developerMode: false))
+            {
+                s.Select(0, 0, 8);
+                Headless.Pump();
+                var box = s.FindLogical<ComboBox>(PlaygroundView.Names.BarWritingSystem);
+                box.Focus();
+                box.IsDropDownOpen = true;
+                Headless.Pump();
+                box.IsDropDownOpen = false;
+                Headless.Pump();
+                Assert.True(s.Field.IsFocused);
+                Assert.True(s.View.SelectionBarOpen);
+            }
+        });
+
+        [Fact]
         public void Pictures_are_written_as_images_with_their_path_and_guid() => Headless.Run(() =>
         {
             using (var s = new Session(Scenarios.Picture, developerMode: false))
