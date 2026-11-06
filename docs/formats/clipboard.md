@@ -8,7 +8,7 @@ registers the forms. The field itself depends on neither liblcm nor the Markdown
 | Form | Id | Clipboard format name | Payload | Provided by | Default paste order | "Copy as" | Status |
 |---|---|---|---|---|---|---|---|
 | FieldWorks TsString | `TsString` (`ClipboardForms.TsStringId`) | `TsString` | a host object: FieldWorks' .NET-serialised `TsStringWrapper` | the FieldWorks host | 1st | no | The id ships. The host writes the form and a clipboard backend that can store an object. |
-| FieldWorks Markdown | `FieldWorks Markdown` (`ClipboardForms.FieldWorksMarkdownId`) | chosen by the form | text: [FieldWorks Markdown](fieldworks-markdown.md) with its front matter | the host, around `MarkdownConverter` | 2nd | yes | The id ships; no form class ships yet. The Markdown library is to provide one. |
+| FieldWorks Markdown | `FieldWorks Markdown` (`ClipboardForms.FieldWorksMarkdownId`) | chosen by the form | text: [FieldWorks Markdown](fieldworks-markdown.md) with its front matter | the host, around `MarkdownConverter` | 2nd | yes (planned, #168) | Planned, #168. Only the id ships; no form class ships yet. A host can write its own. |
 | Plain text | `text/plain` (`ClipboardForms.PlainTextId`) | the system's text format | text: the paragraphs' text joined with `\n`, in NFC | built into the field | 3rd | always | Shipped. |
 | TsString XML | `SIL.TextEditing.TsStringXml` (`TsStringClipboard.XmlFormatName`) | `SIL.TextEditing.TsStringXml` | text: the XML of one `ITsString` | `TsStringClipboardForm` in `SIL.TextEditing.LCModel` | not in it; the host adds the id | no | Shipped. |
 | Runs dump | `SIL.TextEditing.Runs.v1` | `SIL.TextEditing.Runs.v1` (`Interchange.ClipboardFormat`) | text: `Interchange` XML | `InterchangeClipboardForm` in `SIL.TextEditing` | not in it | yes | Shipped, for tests and debugging only. |
@@ -23,15 +23,15 @@ form with the id and format name `TsString`:
 - its `Read` unwraps it and calls `TsStringClipboard.FromXmlToFragment`;
 - its host clipboard backend stores and reads the object, since Avalonia's clipboard cannot.
 
-A TsString copy of several paragraphs joins them with `"; "` and pastes as one paragraph, as FieldWorks does. With TsString first in
-the paste order, a copy of several paragraphs from one field to another loses its paragraph breaks unless the FieldWorks Markdown form is
-tried first.
+A TsString copy of several paragraphs joins them with `"; "`. Under the default paste order TsString is read first, so such a copy,
+pasted into another field, arrives as one paragraph, as in FieldWorks. To keep the paragraph breaks, a host registers a FieldWorks Markdown
+form (planned, #168) and puts its id before `TsString` in `PasteOrder`.
 
-### FieldWorks Markdown
+### FieldWorks Markdown (planned, #168)
 
 The payload is a whole FieldWorks Markdown text **with its front matter**, so unmarked text never takes its writing system from the
 target project's defaults. Read it with `MarkdownConverter.Parse` and write it with `MarkdownConverter.ToMarkdown`. FieldWorks Markdown
-is a back end first (agents, files, drafting); on the clipboard it is an extra form, not the default.
+is a back end first (agents, files, drafting). On the clipboard it is planned as an extra form, not the default (planned, #168).
 
 ### Plain text
 
@@ -96,9 +96,10 @@ Text in a writing system the target project lacks takes the writing system of th
 
 ## Copy as
 
-`RichTextField.CopyAsAsync(formId)` puts one form on the clipboard as text: the plain text (`text/plain`), or a form whose
-`OffersCopyAs` is true, such as FieldWorks Markdown. Only a form whose payload is a string can be copied this way. `CopyAsAsync` returns
-false for any other, and for a form with nothing to say. `ClipboardForms.CopyAsForms` lists the forms a menu offers.
+`RichTextField.CopyAsAsync(formId)` puts one form on the clipboard as text: the plain text (`text/plain`), or any registered form
+whose payload is a string, such as FieldWorks Markdown (planned, #168). It returns false for an unknown id, for a form whose payload is
+not a string, and for a form with nothing to say. `OffersCopyAs` does not limit `CopyAsAsync`; it only decides which forms
+`ClipboardForms.CopyAsForms` lists for a menu.
 
 ## Backends
 
@@ -118,36 +119,30 @@ The field reads and writes the clipboard only through `IClipboardBackend` (`Rich
 
 ## Planned: Word HTML and RTF
 
-> **Planned. Nothing in this section is built.** It records owner decisions and research proposals so that integrators know what is coming.
+> **Planned. Nothing in this section is built.** It says what the owner has decided, so that integrators know what is coming.
 
-**Decided by the owner** (2026-11-05, `decisions-2026-11-05-records.md`):
+The owner decided on 2026-11-05 (recorded as planned additions in ADR 0031):
 
-| Decision | |
-|---|---|
-| R-3 | Word-compatible copy and paste, "as much as that will work". This reverses ADR 0029's "No HTML or RTF" (amended by ADR 0031). TsString stays first on paste between FieldWorks fields. |
-| Q65 | Copy writes HTML and RTF. Paste reads HTML only. Reading RTF is decided after testing with Word. |
-| Q66 | Paste from Word keeps meaning (emphasis, links, styles, language, writing system) and drops fonts, sizes and colours. A host setting allows full formatting. |
-| Q67 | Writing systems travel as character styles named `<Style>[lang=<ws>]`, as FieldWorks' Word export does. A host switch turns this off. |
-| Q68 | Host callbacks for footnotes and pictures are defined in v1's API and built right after it. |
-| Q69 | Paste order: TsString, FieldWorks Markdown, HTML, RTF, plain text. |
-| Q70 | No "Copy as HTML source". |
-| Q71 | HTML is read with AngleSharp (package approved for `SIL.TextEditing.WordInterchange`), subject to the AOT check. |
-| Q72 | One new project, `SIL.TextEditing.WordInterchange`, holds the importer and the exporter. |
+- Copy writes Word-compatible HTML and RTF. This reverses ADR 0029's "no HTML or RTF". TsString stays first on paste between FieldWorks
+  fields.
+- Paste reads HTML only. Whether to read RTF is decided after testing with Word.
+- Paste from Word keeps meaning (emphasis, links, styles, language, writing system) and drops fonts, sizes and colours. A host setting
+  allows full formatting.
+- Writing systems travel as character styles named `<Style>[lang=<ws>]`, as FieldWorks' Word export does. A host switch turns this off.
+- Host callbacks for footnotes and pictures are defined in the first version's API and built right after it.
+- The paste order becomes TsString, FieldWorks Markdown, HTML, RTF, plain text.
+- There is no "Copy as HTML source".
+- HTML is read with the AngleSharp package, if it passes the AOT check.
+- One new project, `SIL.TextEditing.WordInterchange`, holds the importer and the exporter.
 
-**Proposed in research report 20** (`20-word-clipboard.md`), not decided:
-
-- Two forms in the new project. `HtmlClipboardForm`: id `HTML`, format name `HTML Format` (CF_HTML). `RtfClipboardForm`: id `RTF`, format
-  name `Rich Text Format`. Both carry `Bytes`, so neither can be "Copy as". `IClipboardForm` and `IClipboardBackend` need no change.
-- Host contracts for writing systems, style names and object text, and paste options (mode, size limit).
-- A conformance fixture set for HTML and RTF, like the Markdown fixtures, with captured Word samples.
-- The report recommended its own HTML reader and no package. The owner's Q71 chose AngleSharp instead.
+Not decided yet: the forms' ids and format names. The Windows clipboard names are `HTML Format` and `Rich Text Format`. Both forms
+would carry bytes, so neither could be used with "Copy as". `IClipboardForm` and `IClipboardBackend` need no change.
 
 ## Planned: tables on the clipboard
 
 > **Planned.** See [Tables](tables.md) for the storage and editing design.
 
-- Q74: on the Markdown side a table stays a standard pipe table.
-- Q78: tab-separated text pasted at a paragraph boundary becomes a table, and "Paste as table" is offered too.
-- Research report 19 proposes table copy and paste in every form: TsString, Markdown, HTML, RTF and tab-separated text.
+- On the Markdown side a table stays a standard pipe table.
+- Tab-separated text pasted at a paragraph boundary becomes a table, and "Paste as table" is offered too.
 - Today a paste into a field that does not allow tables already flattens a table to one plain paragraph per row, cells joined by
   ` | ` (ADR 0033).
