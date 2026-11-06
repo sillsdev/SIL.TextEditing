@@ -1,7 +1,7 @@
 # Agent rules for SIL.TextEditing
 
-- **Read first.** `GLOSSARY.md` for the words, `docs/adr/` for the decisions. Don't reverse an ADR silently: propose a
-  new one that supersedes it.
+- **Read first.** `GLOSSARY.md` for the words, `docs/adr/` for the decisions, `docs/reference/` for how it works. Don't reverse an ADR
+  silently: propose a new one that supersedes it.
 - **Licence (ADR 0010).** This repository is MIT. FieldWorks code is LGPL. Never copy FieldWorks code here, not even
   edited. Re-implement FieldWorks behaviour from documentation, standards, tests and observed behaviour. Property
   numbers, run shapes, paragraph-key rules and clipboard formats are facts; the code is ours.
@@ -9,9 +9,11 @@
   code around them is still written from scratch.
 - **Layering.** `src/SIL.TextEditing` is UI-free and has no Avalonia or liblcm reference. The shared-layer split by dependency is in ADR 0031. `src/SIL.TextEditing.Avalonia`
   holds `RichTextField` and everything that touches Avalonia. Samples are samples and do not ship; `samples/SIL.TextEditing.Playground` is the one UI both hosts and `tests/SIL.TextEditing.Playground.Tests` use, so a new feature gets a playground control and a test that drives it.
+  - `src/SIL.TextEditing.Markdown` has no Avalonia, libpalaso or liblcm reference.
+  - `src/SIL.TextEditing.LCModel` references liblcm and is not trimmable or AOT-compatible; keep it out of `tests/AotCheck`.
 - **One source tree, two Avalonia versions.** netstandard2.0 builds against Avalonia 11.3.17 (FieldWorks, net48);
   net10.0 builds against Avalonia 12 (Motif). Versions live in `Directory.Packages.props` only. A per-target
-  difference goes behind `#if NET10_0_OR_GREATER`, is small, and is listed in the README.
+  difference goes behind `#if NET10_0_OR_GREATER`, is small, and is listed in `docs/reference/avalonia-versions.md`.
 - **Packages.** Only SIL.WritingSystems (libpalaso, ADR 0002; referenced by the Avalonia and LCModel projects), Avalonia (and its Headless, Skia, Desktop, Themes.Fluent and Win32.Interoperability packages; Themes.Fluent and Win32.Interoperability are samples-only; Desktop is for samples and test projects that need a real window, never for a shipped library), SIL.LCModel.Core (FieldWorks' pin; referenced by `SIL.TextEditing.LCModel`, ADR 0016) and SIL.LCModel (FieldWorks' pin, hosts may float up; referenced by the planned `SIL.TextEditing.Project` only, ADR 0031), Markdig.Signed 0.37.0 (referenced by the `SIL.TextEditing.Markdown` project only, ADRs 0011 and 0028), YamlDotNet 18.1.0 (its parser layer only, never the reflection serializer; referenced by the `SIL.TextEditing.Markdown` project only, ADR 0032) and the
   xunit test stack. Ask before adding anything else.
 - **Warnings are errors, nullable is on.** `IsTrimmable` and `IsAotCompatible` stay on for net10.0 libraries, except `SIL.TextEditing.LCModel` and the planned `SIL.TextEditing.Project` (liblcm is not trim-safe; neither host publishes trimmed or native AOT, ADR 0031).
@@ -20,4 +22,19 @@
   property numbers, and `ObjData`. The editor never interprets a bag; it carries it through every edit.
 - **Tests.** Build and test on Windows (`dotnet test SIL.TextEditing.sln`): net48 only runs there. A test that pins a
   known Avalonia fault says so in its name; when it starts failing, remove the workaround, not the test.
+  - Avalonia tests that create controls run inside `Headless.Run`.
+  - No wall-clock assertions. Assert counted work (counters such as `RecordWork.Steps`, `TextReads`).
+  - Pandoc tests skip silently when `pandoc` is not on `PATH`, unless `CI` (or `GITHUB_ACTIONS`) is set; then they fail. Set `CI` locally
+    to be sure they ran.
+  - `tests/AotCheck` needs `vswhere` on `PATH` (issue #164), and `-p:NuGetAudit=false` locally while issue #104 is open.
+- **Local liblcm.** Pack the liblcm stack into `H:\caches\localnugetpackages` with a stamped version, then
+  `dotnet test -p:SilLcmVersion=<stamped>` (see `Directory.Packages.props`). The refusal sweep tests are expected to fail against a fixed
+  liblcm.
+- **Format docs.**
+  - Every `fwmd.*` finding id needs a conformance fixture case (`EveryPublicFindingIdIsGuardedOrNamedAsHostOnly`; host-only ids are named there) and an entry in `docs/formats/findings.md`
+    (`FormatDocsTests`).
+  - Examples in `docs/formats` carry fixture markers and are tested; change the fixture and the doc together.
+- **Screenshots.** `TEXTEDITING_SCREENSHOTS=1` turns on the generator (`docs/images/README.md`). Regenerate the images when the UI changes
+  visibly.
+- **Merging.** Merge only when every check passes. Run `gh pr checks N --json bucket` and check every bucket, not just the exit code.
 - **Commits.** One concern per commit, a one-sentence message saying what is now true.
