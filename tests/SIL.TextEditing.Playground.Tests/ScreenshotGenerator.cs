@@ -65,7 +65,7 @@ namespace SIL.TextEditing.Playground.Tests
                     using (var fb = cropped.Lock())
                         for (int y = 0; y < area.Height; y++)
                             Marshal.Copy(buffer, (area.Y + y) * stride + area.X * 4, fb.Address + y * fb.RowBytes, area.Width * 4);
-                    #if NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
                     cropped.Save(Path.Combine(OutDir(), name + ".png"), new PngBitmapEncoderOptions());
 #else
                     cropped.Save(Path.Combine(OutDir(), name + ".png"));
@@ -174,7 +174,7 @@ namespace SIL.TextEditing.Playground.Tests
                 Headless.Pump();
                 var at = s.PointAt(0, 2);
                 s.RightClick(at);
-                Save(s, "environment-fix-menu", FieldStrip(s, 330));
+                Save(s, "environment-fix-menu", FieldStrip(s, 365));
                 s.View.CloseContextMenu();
             }
         });
@@ -221,7 +221,8 @@ namespace SIL.TextEditing.Playground.Tests
                 s.Caret(0, 0);
                 s.Click(PlaygroundView.Names.Paste);
                 await s.WaitClipboard();
-                s.Caret(7, s.ParagraphText(7).Length);                Save(s, "block-features", From(s, s.Find<CheckBox>(PlaygroundView.Names.AllowTables), 330));
+                s.Caret(7, s.ParagraphText(7).Length);
+                Save(s, "block-features", From(s, s.Find<CheckBox>(PlaygroundView.Names.AllowTables), 330));
             }
         });
 

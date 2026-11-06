@@ -36,15 +36,19 @@ public static class Win
 [void][Win]::SetProcessDPIAware()
 
 function Capture([string]$Target, [string]$File, [string[]]$HostArgs) {
-    $before = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -in 'Host48', 'Playground.Desktop' } | ForEach-Object Id)
-    & (Join-Path $root 'run.ps1') $Target @HostArgs | Out-Null
-    $p = $null
-    for ($i = 0; $i -lt 120 -and -not $p; $i++) {
-        Start-Sleep -Milliseconds 500
-        $p = Get-Process | Where-Object { $_.ProcessName -in 'Host48', 'Playground.Desktop' -and $before -notcontains $_.Id -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-    }
-    if (-not $p) { throw "No window for $Target" }
+    # run.cmd (run.ps1) says "Started <target> as process <id>"; that id, never a process name, is the host this call owns and closes.
+    $quoted = ($HostArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
+    $started = (& cmd.exe /c ("`"" + (Join-Path $root 'run.cmd') + "`" $Target $quoted") 2>&1) | Out-String
+    if ($started -notmatch 'as process (\d+)') { throw "run.cmd did not report a process id for ${Target}: $started" }
+    $hostId = [int]$Matches[1]
     try {
+        $p = $null
+        for ($i = 0; $i -lt 120; $i++) {
+            Start-Sleep -Milliseconds 500
+            $p = Get-Process -Id $hostId -ErrorAction Stop
+            if ($p.MainWindowHandle -ne 0) { break }
+        }
+        if ($p.MainWindowHandle -eq 0) { throw "No window for $Target (process $hostId)" }
         $h = $p.MainWindowHandle
         [void][Win]::ShowWindow($h, 9)
         [void][Win]::MoveWindow($h, 20, 20, $Width, $Height, $true)
@@ -64,11 +68,13 @@ function Capture([string]$Target, [string]$File, [string[]]$HostArgs) {
         Write-Host "Saved $File ($w x $hgt) from $Target"
     }
     finally {
-        [void]$p.CloseMainWindow()
-        if (-not $p.WaitForExit(5000)) { $p.Kill() }
+        $p = Get-Process -Id $hostId -ErrorAction SilentlyContinue
+        if ($p) {
+            [void]$p.CloseMainWindow()
+            if (-not $p.WaitForExit(5000)) { $p.Kill() }
+        }
     }
 }
-
 Capture 'winforms48' 'host-winforms-fieldworks-shape.png' @('--scenario', $Scenario)
 Capture 'desktop10' 'desktop-window.png' @('--scenario', $Scenario)
 
