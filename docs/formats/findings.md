@@ -1,7 +1,7 @@
 # Findings
 
 A **finding** is what a reader reports about its input: a stable id, a severity, a place and, where one exists, the one exact fix.
-This page lists every id the library can report. `FindingCatalogueTests` checks that every id in the source is listed here.
+This page lists every id the library can report. `FormatDocsTests` checks both ways: every id in the source is listed here, and every id listed in a table here is in the source.
 
 - [FieldWorks Markdown](fieldworks-markdown.md) findings are `fwmd.*` and come from `MarkdownConverter.Parse` and `ParseInline`.
 - [Record file](record-files.md) findings are `fwmd.yaml.*` (the YAML of the frame) and `fwmd.record.*` (what the frame says against the
@@ -37,12 +37,35 @@ makes a placed finding for any other check a host runs.
 | `fwmd.syntax.unclosed-mark` | error | An attribute block has no closing `}`, or a div has no closing `:::`. Fixtures: `02-attributes.json` "a block with no closing brace is an error with the closing brace as the fix"; `04-structure.json` "a div that is never closed is an error". | Add the `}` (the finding's fix) or the closing `:::` line. |
 | `fwmd.syntax.unknown-attribute` | error | A key or class the notation does not have (`{wss=ceb}`, `{.vern}`), the old bare `{v}`, or a key written as a class (`{.ws}`). Fixture: `02-attributes.json` "an unknown key is an error with a hint" and the three cases after it. | Use a key from the [attribute tables](fieldworks-markdown.md#attributes), or the class `.v`. |
 | `fwmd.syntax.duplicate-attribute` | error | A key appears twice, two keys set one property, or `.v` and `ws=` both name a writing system. Fixtures: `02-attributes.json` "a repeated key is an error", ".v and ws together name two writing systems". | Keep one. |
-| `fwmd.syntax.malformed-attribute` | error | An attribute block that breaks the grammar (`{}`, `{#id}`, a bad escape), a value that does not fit its key (`bold=yes`), a unit key without its base key, `url=` that is not a `silfw://` URL on a link to a project object, or text after a `:::` line's block. In a plain FieldWorks Markdown file it also covers the front matter: `fwmd` that is not a whole number, an empty or list default writing system, a tab in the indentation, a line that is not a key and a value. Fixtures: `02-attributes.json` "a value that does not fit its key is malformed"; `06-front-matter.json` "a version that is not a number is malformed"; `11-hardening.json` "a tab in the front matter's indentation is malformed, because Pandoc refuses it". | Write the value the key takes (the message says which). In the front matter, indent with spaces. |
-| `fwmd.syntax.unsupported-markup` | error | Pandoc reads a construct that has no counterpart in FieldWorks text: raw HTML, a code span, a thematic break, a reference definition, a nested list, a div in a div, an unescaped block marker in a styled div, math, a citation, an inline note, strikeout, heading attributes, fancy list markers, line blocks, grid tables, definition lines, a table caption, a `:::` line straight after a paragraph line, a `[]{.empty}` that is not the whole paragraph, and a pipe table when the host names no table styles. See [Unsupported Pandoc constructs](fieldworks-markdown.md#unsupported-pandoc-constructs). | The fix escapes the construct so that it reads as text (`\$x\$`, `\@`, `a\. palit`), or adds the blank line a div fence needs. Raw HTML, code and a thematic break have no fix: escape or remove them. |
+| `fwmd.syntax.malformed-attribute` | error | An attribute block or a value that breaks the grammar; also bad front matter in a plain FieldWorks Markdown file. [Details](#malformed-attribute-in-detail). Fixture: `02-attributes.json` "a value that does not fit its key is malformed". | Write what the key takes (the message says which). |
+| `fwmd.syntax.unsupported-markup` | error | Pandoc reads a construct that FieldWorks text has no counterpart for. [Details](#unsupported-markup-in-detail). Fixture: `11-hardening.json` "math between dollar signs is a finding, because Pandoc reads it and the notation has none". | The fix escapes it (`\$x\$`, `\@`, `a\. palit`), where an escape keeps the text. |
 | `fwmd.syntax.too-deep` | error | A block, line or table is nested too deeply or is too large for the parser (Markdig's limit). One finding; the lines are kept as plain text. Fixture: `08-checks.json` "text nested deeper than the reader allows is one finding and its lines are kept as text". | Flatten the nesting or split the table. |
 | `fwmd.version.unsupported` | error | The front matter says `fwmd:` with a version newer than 1. Nothing else is read. Fixture: `06-front-matter.json` "a newer version is refused with a finding and nothing is read". | Read the file with a newer library. |
 | `fwmd.prop.unknown-number` | warning | A `pN` or `sN` key whose number is not a FieldWorks text property. The value is kept as written. Fixture: `02-attributes.json` "a property number that is not known is kept with a warning". | Check the number. Nothing to do if it is meant. |
-| `fwmd.record.record-file` | error | `MarkdownConverter.Parse` was given a [record file](record-files.md): the front matter has a top-level `record:` key. One finding on that line and nothing else is read, so a host cannot write back only the body (owner decision R-9). Fixture: `06-front-matter.json` "a record file is not read as FieldWorks Markdown: one finding on its record line, and nothing else (owner decision R-9)". | Read the file with `RecordFileReader`. |
+| `fwmd.record.record-file` | error | `MarkdownConverter.Parse` was given a [record file](record-files.md): the front matter has a top-level `record:` key. One finding on that line and nothing else is read, so a host cannot write back only the body. Fixture: `06-front-matter.json` "a record file whose record key is quoted is a record file". | Read the file with `RecordFileReader`. |
+
+### Malformed attribute in detail
+
+`fwmd.syntax.malformed-attribute` covers:
+
+- an attribute block that breaks the grammar: `{}`, `{#id}`, a bad escape;
+- a value that does not fit its key: `bold=yes`;
+- a unit key (`fontsizeUnit`) without its base key;
+- `url=` that is not a `silfw://` URL, on a link to an object of the project;
+- text after the block on a `:::` line;
+- in a plain FieldWorks Markdown file, the front matter: `fwmd` that is not a whole number, an empty or list default writing system, a
+  tab in the indentation, a line that is not a key and a value. In the front matter, indent with spaces.
+
+More fixtures: `06-front-matter.json` "a version that is not a number is malformed"; `11-hardening.json` "a tab in the front matter's
+indentation is malformed, because Pandoc refuses it".
+
+### Unsupported markup in detail
+
+`fwmd.syntax.unsupported-markup` covers raw HTML, a code span, a thematic break, a reference definition, a nested list, a div in a div,
+an unescaped block marker in a styled div, math, a citation, an inline note, strikeout, heading attributes, fancy list markers, line
+blocks, grid tables, definition lines, a table caption, a `:::` line straight after a paragraph line (the fix adds a blank line), a
+`[]{.empty}` that is not the whole paragraph, and a pipe table when the host names no table styles. Raw HTML, code and a thematic break
+have no fix: escape or remove them. See [Unsupported Pandoc constructs](fieldworks-markdown.md#unsupported-pandoc-constructs).
 
 ## FieldWorks Markdown: blocks and fields
 
@@ -107,7 +130,7 @@ All cases are in `records/03-schema.json` unless another file is named.
 | Id | Severity | Meaning | Usual fix |
 |---|---|---|---|
 | `fwmd.record.not-a-record` | error | The text is not a record file: no front matter, no closing line, or no `fwmd` or `record` key. Case: "plain FieldWorks Markdown (no record key) is not a record file". | Read it with `MarkdownConverter.Parse`. |
-| `fwmd.record.unknown-key` | error | A front-matter key a record file does not have (owner decision R-5). Case: "an unknown front-matter key is an error in a record file". | Remove it, or correct its spelling. |
+| `fwmd.record.unknown-key` | error | A front-matter key a record file does not have. Case: "an unknown front-matter key is an error in a record file". | Remove it, or correct its spelling. |
 | `fwmd.record.unknown-kind` | error | A `record:` kind the schema does not have. Case: "a record kind the schema does not have". | Use a kind of the schema. |
 | `fwmd.record.schema-mismatch` | error | `schema:` names another schema than the reader's. Case: "a schema other than the reader's". | The reader's schema id (the fix). |
 | `fwmd.record.unknown-field` | error | A key an object of its type does not have. `Nearest` names close fields. Case: "an unknown field, with the nearest name". | Use the field's name. |
@@ -122,7 +145,7 @@ All cases are in `records/03-schema.json` unless another file is named.
 | `fwmd.record.bad-root` | error | A `root:` that is not a project path, or whose segments after the record's do not walk the schema (a sequence needs an index). Cases: "a root that does not walk the schema", "a root with a sequence and no index". | Correct the path. |
 | `fwmd.record.outside-root` | error | A key in `record-data:` outside the field a partial file's `root:` names. Case: "a key outside the field the root names". | Remove it, or widen the root. |
 | `fwmd.record.unexpected-body` | error | Text below the front matter of a record kind with no body field. Case: "text below the front matter of a record with no body field". | Move the text into a field, or remove it. |
-| `fwmd.record.body-in-frame` | error | The body field written in `record-data:`. Its value is the body (owner decision R-6). Case: "the body field in record-data is an error". | Move the value below the front matter. |
+| `fwmd.record.body-in-frame` | error | The body field written in `record-data:`. Its value belongs in the body. Case: "the body field in record-data is an error". | Move the value below the front matter. |
 | `fwmd.record.block-not-allowed` | error | A table, list or heading in a rich field whose block features do not allow it (ADR 0033). One finding per block. File `05-blocks.json`, case "a table in a field that allows no blocks is an error, and its fix is one plain paragraph per row". | The block as plain paragraphs, flattened as paste does (the fix; none when the value is not a literal block). |
 | `fwmd.record.notation` | error | The default id of a host notation checker's finding that gives no code of its own. Case: "a notation finding with no code takes the default id". | What the checker's message says. |
 
