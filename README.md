@@ -10,6 +10,9 @@ it, as FieldWorks' LCModel does.
 **Status: bootstrap.** This is the native-editor prototype made into a repository. It is not released, the API will
 change, and the list under "Known gaps" is the work still to do.
 
+**Formats:** every format the library reads or writes (FieldWorks Markdown, record files, the clipboard forms) and every finding id is
+documented in [docs/formats](docs/formats/README.md).
+
 ## Projects
 
 | Project | Targets | What it is |
