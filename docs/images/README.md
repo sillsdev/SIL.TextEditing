@@ -21,7 +21,7 @@ $env:TEXTEDITING_SCREENSHOTS=1; dotnet test tests\SIL.TextEditing.Playground.Tes
 - `spelling-context-menu.png`: the context menu on a misspelled word: the word, its suggestions, Find, Cut, Copy, Paste and Copy as.
 - `copy-as-submenu.png`: the "Copy as" submenu open (plain text, a debug dump of the runs, and a disabled Markdown entry when no converter is registered).
 - `block-features.png`: a heading, a bulleted list and a table (as table-styled paragraphs, one column for now) with the Tables, Lists and Headings switches visible and on.
-- `long-document.png`: the 200-paragraph scenario scrolled to the caret in the middle, mixed writing systems; the Markdown tab shows the document as FieldWorks Markdown.
+- `long-document.png`: the 200-paragraph scenario scrolled to the caret in the middle, mixed writing systems; the Markdown tab shows the document as FieldWorks Markdown from its start.
 - `many-fields.png`: fifty small fields in one window, in English, French, Swahili and Arabic.
 
 ## The real windows
