@@ -102,10 +102,10 @@ System.Runtime.CompilerServices.Unsafe (4.0.4.1). A net48 host needs a binding r
 
 - **Conformance.** The fixtures in `tests/conformance` (JSON, documented in its README: Markdown in, expected paragraphs and findings out,
   and model to canonical Markdown) are run by `ConformanceTests`. They and the spec define the format.
-- **Pandoc agreement.** `PandocAgreementTests` reads every fixture, its canonical form and 150 generated documents
-  (`TEXTEDITING_PANDOC_SEEDS`) with `pandoc -f markdown-smart-implicit_figures-implicit_header_references-task_lists -t json` and requires
-  the same paragraphs. Pandoc is pinned in the CI workflow. Where it is missing the tests skip, except in CI (`CI` or `GITHUB_ACTIONS`
-  set), where they fail.
+- **Pandoc agreement.** `PandocAgreementTests` reads every fixture case without an error finding (bar a few excluded with a stated
+  reason), its canonical form and 150 generated documents (`TEXTEDITING_PANDOC_SEEDS`; the record tests add a third as many record files) with `pandoc -f markdown-smart-implicit_figures-implicit_header_references-task_lists -t json` and requires
+  the same paragraphs. Pandoc is pinned in the CI workflow. Where it is missing the tests skip, except in CI (`CI=true` or
+  `GITHUB_ACTIONS` set), where they fail.
 - **Random round trips.** 600 seeded random models and 600 random texts per run (`TEXTEDITING_MARKDOWN_SEEDS` raises the count) check the
   round trip and the stability of the canonical form.
 - Also: tests of the findings' positions, normalisation, size limits and the host interfaces.

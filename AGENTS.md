@@ -24,10 +24,10 @@
   known Avalonia fault says so in its name; when it starts failing, remove the workaround, not the test.
   - Avalonia tests that create controls run inside `Headless.Run`.
   - No wall-clock assertions. Assert counted work (counters such as `RecordWork.Steps`, `TextReads`).
-  - Pandoc tests skip silently when `pandoc` is not on `PATH`, unless `CI` (or `GITHUB_ACTIONS`) is set; then they fail. Set `CI` locally
-    to be sure they ran.
+  - Pandoc tests skip silently when `pandoc` is not on `PATH`, unless `CI=true` (or `GITHUB_ACTIONS`) is set; then they fail. Set `CI=true` locally
+    to be sure they ran (`CI=1` does nothing).
   - `tests/AotCheck` needs `vswhere` on `PATH` (issue #164), and `-p:NuGetAudit=false` locally while issue #104 is open.
-- **Local liblcm.** Pack the liblcm stack into `H:\caches\localnugetpackages` with a stamped version, then
+- **Local liblcm.** Pack the liblcm stack with a stamped version into a local NuGet source registered in your user NuGet.Config (e.g. a folder such as `H:\caches\localnugetpackages`), then
   `dotnet test -p:SilLcmVersion=<stamped>` (see `Directory.Packages.props`). The refusal sweep tests are expected to fail against a fixed
   liblcm.
 - **Format docs.**

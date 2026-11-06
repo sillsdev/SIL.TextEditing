@@ -19,8 +19,9 @@ The clipboard forms, the paste order, the writing-system rule, "Copy as" and the
 - **Writing systems the target lacks** take the writing system of the selection the text replaces, as FieldWorks does. The field asks
   `RichTextField.KnowsWritingSystem` (by default: its `WritingSystems` registry, and a registry with no entries accepts everything), and
   raises `WritingSystemsMapped` after the paste so the host can show a notice.
-- **Copy as** (`RichTextField.CopyAsAsync(formId)`) puts one form on the clipboard as text: the plain text, or a form that offers it
-  (`IClipboardForm.OffersCopyAs`, such as FieldWorks Markdown). The playground's context menu has a "Copy as" submenu.
+- **Copy as** (`RichTextField.CopyAsAsync(formId)`) puts one form on the clipboard as text: the plain text, or any registered form whose
+  payload is a string, such as FieldWorks Markdown (planned, #168). `IClipboardForm.OffersCopyAs` only decides which forms
+  `ClipboardForms.CopyAsForms` lists for a menu. The playground's context menu has a "Copy as" submenu.
 - `SIL.TextEditing.Runs.v1` is no longer on the clipboard. `Interchange` stays as a test and debug dump, and `InterchangeClipboardForm`
   lets tests and the playground carry formatting without liblcm or the Markdown library.
 

@@ -55,7 +55,7 @@ properties, an environment box with a language service, 200 paragraphs, many fie
 | `tests/SIL.TextEditing.LCModel.Tests` | net48, net10.0 | The adapter ([details](lcmodel.md#tests)). |
 | `tests/SIL.TextEditing.Markdown.Tests` | net48, net10.0 | Conformance, Pandoc agreement, random round trips ([details](markdown.md#tests)). |
 | `tests/SIL.TextEditing.Playground.Tests` | net48, net10.0 | Avalonia.Headless integration tests that drive the playground the way a person would. |
-| `tests/AotCheck` | net10.0 | Publishes the Markdown library native AOT and runs it ([details](markdown.md#dependencies-trimming-and-aot)). |
+| `tests/AotCheck` | net10.0 | Publishes the three net10.0 libraries native AOT and runs the Markdown, record and writing-system checks ([details](markdown.md#dependencies-trimming-and-aot)). |
 
 ### SecondDispatcher
 

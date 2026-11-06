@@ -2,7 +2,7 @@
 
 **Rich text editing for Avalonia in which every run of text knows its writing system.**
 
-SIL.TextEditing is the rich text field for [FieldWorks](https://software.sil.org/fieldworks/) and Motif, and for any
+SIL.TextEditing is being built as the rich text field for [FieldWorks](https://software.sil.org/fieldworks/) and Motif, and for any
 [Avalonia](https://avaloniaui.net/) app that edits multilingual text. Each run carries its own writing system, so Latin, Arabic and
 Devanagari share one paragraph and each keeps its own font, spelling dictionary and keyboard. The run model is shaped like FieldWorks'
 `ITsString`, and an adapter maps it to and from liblcm. One source tree builds against Avalonia 11.3 for FieldWorks (.NET Framework 4.8,
@@ -33,23 +33,28 @@ Pandoc reads the same way the library does. The host owns the data and the undo 
   per-version differences, [listed](docs/reference/avalonia-versions.md#per-version-differences) ([ADR 0009](docs/adr/0009-two-avalonia-lines.md)). The surface tests run on both: 777 on
   net48, 778 on net10.0.
 - **FieldWorks editing behaviour.** Arrow keys are logical by paragraph direction, text is stored as NFD, Backspace and Delete work as
-  in FieldWorks ([ADR 0018](docs/adr/0018-fieldworks-editing-semantics.md)). Complex shaping, inline objects, and screen reader support
-  at FieldWorks' level ([ADR 0017](docs/adr/0017-screen-reader-gate.md)).
-- **FieldWorks Markdown that Pandoc agrees with.** Read lenient, write strict. 667 tests run Pandoc 3.9.0.2 itself over every fixture
-  and generated documents and require the same structure ([ADR 0028](docs/adr/0028-fieldworks-markdown-is-a-pandoc-profile.md)).
+  in FieldWorks ([ADR 0018](docs/adr/0018-fieldworks-editing-semantics.md)). Complex shaping and inline objects. Screen readers get FieldWorks' MSAA level (name, role, value)
+  through Avalonia's peers; in WinForms the host needs a small fix first ([ADR 0017](docs/adr/0017-screen-reader-gate.md)).
+- **FieldWorks Markdown that Pandoc agrees with.** Read lenient, write strict. 664 tests run Pandoc 3.9.0.2 itself: 334 fixture
+  cases (every one without an error finding, bar a few excluded with a stated reason), 200 generated documents and record files and the 5
+  link forms must read to the same structure; 124 more check that what Pandoc reads as another construct is reported; one pins the version
+  ([ADR 0028](docs/adr/0028-fieldworks-markdown-is-a-pandoc-profile.md)).
 - **Records as files.** A whole record as one file: a YAML frame typed by a schema that is data, FieldWorks Markdown in the rich values,
   and a JSON Schema for editors ([ADR 0032](docs/adr/0032-record-files-yaml-frame.md)).
 - **The host stays in charge.** The host owns data and undo ([ADR 0003](docs/adr/0003-host-owns-data-and-undo.md)), and supplies the
   dictionaries, keyboards, clipboard forms, language services and the blocks a field allows.
-- **Ready for native AOT.** The net10.0 libraries other than the LCModel adapter are marked trimmable and AOT-compatible, and
-  `tests/AotCheck` publishes the Markdown library native AOT and runs it.
+- **Ready for native AOT.** `SIL.TextEditing`, `SIL.TextEditing.Avalonia` and `SIL.TextEditing.Markdown` are trimmable and AOT-compatible on
+  net10.0 (the LCModel adapter is not). CI's `tests/AotCheck` publishes all three native AOT, rooted whole so any trim or AOT warning
+  fails, and runs the Markdown converter, record files and the libpalaso writing-system path in the published exe.
 
-The whole suite passes with 0 failures on net48 and net10.0. Per target, as of 2026-11-06 (main 7ffd8f6 with PRs #165 and #166 merged, Release):
+The whole suite passes with 0 failures on net48 and net10.0. Passing tests per target, Release, main 7e77466 (2026-11-06), Pandoc on PATH.
+Opt-in tests that skip by default are not counted: 11 screenshot generators (`TEXTEDITING_SCREENSHOTS`) and 3 real-clipboard tests
+(`TEXTEDITING_REAL_CLIPBOARD`).
 
 | Tests | Model | Avalonia | Markdown | LCModel | Playground | SecondDispatcher |
 |---|---|---|---|---|---|---|
-| net48 | 416 | 777 | 3841 | 111 | 304 | — |
-| net10.0 | 416 | 778 | 3841 | 111 | 304 | 3 |
+| net48 | 416 | 777 | 3843 | 111 | 304 | — |
+| net10.0 | 416 | 778 | 3843 | 111 | 304 | 3 |
 
 ## Quick start
 
@@ -110,8 +115,8 @@ Planned, not built:
   ([ADR 0031](docs/adr/0031-shared-editing-and-interchange-layer.md), [ADR 0033](docs/adr/0033-block-features.md)).
 - **The `fwmd` command-line checker** ([#161](https://github.com/sillsdev/SIL.TextEditing/issues/161)).
 - **The FieldWorks Markdown clipboard form** ([#168](https://github.com/sillsdev/SIL.TextEditing/issues/168)).
-- **Editor integration**: an inline WYSIWYG and Markdown source mode, and a VS Code extension with a language server. Proposed ADR 0034,
-  awaiting owner decisions.
+- **Editor integration**: an inline WYSIWYG and Markdown source mode, and a VS Code extension with a language server. The plan and a proposed ADR
+  are awaiting owner decisions ([#170](https://github.com/sillsdev/SIL.TextEditing/issues/170)).
 - **Retiring the liblcm refusals** once FieldWorks pins a liblcm with its fixes [#410](https://github.com/sillsdev/liblcm/issues/410), [#413](https://github.com/sillsdev/liblcm/issues/413) and [#414](https://github.com/sillsdev/liblcm/issues/414) ([#159](https://github.com/sillsdev/SIL.TextEditing/issues/159)).
 
 ## Contributing
