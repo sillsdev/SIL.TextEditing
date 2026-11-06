@@ -56,3 +56,7 @@ Motif it is Proposals, MCP, the GDR template and checker, and the AI-authoring p
   the text. Design pending in research report 19.
 
 Owner decision, 2026-11-05.
+
+Amended by ADR 0034 (2026-11-06): from the move into Motif, `SIL.LCModel` (R-1 and the consequences above) follows Motif's
+`SilVersions.props`, not FieldWorks' pin. Motif is MIT, so that move is not the "repositories merge" of Q60: the library
+stays MIT and clean-room (ADR 0010).

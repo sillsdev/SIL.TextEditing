@@ -26,7 +26,7 @@
     <PackageVersion Include="Avalonia.Win32.Interoperability" Version="$(AvaloniaV11)" />
   </ItemGroup>
 
-  <!-- FieldWorks pins this libpalaso version (ADR 0002); hosts may float up. -->
+  <!-- FieldWorks pins this libpalaso version (ADR 0002); hosts may float up. From the move into Motif, SilVersions.props (ADR 0034). -->
   <ItemGroup>
     <PackageVersion Include="SIL.WritingSystems" Version="18.0.0-beta0042" />
   </ItemGroup>
@@ -35,7 +35,7 @@
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
   </ItemGroup>
 
-  <!-- FieldWorks pins this LCModel version (ADR 0016); hosts may float up. -->
+  <!-- FieldWorks pins this LCModel version (ADR 0016); hosts may float up. From the move into Motif, SilVersions.props (ADR 0034). -->
   <ItemGroup>
     <PackageVersion Include="SIL.LCModel.Core" Version="$(SilLcmVersion)" />
   </ItemGroup>

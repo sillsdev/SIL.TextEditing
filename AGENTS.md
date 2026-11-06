@@ -12,7 +12,8 @@
   - `src/SIL.TextEditing.Markdown` has no Avalonia, libpalaso or liblcm reference.
   - `src/SIL.TextEditing.LCModel` references liblcm and is not trimmable or AOT-compatible; keep it out of `tests/AotCheck`.
 - **One source tree, two Avalonia versions.** netstandard2.0 builds against Avalonia 11.3.17 (FieldWorks, net48);
-  net10.0 builds against Avalonia 12 (Motif). Versions live in `Directory.Packages.props` only. A per-target
+  net10.0 builds against Avalonia 12 (Motif). Versions live in `Directory.Packages.props` only (from the move into Motif, SIL package versions come from Motif's
+  `SilVersions.props`, ADR 0034). A per-target
   difference goes behind `#if NET10_0_OR_GREATER`, is small, and is listed in `docs/reference/avalonia-versions.md`.
 - **Packages.** Only SIL.WritingSystems (libpalaso, ADR 0002; referenced by the Avalonia and LCModel projects), Avalonia (and its Headless, Skia, Desktop, Themes.Fluent and Win32.Interoperability packages; Themes.Fluent and Win32.Interoperability are samples-only; Desktop is for samples and test projects that need a real window, never for a shipped library), SIL.LCModel.Core (FieldWorks' pin; referenced by `SIL.TextEditing.LCModel`, ADR 0016) and SIL.LCModel (FieldWorks' pin, hosts may float up; referenced by the planned `SIL.TextEditing.Project` only, ADR 0031), Markdig.Signed 0.37.0 (referenced by the `SIL.TextEditing.Markdown` project only, ADRs 0011 and 0028), YamlDotNet 18.1.0 (its parser layer only, never the reflection serializer; referenced by the `SIL.TextEditing.Markdown` project only, ADR 0032) and the
   xunit test stack. Ask before adding anything else.

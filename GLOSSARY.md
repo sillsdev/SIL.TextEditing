@@ -134,8 +134,9 @@ _Avoid_: main field, content
 ## Repository
 
 **Sealed folder**:
-`textediting/` in the Motif repository: SIL.TextEditing with its own build, solution, tests and documents. Motif
-references into it; it references nothing outside itself except one shared-settings import (ADR 0034).
+SIL.TextEditing as one folder inside a host repository (first `textediting/` in Motif), with its own build, solution,
+tests and documents. The host references into it; it references nothing outside itself except the host's shared-settings
+file and `SilVersions.props` (ADR 0034).
 _Avoid_: subtree, submodule, vendored copy
 
 **Avalonia line**:
