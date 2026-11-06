@@ -58,13 +58,13 @@ namespace SIL.TextEditing.Samples.Host48
     static class Program
     {
         /// <summary>FieldWorks' shape: a WinForms form, the playground embedded between two WinForms TextBoxes, to try Tab
-        /// and key handoff and focus. Options: <c>--scenario "name"</c>, <c>--minimized</c>.</summary>
+        /// and key handoff and focus. Options: <c>--scenario "name"</c>, <c>--dev</c> (developer mode), <c>--minimized</c>.</summary>
         [STAThread]
         static void Main(string[] args)
         {
             AppBuilder.Configure<PlaygroundApp>().UsePlatformDetect().LogToTrace().SetupWithoutStarting();
             int s = Array.IndexOf(args, "--scenario");
-            var view = s >= 0 && s + 1 < args.Length ? new PlaygroundView(args[s + 1]) : new PlaygroundView();
+            var view = new PlaygroundView(s >= 0 && s + 1 < args.Length ? args[s + 1] : Scenarios.MixedBidi, args.Contains("--dev"));
             var form = new Form
             {
                 Text = "SIL.TextEditing playground in WinForms (net48, Avalonia " + PlaygroundApp.AvaloniaVersion + ")",

@@ -42,9 +42,10 @@ namespace SIL.TextEditing.Playground
         public const string ManyFields = "Many fields";
         public const string Empty = "Empty";
 
-        /// <summary>The object data of the sample picture runs; the playground draws a coloured box for each.</summary>
-        public const string RedPicture = "\u0008pic-red";
-        public const string BluePicture = "\u0008pic-blue";
+        /// <summary>The object data of the sample picture runs: real picture data (a GUID) for two pictures of the sample project, which the
+        /// Markdown writes as <c>![Red square](/files/pictures/red-square.png){guid=...}</c>; the playground draws a coloured box for each.</summary>
+        public static readonly string RedPicture = SamplePictures.Red.ObjData;
+        public static readonly string BluePicture = SamplePictures.Blue.ObjData;
 
         public static IReadOnlyList<Scenario> All { get; } = new List<Scenario>
         {
@@ -314,7 +315,7 @@ namespace SIL.TextEditing.Playground
             p.Runs.Add(unknown);
             p.Runs.Add(new Run { Ws = "en", Text = ", then bold with one of them: " });
             var boldAndUnknown = new Run { Ws = "en", Text = "bold + 9003" };
-            boldAndUnknown.Props.SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn).SetInt(9003, 7);
+            boldAndUnknown.Props.SetInt(TextPropertyNumbers.Bold, TextPropertyNumbers.ToggleOn, TextPropertyNumbers.VariationEnum).SetInt(9003, 7);
             p.Runs.Add(boldAndUnknown);
             p.Runs.Add(new Run { Ws = "fr", Text = " et du français." });
 

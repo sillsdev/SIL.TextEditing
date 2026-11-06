@@ -85,6 +85,9 @@ namespace SIL.TextEditing.Playground.Tests
         /// <summary>The strip that starts at the field and the inspector beside it (the inspector, because a long field is scrolled and its own top is out of sight).</summary>
         static Rect FieldStrip(Session s, double height) => From(s, s.Find<TabControl>(PlaygroundView.Names.InspectorTabs), height);
 
+        /// <summary>The top of the window: the scenario bar, the field and the Markdown beside it, with room for the selection bar over the first line.</summary>
+        static Rect Top(double height) => new Rect(0, 0, W, height);
+
         static void Select(Session s, int paragraph, string from, string to)
         {
             var text = s.ParagraphText(paragraph);
@@ -96,31 +99,45 @@ namespace SIL.TextEditing.Playground.Tests
         [ScreenshotFact]
         public void Bidi_selection() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.MixedBidi, W, H))
+            using (var s = new Session(Scenarios.MixedBidi, W, H, developerMode: false))
             {
                 // From the Latin "means" across the Arabic "مرحبا بالعالم" to "hello": the selection changes direction twice.
                 Select(s, 0, "means book", "hello");
-                Save(s, "bidi-selection", FieldStrip(s, 345));
+                Save(s, "bidi-selection", Top(330));
+            }
+        });
+
+        [ScreenshotFact]
+        public void Selection_bar_with_more() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.MixedBidi, W, H, developerMode: false))
+            {
+                // The last paragraph, so the two rows have room above it; More opens the second row.
+                Select(s, 3, "expression", "française");
+                Headless.Pump();
+                s.FindLogical<global::Avalonia.Controls.Primitives.ToggleButton>(PlaygroundView.Names.BarMore).IsChecked = true;
+                Save(s, "selection-bar", Top(330));
             }
         });
 
         [ScreenshotFact]
         public void Indic_and_thai_shaping() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.IndicThai, W, H))
+            using (var s = new Session(Scenarios.IndicThai, W, H, developerMode: false))
             {
                 // One Devanagari conjunct (kshatriya) selected: the selection covers whole clusters.
                 Select(s, 0, "क्षत्रिय", "क्षत्रिय");
-                Save(s, "indic-thai-shaping", FieldStrip(s, 345));
+                Save(s, "indic-thai-shaping", Top(345));
             }
         });
 
         [ScreenshotFact]
         public void Nfd_and_surrogates() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Unicode, W, H))
+            using (var s = new Session(Scenarios.Unicode, W, H, developerMode: false))
             {
-                Select(s, 1, "Surrogates", "\U0001F600");
+                s.View.SelectionBarEnabled = false;   // the strip is two lines high: the bar would cover the first
+                Select(s, 1, "Surrogates","\U0001F600");
                 // Only the first two lines: the private-use line below them has no font to draw it, and shows a missing-glyph box.
                 var strip = FieldStrip(s, 62);
                 Save(s, "nfd-surrogates", new Rect(0, strip.Y, 760, 62));
@@ -130,10 +147,10 @@ namespace SIL.TextEditing.Playground.Tests
         [ScreenshotFact]
         public void Inline_pictures() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Picture, W, H))
+            using (var s = new Session(Scenarios.Picture, W, H, developerMode: false))
             {
                 s.Select(0, 3, 36);
-                Save(s, "inline-pictures", FieldStrip(s, 345));
+                Save(s, "inline-pictures", Top(345));
             }
         });
 
@@ -154,7 +171,7 @@ namespace SIL.TextEditing.Playground.Tests
         [ScreenshotFact]
         public void Environment_with_language_service() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Environment, W, H))
+            using (var s = new Session(Scenarios.Environment, W, H, developerMode: false))
             {
                 s.Editor.SetCaret(new TextPosition(0, 0));
                 s.Editor.SetCaret(new TextPosition(0, s.ParagraphText(0).Length), true);
@@ -168,7 +185,7 @@ namespace SIL.TextEditing.Playground.Tests
         [ScreenshotFact]
         public void Environment_context_menu() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Environment, W, H))
+            using (var s = new Session(Scenarios.Environment, W, H, developerMode: false))
             {
                 s.Editor.SetCaret(new TextPosition(0, 0));
                 s.Editor.SetCaret(new TextPosition(0, s.ParagraphText(0).Length), true);
@@ -184,7 +201,7 @@ namespace SIL.TextEditing.Playground.Tests
         [ScreenshotFact]
         public void Spelling_squiggles_and_menu() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Spelling, W, H))
+            using (var s = new Session(Scenarios.Spelling, W, H, developerMode: false))
             {
                 Headless.Pump();
                 Save(s, "spelling-squiggles", FieldStrip(s, 345));
@@ -231,19 +248,19 @@ namespace SIL.TextEditing.Playground.Tests
         [ScreenshotFact]
         public void Long_document_and_many_fields() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.Long, W, H))
+            using (var s = new Session(Scenarios.Long, W, H, developerMode: false))
             {
                 s.Caret(120, 10);
                 Save(s, "long-document", FieldStrip(s, 420));
             }
-            using (var s = new Session(Scenarios.ManyFields, W, H))
+            using (var s = new Session(Scenarios.ManyFields, W, H, developerMode: false))
                 Save(s, "many-fields", FieldStrip(s, 440));
         });
 
         [ScreenshotFact]
         public void Copy_as_submenu() => Headless.Run(() =>
         {
-            using (var s = new Session(Scenarios.MixedBidi, W, H))
+            using (var s = new Session(Scenarios.MixedBidi, W, H, developerMode: false))
             {
                 Select(s, 0, "The word", "book");
                 s.RightClick(s.PointAt(0, 4));

@@ -21,13 +21,13 @@ namespace SIL.TextEditing.Playground.Tests
                 var p0 = s.Editor.Document.Paragraphs[0];
                 Assert.Equal(runsBefore + 2, p0.Runs.Count);
                 Assert.Equal("word", p0.Runs.Single(IsBold).Text);
-                Assert.Contains("ws=en \"word\" props{3=1}", s.Inspector);
+                Assert.Contains("ws=en \"word\" props{3=1@3}", s.Inspector);
                 Assert.Equal(ids, s.Editor.Document.Paragraphs.Select(p => p.Key).ToList());
                 Assert.Contains("selection 0:4 -> 0:8", s.Inspector);
 
                 s.Click(PlaygroundView.Names.Bold);
                 Assert.Equal(runsBefore, s.Editor.Document.Paragraphs[0].Runs.Count);
-                Assert.DoesNotContain("props{3=1}", s.Inspector);
+                Assert.DoesNotContain("props{3=1@3}", s.Inspector);
             }
         });
 
@@ -44,7 +44,7 @@ namespace SIL.TextEditing.Playground.Tests
                 s.Press(Key.B, KeyModifiers.Control);
                 s.Click(PlaygroundView.Names.Italic);
                 s.Click(PlaygroundView.Names.Underline);
-                Assert.Contains("ws=en \"The\" props{2=1, 3=1, 5=3}", s.Inspector);
+                Assert.Contains("ws=en \"The\" props{2=1@3, 3=1@3, 5=3@3}", s.Inspector);
             }
         });
 
@@ -56,7 +56,7 @@ namespace SIL.TextEditing.Playground.Tests
                 s.Select(1, 0, s.ParagraphText(1).Length);
                 s.Click(PlaygroundView.Names.Bold);
                 Assert.Contains("9001=42@1", s.Inspector);
-                Assert.Contains("3=1, 9003=7", s.Inspector);
+                Assert.Contains("3=1@3, 9003=7", s.Inspector);
                 Assert.Contains("9002=\"a;b=c<&>é\"", s.Inspector);
                 s.Click(PlaygroundView.Names.Bold);
                 Assert.Contains("9001=42@1", s.Inspector);
@@ -87,11 +87,11 @@ namespace SIL.TextEditing.Playground.Tests
 
                 s.Select(3, 0, 2);
                 s.Click(PlaygroundView.Names.Bold);
-                Assert.Contains("props{3=1}", s.Inspector);
+                Assert.Contains("props{3=1@3}", s.Inspector);
                 s.Click(PlaygroundView.Names.Undo);
-                Assert.DoesNotContain("props{3=1}", s.Inspector);
+                Assert.DoesNotContain("props{3=1@3}", s.Inspector);
                 s.Click(PlaygroundView.Names.Redo);
-                Assert.Contains("props{3=1}", s.Inspector);
+                Assert.Contains("props{3=1@3}", s.Inspector);
             }
         });
 

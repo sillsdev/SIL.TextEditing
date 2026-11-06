@@ -12,6 +12,7 @@ using Avalonia.Interactivity;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using SIL.TextEditing.Avalonia;
 using Xunit;
@@ -54,9 +55,11 @@ namespace SIL.TextEditing.Playground.Tests
         readonly Window _window;
         public Window Window => _window;
 
-        public Session(string scenario = Scenarios.MixedBidi, double width = 1100, double height = 700)
+        /// <summary>A playground in a headless window. The tests drive the developer-mode controls, so developer mode is on unless
+        /// <paramref name="developerMode"/> says otherwise.</summary>
+        public Session(string scenario = Scenarios.MixedBidi, double width = 1100, double height = 700, bool developerMode = true)
         {
-            View = new PlaygroundView(scenario);
+            View = new PlaygroundView(scenario, developerMode);
             _window = new Window { Width = width, Height = height, Content = View };
             _window.Show();
             Headless.Pump();
@@ -75,6 +78,16 @@ namespace SIL.TextEditing.Playground.Tests
 
         public T Find<T>(string name) where T : Control =>
             _window.GetVisualDescendants().OfType<T>().FirstOrDefault(c => c.Name == name) ?? throw new InvalidOperationException("No " + typeof(T).Name + " named " + name);
+
+        /// <summary>A control by name in the logical tree, which also holds what a popup shows (the selection bar) whether or not it is open.</summary>
+        public T FindLogical<T>(string name) where T : Control =>
+            View.GetLogicalDescendants().OfType<T>().FirstOrDefault(c => c.Name == name) ?? throw new InvalidOperationException("No " + typeof(T).Name + " named " + name);
+
+        public void ClickLogical(string buttonName)
+        {
+            FindLogical<Button>(buttonName).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Headless.Pump();
+        }
 
         public void Click(string buttonName)
         {

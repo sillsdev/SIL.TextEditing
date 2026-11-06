@@ -23,7 +23,7 @@ namespace SIL.TextEditing.Playground
     /// integration tests use this one control. Controls are named (see the <c>Names</c> class) so tests and screen
     /// readers can find them.
     /// </summary>
-    public sealed class PlaygroundView : UserControl
+    public sealed partial class PlaygroundView : UserControl
     {
         /// <summary>The names of the controls a test or a UI automation client looks for.</summary>
         public static class Names
@@ -76,6 +76,17 @@ namespace SIL.TextEditing.Playground
             public const string MarkdownApply = "MarkdownApplyButton";
             public const string MarkdownRevert = "MarkdownRevertButton";
             public const string MarkdownStatus = "MarkdownStatus";
+            public const string DeveloperMode = "DeveloperModeCheck";
+            public const string DeveloperPanel = "DeveloperPanel";
+            public const string SelectionBar = "SelectionBar";
+            public const string BarBold = "BarBoldButton";
+            public const string BarItalic = "BarItalicButton";
+            public const string BarUnderline = "BarUnderlineButton";
+            public const string BarWritingSystem = "BarWritingSystemBox";
+            public const string BarCharStyle = "BarCharStyleBox";
+            public const string BarMore = "BarMoreToggle";
+            public const string BarParaStyle = "BarParaStyleBox";
+            public const string BarPicture = "BarPictureButton";
             public const string EventLog = "EventLog";
             public const string ScenarioDescription = "ScenarioDescription";
             public const string FindText = "FindText";
@@ -146,6 +157,12 @@ namespace SIL.TextEditing.Playground
         readonly TabControl _inspectorTabs;
         readonly SampleMarkdown _markdownHost;
         bool _markdownEdited;
+        bool _developerMode;
+        CheckBox _developerCheck = null!;
+        Control _developerPanel = null!;
+        Control _logArea = null!;
+        Grid _rightGrid = null!;
+        TabItem _modelTab = null!;
         bool _settingMarkdown;
         bool _markdownRefreshPosted;
         readonly TextBox _logBox;
@@ -156,8 +173,11 @@ namespace SIL.TextEditing.Playground
 
         public PlaygroundView() : this(Scenarios.MixedBidi) { }
 
-        public PlaygroundView(string scenario)
+        /// <summary>The playground with <paramref name="scenario"/> loaded. Without <paramref name="developerMode"/> it shows only what a person
+        /// writing sees: the field, the selection bar and the Markdown; developer mode adds every switch, the model and the event log.</summary>
+        public PlaygroundView(string scenario, bool developerMode = false)
         {
+            _developerMode = developerMode;
             _picker = new ComboBox { Name = Names.ScenarioPicker, MinWidth = 220, Margin = new Thickness(2), IsTabStop = false, ItemsSource = Scenarios.All.Select(s => s.Name).ToList() };
             ToolTip.SetTip(_picker, "Load a ready-made document");
             _picker.SelectionChanged += (s, e) =>
@@ -193,6 +213,8 @@ namespace SIL.TextEditing.Playground
             ScrollViewer.SetVerticalScrollBarVisibility(_logBox, ScrollBarVisibility.Auto);
 
             Content = BuildLayout();
+            _selectionBar = BuildSelectionBar();
+            ApplyDeveloperMode();
             AddHandler(InputElement.KeyDownEvent, OnPreviewKey, RoutingStrategies.Tunnel);
 
             _active = null!;
@@ -223,6 +245,31 @@ namespace SIL.TextEditing.Playground
             set => _markdown.Text = value;
         }
         public string MarkdownStatusText => _markdownStatus.Text ?? string.Empty;
+        /// <summary>Developer mode: every switch and tool bar, the model tab and the event log. Off, the playground shows the field, the selection
+        /// bar and the Markdown only.</summary>
+        public bool DeveloperMode
+        {
+            get => _developerMode;
+            set
+            {
+                if (_developerMode == value) return;
+                _developerMode = value;
+                ApplyDeveloperMode();
+            }
+        }
+
+        void ApplyDeveloperMode()
+        {
+            _developerPanel.IsVisible = _developerMode;
+            _logArea.IsVisible = _developerMode;
+            _rightGrid.RowDefinitions[2].Height = _developerMode ? new GridLength(1, GridUnitType.Star) : new GridLength(0);   // the Markdown takes the whole height
+            _modelTab.IsVisible = _developerMode;
+            if (!_developerMode) ShowsMarkdown = true;
+            _syncing = true;
+            _developerCheck.IsChecked = _developerMode;
+            _syncing = false;
+        }
+
         /// <summary>True while the Markdown tab (the default) is shown; false while the model dump is.</summary>
         public bool ShowsMarkdown
         {
@@ -238,9 +285,15 @@ namespace SIL.TextEditing.Playground
 
         Control BuildLayout()
         {
+            var slim = new DockPanel { Margin = new Thickness(4, 2), LastChildFill = false };
+            _developerCheck = new CheckBox { Name = Names.DeveloperMode, Content = "Developer mode", Focusable = false, Margin = new Thickness(2) };
+            ToolTip.SetTip(_developerCheck, "Every switch and tool bar, the model and the event log");
+            _developerCheck.IsCheckedChanged += (s, e) => { if (!_syncing) DeveloperMode = _developerCheck.IsChecked == true; };
+            DockPanel.SetDock(_developerCheck, Dock.Right);
+            slim.Children.Add(_developerCheck);
+            slim.Children.Add(_picker);
+
             var toolbar = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 2) };
-            toolbar.Children.Add(Label("Scenario:"));
-            toolbar.Children.Add(_picker);
             toolbar.Children.Add(Label("Fields:"));
             toolbar.Children.Add(_countPicker);
             toolbar.Children.Add(Spacer());
@@ -376,19 +429,24 @@ namespace SIL.TextEditing.Playground
             var fieldBorder = new Border { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1), Margin = new Thickness(4), Child = fieldScroll };
 
             var right = new Grid();
+            _rightGrid = right;
             right.RowDefinitions.Add(new RowDefinition(2, GridUnitType.Star));
             right.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             right.RowDefinitions.Add(new RowDefinition(1, GridUnitType.Star));
             var splitter = new GridSplitter { Height = 5, Background = Brushes.LightGray, ResizeDirection = GridResizeDirection.Rows, HorizontalAlignment = HorizontalAlignment.Stretch };
-            _inspectorTabs.ItemsSource = new[] { BuildMarkdownTab(), new TabItem { Name = Names.ModelTab, Header = "Model (debug)", FontSize = 14, Content = _inspector } };
+            _modelTab = new TabItem { Name = Names.ModelTab, Header = "Model (debug)", FontSize = 14, Content = _inspector };
+            _inspectorTabs.ItemsSource = new[] { BuildMarkdownTab(), _modelTab };
             _inspectorTabs.SelectedIndex = 0;
             _inspectorTabs.SelectionChanged += (s, e) => { if (ShowsMarkdown) RefreshMarkdown(); };
             Grid.SetRow(_inspectorTabs, 0);
-            Grid.SetRow(splitter, 1);
-            Grid.SetRow(_logBox, 2);
+            var logArea = new DockPanel();
+            DockPanel.SetDock(splitter, Dock.Top);
+            logArea.Children.Add(splitter);
+            logArea.Children.Add(_logBox);
+            _logArea = logArea;
+            Grid.SetRow(logArea, 2);
             right.Children.Add(_inspectorTabs);
-            right.Children.Add(splitter);
-            right.Children.Add(_logBox);
+            right.Children.Add(logArea);
             var rightBorder = new Border { Margin = new Thickness(4), Child = right };
 
             var body = new Grid();
@@ -403,11 +461,15 @@ namespace SIL.TextEditing.Playground
             body.Children.Add(vsplit);
             body.Children.Add(rightBorder);
 
+            var developer = new StackPanel { Name = Names.DeveloperPanel };
+            developer.Children.Add(toolbar);
+            developer.Children.Add(_description);
+            developer.Children.Add(wsBar);
+            developer.Children.Add(findBar);
+            _developerPanel = developer;
             var top = new StackPanel();
-            top.Children.Add(toolbar);
-            top.Children.Add(_description);
-            top.Children.Add(wsBar);
-            top.Children.Add(findBar);
+            top.Children.Add(slim);
+            top.Children.Add(developer);
             var root = new DockPanel { Background = Brushes.WhiteSmoke };
             DockPanel.SetDock(top, Dock.Top);
             root.Children.Add(top);
@@ -423,19 +485,9 @@ namespace SIL.TextEditing.Playground
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
             buttons.Children.Add(Tool(Names.MarkdownApply, "Apply", "Read the Markdown and put it in the field as one undo step (nothing changes while it has an error)", () => ApplyMarkdown()));
             buttons.Children.Add(Tool(Names.MarkdownRevert, "Revert", "Drop the edits and show the field as Markdown again", () => RevertMarkdown()));
-            var intro = new TextBlock
-            {
-                Text = "What a person or an AI agent edits: one line per paragraph. Unmarked text is " + SampleWritingSystems.DefaultAnalysis
-                    + ", [text]{ws=ar} is another writing system and [text]{.v} the vernacular (" + SampleWritingSystems.DefaultVernacular + ").",
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brushes.DimGray,
-                Margin = new Thickness(2, 4),
-            };
             var panel = new DockPanel();
-            DockPanel.SetDock(intro, Dock.Top);
             DockPanel.SetDock(buttons, Dock.Bottom);
             DockPanel.SetDock(_markdownStatus, Dock.Bottom);
-            panel.Children.Add(intro);
             panel.Children.Add(buttons);
             panel.Children.Add(_markdownStatus);
             panel.Children.Add(_markdown);
@@ -808,9 +860,9 @@ namespace SIL.TextEditing.Playground
 
         static Border Spacer() => new Border { Width = 12 };
 
-        ComboBox StyleBox(string name, IReadOnlyList<string> styles, string tip, Action<string> apply)
+        ComboBox StyleBox(string name, IReadOnlyList<string> styles, string tip, Action<string> apply, string placeholder = "(choose)")
         {
-            var box = new ComboBox { Name = name, MinWidth = 140, Margin = new Thickness(2), IsTabStop = false, ItemsSource = styles, SelectedIndex = -1, PlaceholderText = "(choose)" };
+            var box = new ComboBox { Name = name, MinWidth = 140, Margin = new Thickness(2), IsTabStop = false, ItemsSource = styles, SelectedIndex = -1, PlaceholderText = placeholder };
             ToolTip.SetTip(box, tip);
             box.SelectionChanged += (s, e) =>
             {
@@ -865,6 +917,7 @@ namespace SIL.TextEditing.Playground
             RefreshInspector();
             DropMarkdownEdits("scenario loaded");
             RefreshMarkdown();
+            if (_selectionBar != null) UpdateSelectionBar();
             if (TopLevel.GetTopLevel(this) != null) Dispatcher.UIThread.Post(() => _active.Field.Focus());
         }
 
@@ -905,7 +958,7 @@ namespace SIL.TextEditing.Playground
                 e.Handled = _leaveHandled.IsChecked == true;
             };
             field.EnterRequested += m => Log("Enter passed to the host" + (m == KeyModifiers.None ? string.Empty : " (" + m + ")") + ": the host's default button would run");
-            field.ContextMenuRequested += (o, e) => { Activate(session); ShowContextMenu(session, e); };
+            field.ContextMenuRequested += (o, e) => { Activate(session); HideSelectionBar(); ShowContextMenu(session, e); };
             field.ScrollRequested += (o, e) =>
             {
                 // The playground leaves scrolling to Avalonia's scroll viewer (the field asks it when nothing handles the request); it only
@@ -925,8 +978,8 @@ namespace SIL.TextEditing.Playground
                 if (_active == session && d.Label != "type") Log("edit: " + d.Label + " (paragraphs " + d.Start + ".." + (d.Start + Math.Max(d.Before.Count, d.After.Count) - 1) + ")");
             };
             field.Editor.UndoGroupEnded += id => { if (_active == session) Log("undo step " + id + " ended: the host closes its undo task"); };
-            field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) { RefreshInspector(); PostMarkdownRefresh(); UpdateEnvironmentButtons(); } };
-            field.Editor.CaretMoved += () => { if (_active == session) { UpdateWsLabel(); RefreshInspector(); UpdateEnvironmentButtons(); } };
+            field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) { RefreshInspector(); PostMarkdownRefresh(); UpdateEnvironmentButtons(); UpdateSelectionBar(); } };
+            field.Editor.CaretMoved += () => { if (_active == session) { UpdateWsLabel(); RefreshInspector(); UpdateEnvironmentButtons(); UpdateSelectionBar(); } };
             field.LanguageAnalysisChanged += (o, e) =>
             {
                 if (_active == session) Log("language service: " + field.LanguageTokens.Count + " tokens, " + field.LanguageDiagnostics.Count + " diagnostics" + string.Concat(field.LanguageDiagnostics.Select(d => "; " + d.Severity + " " + d.Code + " at " + d.Range.Start.Character + "-" + d.Range.End.Character)));
@@ -967,6 +1020,7 @@ namespace SIL.TextEditing.Playground
             RefreshInspector();
             DropMarkdownEdits("focus moved to field " + session.Number);
             RefreshMarkdown();
+            UpdateSelectionBar();
         }
 
         // ------------------------------------------------------------ spelling
@@ -1159,7 +1213,7 @@ namespace SIL.TextEditing.Playground
                 return r =>
                 {
                     if (allOn) r.Props.IntProps.Remove(property);
-                    else r.Props.SetInt(property, on);
+                    else r.Props.SetInt(property, on, TextPropertyNumbers.VariationEnum);   // FieldWorks stores toggles and enums with ktpvEnum
                 };
             });
         }
