@@ -11,19 +11,25 @@ The versions are set per target framework in `Directory.Packages.props`.
 
 ## Per-version differences
 
-There is currently no `#if` in the source for the Avalonia API:
+Most of the code needs no per-version branch:
 
 - The spike's one per-version spot (the clipboard API) is not needed, because Avalonia 11.3.17 already has the `DataTransfer` API that 12
   uses.
 - `FontFeature` parsing is written without `FontFeatureCollection.Parse` (absent in 11.3) for both.
 
-Keep any future per-version difference small, behind `#if NET10_0_OR_GREATER`, and list it here. The differences now:
+Keep any future per-version difference small, behind `#if NET10_0_OR_GREATER`, and list it here. The differences now (every one is behind
+`#if NET10_0_OR_GREATER`):
 
-- **`SpellScanner`** asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a one-character string on
-  netstandard2.0 (no overload there). That only costs an allocation for a letter outside the basic plane.
+- **`SpellScanner`** (`Spelling.cs`) asks `CharUnicodeInfo` for the category of a code point directly on net10.0 and through a
+  one-character string on netstandard2.0 (no overload there). That only costs an allocation for a letter outside the basic plane.
 - **`ScriptPlacement`** reads a font's OS/2 and hhea tables with `IGlyphTypeface.TryGetTable` on netstandard2.0. Avalonia 12 gives no
   access to tables, so on net10.0 it reads them from the font file's own table directory: once for each font; in a font collection from the
   member whose family name is the typeface's; and nothing is read whole.
+- **`ClusterFuser`** adds only the Indic conjunct rule (GB9c) to `StringInfo` on net10.0. On netstandard2.0 it also fuses Extend,
+  SpacingMark, emoji ZWJ sequences and regional-indicator flags itself (see [Graphemes](rendering.md#graphemes)).
+- **`RichTextField`'s dispatcher.** Avalonia 12 lets a control live on a dispatcher other than the main UI thread's, so on net10.0 the
+  field uses its own `Dispatcher` (and the typing-pause timer is created on it); Avalonia 11 has only `Dispatcher.UIThread`.
+- **`RichTextField.ContextMenu.cs`** has one extra `using Avalonia.Input` on net10.0.
 
 ## Packages used by the samples only
 

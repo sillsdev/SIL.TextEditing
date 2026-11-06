@@ -29,8 +29,8 @@ Pandoc reads the same way the library does. The host owns the data and the undo 
 - **A writing system on every run.** A `Run` holds text, a writing-system id, a property bag keyed by FieldWorks property numbers, and
   object data, as an `ITsString` run does. The editor carries properties it does not understand through every edit. The LCModel adapter
   round-trips real liblcm strings (ADR 0016, 111 tests per target).
-- **Both Avalonia lines from one source tree.** Avalonia 11.3.17 on net48 inside WinForms, and Avalonia 12.1.2 on net10.0, with two small
-  per-version differences, [listed](docs/reference/avalonia-versions.md#per-version-differences) ([ADR 0009](docs/adr/0009-two-avalonia-lines.md)). The same surface tests run on both: 777 on
+- **Both Avalonia lines from one source tree.** Avalonia 11.3.17 on net48 inside WinForms, and Avalonia 12.1.2 on net10.0, with a few small
+  per-version differences, [listed](docs/reference/avalonia-versions.md#per-version-differences) ([ADR 0009](docs/adr/0009-two-avalonia-lines.md)). The surface tests run on both: 777 on
   net48, 778 on net10.0.
 - **FieldWorks editing behaviour.** Arrow keys are logical by paragraph direction, text is stored as NFD, Backspace and Delete work as
   in FieldWorks ([ADR 0018](docs/adr/0018-fieldworks-editing-semantics.md)). Complex shaping, inline objects, and screen reader support

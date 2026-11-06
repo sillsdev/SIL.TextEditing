@@ -11,7 +11,7 @@ host code, not Motif's GUI.
 property (with its variation) and every string text property by number, ObjData and NamedStyle included.
 
 - The host supplies the writing-system handle mapping (`IWritingSystemHandles`) and the paragraph keys.
-- A property liblcm cannot load back is left out of the `ITsString` and reported, not thrown; the run model's bag keeps it. The callback,
+- A property liblcm cannot load back is left out of the `ITsString`, and reported to an optional callback (with none, it is dropped silently); the run model's bag keeps it either way. The callback,
   the `DroppedProperty` shape and the finding ids are in [Findings: LCModel adapter](../formats/findings.md#lcmodel-adapter). These
   refusals retire once FieldWorks pins a liblcm with the fixes (issue #159).
 
