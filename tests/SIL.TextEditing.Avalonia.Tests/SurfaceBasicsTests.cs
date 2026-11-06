@@ -186,7 +186,7 @@ namespace SIL.TextEditing.Avalonia.Tests
             Assert.Equal("Rich text field", peer.GetName());
             var value = (global::Avalonia.Automation.Provider.IValueProvider)peer;
             Assert.StartsWith("Hello bonjour world", value.Value);
-            // Gap: no TextPattern provider yet (see README).
+            // Gap: no TextPattern provider yet (see docs/reference/limitations.md).
         });
     }
 }
