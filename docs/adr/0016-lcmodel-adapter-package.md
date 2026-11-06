@@ -30,3 +30,6 @@ Amended 2026-11-05 (issue 139): liblcm also refuses some values of properties it
 - Not refused: a colour out of range and a negative relative line height (read as its absolute value) load, changed. A `-1` variation with a `-1` value is a delete to the property builder, so nothing reaches liblcm. The writing system (1) and base writing system (16) depend on the host's handles and are not judged here.
 - The packed-value check (147, 156) asks liblcm to write, read and save the value through a permissive writing-system shim, where every handle names a writing system. It judges the shape of the record only. A real project's writing-system factory may refuse a writing system it does not know, so a packed value that passes here can still fail to load in a project that lacks that writing system; the adapter cannot know the project's writing systems.
 - `LiblcmRefusals` and `Refusal` are internal. The public surface is `TsStringConversion.IsRefusedByLiblcm` (the one number check), `DroppedProperty`, `DroppedReason` and the `OnDropped` callbacks. The sweep covers object-data type characters 0 to 255 and reports every mismatch.
+
+Amended by ADR 0034 (2026-11-06): inside Motif, SIL package versions follow Motif's `SilVersions.props`, not FieldWorks' pins. The
+netstandard2.0 / Avalonia 11.3 line is the compatibility promise to FieldWorks.

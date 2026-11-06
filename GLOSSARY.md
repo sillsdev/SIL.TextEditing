@@ -130,3 +130,19 @@ _Avoid_: model (that is liblcm's), JSON Schema (that is what the record schema p
 **Body field**:
 The one rich field of a record kind written as the Markdown body below the front matter, such as a notebook record's description. A lexical entry has none.
 _Avoid_: main field, content
+
+## Repository
+
+**Sealed folder**:
+`textediting/` in the Motif repository: SIL.TextEditing with its own build, solution, tests and documents. Motif
+references into it; it references nothing outside itself except one shared-settings import (ADR 0034).
+_Avoid_: subtree, submodule, vendored copy
+
+**Avalonia line**:
+One of the two builds of every library: netstandard2.0 with Avalonia 11.3 (FieldWorks on .NET Framework 4.8), or
+net10.0 with Avalonia 12 (Motif) (ADR 0009).
+_Avoid_: flavour, variant
+
+**Pull out**:
+Copy the sealed folder into another repository (its own again, or FieldWorks) and make it build there (ADR 0034).
+_Avoid_: migrate back, extract

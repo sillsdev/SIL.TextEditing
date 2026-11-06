@@ -19,3 +19,6 @@ Owner decision, 2026-11-03.
 
 Amended 2026-11-04: the Markdown converter does not reference libpalaso. It identifies writing systems by language tag
 and takes each one's language, direction and font from the file's front matter (ADR 0028).
+
+Amended by ADR 0034 (2026-11-06): inside Motif, SIL package versions follow Motif's `SilVersions.props`, not FieldWorks' pins. The
+netstandard2.0 / Avalonia 11.3 line is the compatibility promise to FieldWorks.
