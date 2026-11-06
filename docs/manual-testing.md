@@ -25,7 +25,12 @@ Where a step says **all hosts**, do it on each of the three and write one result
 
 ## The window
 
-* **Top**: scenario picker; field count (for the Many fields scenario); **B I U**; Undo, Redo; Picture, Cut, Copy,
+Turn on **Developer mode** (the check box at the top right, or start the host with `--dev`): most steps below use its controls. Without it
+the window shows only the scenario picker, the field, the selection bar and the Markdown.
+
+* **Selection bar**: select text and it appears above the selection: **B I U**, the writing system, the character style, and under
+  **More** the paragraph style and Picture. It never takes focus from the field and goes away when the selection does.
+* **Top** (developer mode): field count (for the Many fields scenario); **B I U**; Undo, Redo; Picture, Cut, Copy,
   Paste. The toolbar never takes focus from the field.
 * **Writing-system bar**: `ws:` shows the writing system at the caret. Default analysis (en) and default vernacular
   (swh) buttons, then every sample writing system: en, fr (analysis) and ar, swh, hi, ta, th (vernacular). With a
@@ -36,7 +41,7 @@ Where a step says **all hosts**, do it on each of the three and write one result
   Apply to put it in the field as one undo step; an error, read-only text or a second paragraph in a single-paragraph field changes nothing
   and says why. Revert shows the field again.
 * **Model tab** (beside the Markdown tab; click it for the steps below that read the model): caret, anchor and selection as paragraph:offset; undo counts; every paragraph with its key (`(none)` until the host assigns one),
-  direction, style and runs. A run reads `r1 [9,13) ws=ar "text" props{3=1, 9001=42@1}`: offsets, writing system,
+  direction, style and runs. A run reads `r1 [9,13) ws=ar "text" props{3=1@3, 9001=42@1}`: offsets, writing system,
   text with escapes (`́` a combining mark, `\U0001F600` a surrogate pair, `￼` an object), then the property
   bag as `number=value`, `@n` for a variation. Documents over 30 paragraphs show a window around the caret.
 * **Event log** (bottom right): `caret ws en -> ar: would switch keyboard to ar` (the library only reports; it never
@@ -52,7 +57,7 @@ Where a step says **all hosts**, do it on each of the three and write one result
 | 1.4 | Put a caret in English text, click the `fr` button, type `bonjour`. | `ws: fr`; the typed text is a new run `ws=fr` in the Model tab. | | | | |
 | 1.5 | Click Default vernacular, type `habari`; then Default analysis. | `ws: swh`, then `ws: en`; run `ws=swh "habari"` in the Model tab. | | | | |
 | 1.6 | Select a word with Shift+Right, click the `hi` button. | Only the selected text becomes `ws=hi` and is drawn in the Hindi font; the selection stays. Undo restores it. | | | | |
-| 1.7 | Select a word, press B, then B again; then Ctrl+I and Ctrl+U. | Bold, italic, underline are drawn; the Model tab shows `props{3=1}` (bold), `2=1` (italic), `5=1` (underline); pressing B again removes it and the runs merge back. Paragraph keys do not change. | | | | |
+| 1.7 | Select a word, press B, then B again; then Ctrl+I and Ctrl+U. | Bold, italic, underline are drawn; the Model tab shows `props{3=1@3}` (bold), `2=1@3` (italic), `5=1@3` (underline), and the Markdown tab `**word**`, `*word*` and `[word]{underline=single}`; pressing B again removes it and the runs merge back. Paragraph keys do not change. | | | | |
 | 1.8 | Type, press Undo, Undo, Redo, Redo. Then Ctrl+Z and Ctrl+Y in the field. | Text, caret and the Model tab's `undo n done, n undone` follow; the log says `undo requested (button)` or `(Ctrl+Z in the field)`. | | | | |
 | 1.9 | Press Enter in the middle of a paragraph, then Backspace at the start of the new one. | Two paragraphs, then one. The first keeps its key on a split and on the join; the new right-hand paragraph has `key=(none)` until the host assigns one (compare in the Model tab). | | | | |
 | 1.10 | Press Enter at the very start of a paragraph. | A new empty paragraph appears above; the new paragraph shows `key=(none)` and the original key stays on the paragraph that holds the text. | | | | |

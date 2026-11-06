@@ -7,7 +7,7 @@ using SIL.TextEditing.Playground;
 
 namespace SIL.TextEditing.Samples.PlaygroundDesktop
 {
-    /// <summary>Options: <c>--scenario "name"</c> opens that scenario; <c>--minimized</c> starts minimized without
+    /// <summary>Options: <c>--scenario "name"</c> opens that scenario; <c>--dev</c> opens in developer mode; <c>--minimized</c> starts minimized without
     /// taking focus (for smoke runs).</summary>
     sealed class DesktopApp : PlaygroundApp
     {
@@ -17,7 +17,7 @@ namespace SIL.TextEditing.Samples.PlaygroundDesktop
             {
                 var args = desktop.Args ?? new string[0];
                 int s = Array.IndexOf(args, "--scenario");
-                var view = s >= 0 && s + 1 < args.Length ? new PlaygroundView(args[s + 1]) : new PlaygroundView();
+                var view = new PlaygroundView(s >= 0 && s + 1 < args.Length ? args[s + 1] : Scenarios.MixedBidi, args.Contains("--dev"));
                 var window = new Window
                 {
                     Title = "SIL.TextEditing playground (" + RuntimeLabel + ", Avalonia " + AvaloniaVersion + ")",

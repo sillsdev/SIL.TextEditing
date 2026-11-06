@@ -73,7 +73,8 @@ namespace SIL.TextEditing.Playground.Tests
                 Assert.InRange(s.Field.CaretRect().Bottom, visible.Bottom - 60, visible.Bottom + 40);   // the last line may be cut off by the edge
                 s.Press(Key.PageUp, KeyModifiers.Control | KeyModifiers.Shift);
                 Assert.True(s.Editor.HasSelection);
-                Assert.InRange(s.Field.CaretRect().Y, visible.Top - 1, visible.Top + 60);
+                var top = s.Field.CaretRect();
+                Assert.True(top.Bottom > visible.Top && top.Y <= visible.Top + 60, "caret " + top + " is on the first line that shows, " + visible);   // that line may be cut off by the edge too
 
                 s.Caret(0, 3);
                 s.Press(Key.PageUp);

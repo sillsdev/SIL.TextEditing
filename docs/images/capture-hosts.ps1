@@ -10,7 +10,7 @@
 param(
     [string]$Scenario = 'Latin and Arabic',
     [int]$Width = 1280,
-    [int]$Height = 800
+    [int]$Height = 700   # fits a 768-pixel-high screen at y=20; a window that runs off the screen copies blank pixels
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path

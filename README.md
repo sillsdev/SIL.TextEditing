@@ -43,7 +43,7 @@ The same text has four forms, and only the first two are meant to be edited by h
 |---|---|---|
 | **FieldWorks Markdown** (`*.fw.md`) | People, AI agents, files and diffs; Pandoc reads it the same way | Yes |
 | **Record file** | A whole FieldWorks record: a YAML frame whose rich values are FieldWorks Markdown ([record files](docs/formats/record-files.md)) | Yes |
-| **`Document`, `Paragraph`, `Run`** | The editor's model in memory: per run the text, writing system and property bag; per paragraph the host's key | No: the playground's "Model (debug)" tab dumps it |
+| **`Document`, `Paragraph`, `Run`** | The editor's model in memory: per run the text, writing system and property bag; per paragraph the host's key | No: the playground's developer mode dumps it in its "Model (debug)" tab |
 | **liblcm `ITsString`** | FieldWorks' storage; the LCModel adapter maps it to and from the run model | No |
 
 **An agent's edit** is a text edit. Change the gloss and mark a vernacular word:
@@ -55,7 +55,7 @@ The same text has four forms, and only the first two are meant to be edited by h
 
 The reader checks it: a malformed span or an unknown writing system is a finding with a line, a column and, where one exists, the exact
 fix ([findings](docs/formats/findings.md)), and nothing is applied while there is an error. The host applies the rest as one undo step. In
-the playground, edit the Markdown tab and press Apply; `MarkdownTabTests` makes this very edit.
+the playground, edit the Markdown beside the field and press Apply; `MarkdownTabTests` makes this very edit.
 
 ## Why it's different
 
@@ -107,9 +107,13 @@ run winforms48    # WinForms form: TextBox, playground, TextBox (FieldWorks' sha
 run desktop10 --scenario "Inline picture (ORC)"
 ```
 
-`run.cmd` and `run.ps1` build the host and start it. The playground opens ready-made scenarios (bidi, Indic and Thai shaping, NFD, inline pictures, unknown properties, spelling, the
-environment box, long documents). Beside the field, the Markdown tab shows the field as FieldWorks Markdown, which you can edit and apply,
-and the Model tab shows its runs. The Pandoc tests need `pandoc` on `PATH`.
+`run.cmd` and `run.ps1` build the host and start it. The playground shows what a person writing sees: a scenario picker, the field, and
+beside it the field as FieldWorks Markdown, which you can edit and apply. Select some text and a small bar appears over it: bold, italic,
+underline, writing system and character style, and under **More** the paragraph style and a picture. **Developer mode** (the check box, or
+`--dev`) adds every switch, the model's runs and the event log. The scenarios: bidi, Indic and Thai shaping, NFD, inline pictures, unknown
+properties, spelling, the environment box, long documents. The Pandoc tests need `pandoc` on `PATH`.
+
+![The selection bar with More open, over French text](docs/images/selection-bar.png)
 
 ## Projects
 
@@ -150,7 +154,7 @@ Planned, not built:
 - **The `fwmd` command-line checker** ([#161](https://github.com/sillsdev/SIL.TextEditing/issues/161)).
 - **The FieldWorks Markdown clipboard form** ([#168](https://github.com/sillsdev/SIL.TextEditing/issues/168)).
 - **Editor integration**: an inline WYSIWYG and Markdown source mode, and a VS Code extension with a language server. The playground's
-  Markdown tab is a host-side sketch of the source mode. The plan and a proposed ADR are awaiting owner decisions ([#170](https://github.com/sillsdev/SIL.TextEditing/issues/170)).
+  Markdown pane is a host-side sketch of the source mode. The plan and a proposed ADR are awaiting owner decisions ([#170](https://github.com/sillsdev/SIL.TextEditing/issues/170)).
 - **Retiring the liblcm refusals** once FieldWorks pins a liblcm with its fixes [#410](https://github.com/sillsdev/liblcm/issues/410), [#413](https://github.com/sillsdev/liblcm/issues/413) and [#414](https://github.com/sillsdev/liblcm/issues/414) ([#159](https://github.com/sillsdev/SIL.TextEditing/issues/159)).
 
 ## Contributing
