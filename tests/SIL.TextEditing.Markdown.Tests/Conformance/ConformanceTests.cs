@@ -16,19 +16,33 @@ namespace SIL.TextEditing.Markdown.Tests.Conformance
         [MemberData(nameof(Cases))]
         public void FixtureCase(string id) => Run(ConformanceLoader.Find(id));
 
+        /// <summary>The ids the library reports that a fixture can express without a host's help, each with a case that expects it and a case that reads the
+        /// construct correctly (no finding of that id).</summary>
+        static readonly string[] CheckedIds =
+        {
+            "fwmd.version.unsupported", "fwmd.syntax.unclosed-mark", "fwmd.syntax.unknown-attribute", "fwmd.syntax.duplicate-attribute", "fwmd.syntax.malformed-attribute",
+            "fwmd.syntax.too-deep", "fwmd.syntax.unsupported-markup", "fwmd.ws.unknown", "fwmd.link.not-found", "fwmd.link.ambiguous", "fwmd.link.broken",
+            "fwmd.link.guid-mismatch", "fwmd.link.relative-without-base", "fwmd.link.stale-path", "fwmd.link.rebound", "fwmd.link.url-rebuilt", "fwmd.style.unknown",
+            "fwmd.heading.too-deep", "fwmd.table.ragged", "fwmd.table.tab-in-cell", "fwmd.table.alignment", "fwmd.picture.unknown", "fwmd.field.block-syntax", "fwmd.prop.unknown-number",
+            "fwmd.record.record-file",
+        };
+
+        [Fact]
+        public void EveryPublicFindingIdIsGuardedOrNamedAsHostOnly()
+        {
+            // fwmd.ws.unmarked-vernacular is a constant for hosts to report; the reader never emits it, so no fixture can expect it.
+            var hostOnly = new[] { MarkdownDiagnosticIds.WsUnmarkedVernacular };
+            var unguarded = typeof(MarkdownDiagnosticIds).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .Where(f => f.IsLiteral).Select(f => (string)f.GetRawConstantValue()!).Where(v => !CheckedIds.Contains(v) && !hostOnly.Contains(v)).ToList();
+            Assert.True(unguarded.Count == 0, "Add a positive and a negative fixture case, and the id to CheckedIds: " + string.Join(", ", unguarded));
+        }
+
         [Fact]
         public void EveryFindingIdHasAPositiveAndANegativeCase()
         {
             // The ids the library reports that a fixture can express without a host's help, each with a case that expects it and a case that reads the
             // construct correctly (no finding of that id).
-            var ids = new[]
-            {
-                "fwmd.version.unsupported", "fwmd.syntax.unclosed-mark", "fwmd.syntax.unknown-attribute", "fwmd.syntax.duplicate-attribute", "fwmd.syntax.malformed-attribute",
-                "fwmd.syntax.too-deep", "fwmd.syntax.unsupported-markup", "fwmd.ws.unknown", "fwmd.link.not-found", "fwmd.link.ambiguous", "fwmd.link.broken",
-                "fwmd.link.guid-mismatch", "fwmd.link.relative-without-base", "fwmd.link.stale-path", "fwmd.link.rebound", "fwmd.link.url-rebuilt", "fwmd.style.unknown",
-                "fwmd.heading.too-deep", "fwmd.table.ragged", "fwmd.table.tab-in-cell", "fwmd.table.alignment", "fwmd.picture.unknown", "fwmd.field.block-syntax", "fwmd.prop.unknown-number",
-                "fwmd.record.record-file",
-            };
+            var ids = CheckedIds;
             var all = ConformanceLoader.All();
             var missing = new List<string>();
             foreach (string id in ids)
