@@ -145,6 +145,34 @@ namespace SIL.TextEditing.Playground.Tests
             }
         });
 
+        [Fact]
+        public void A_line_added_at_the_top_has_no_key_and_every_other_paragraph_keeps_its_own() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.MixedBidi))
+            {
+                var keys = s.Editor.Document.Paragraphs.Select(p => p.Key).ToList();
+                s.View.MarkdownText = "A new first line.\n\n" + s.View.MarkdownText;
+                Assert.True(s.View.ApplyMarkdown(), s.View.MarkdownStatusText);
+                Assert.Null(s.ParagraphKey(0));
+                Assert.Equal(keys, s.Editor.Document.Paragraphs.Skip(1).Select(p => p.Key).ToList());
+            }
+        });
+
+        [Fact]
+        public void Applied_text_takes_the_field_s_normalisation_form_and_no_read_only_mark() => Headless.Run(() =>
+        {
+            using (var s = new Session(Scenarios.MixedBidi))
+            {
+                s.Editor.Document.Normalization = System.Text.NormalizationForm.FormC;
+                // The reader gives NFD; a field stored NFC must get the composed letter. "editable=no" marks the run read-only.
+                s.View.MarkdownText = s.View.MarkdownText + "\n[cafe\u0301]{editable=no}\n";
+                Assert.True(s.View.ApplyMarkdown(), s.View.MarkdownStatusText);
+                var added = s.Editor.Document.Paragraphs[s.Editor.Document.Paragraphs.Count - 1];
+                Assert.Equal("caf\u00E9", added.Text);
+                Assert.All(added.Runs, r => Assert.False(r.Props.IntProps.ContainsKey(TextPropertyNumbers.Editable)));
+            }
+        });
+
         [Theory]
         [MemberData(nameof(ScenarioNames))]
         public void Applying_the_markdown_unchanged_makes_no_undo_step(string name) => Headless.Run(() =>

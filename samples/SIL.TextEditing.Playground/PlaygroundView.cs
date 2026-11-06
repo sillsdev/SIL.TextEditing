@@ -471,8 +471,8 @@ namespace SIL.TextEditing.Playground
         /// <summary>Reads the Markdown tab and, when it has no error, puts what it says in the field as one host undo step. The host applies the
         /// change itself, as a delta its undo stack records (ADR 0003), so every paragraph's style, direction and properties are exactly what the
         /// Markdown says. Before that it does what the field would: it refuses a change to a read-only field, to read-only text or that would give a
-        /// single-paragraph field more than one paragraph, and makes new blocks the field does not allow plain (ADR 0033). A paragraph keeps the key of
-        /// the old paragraph at its place. Returns true when the field changed.</summary>
+        /// single-paragraph field more than one paragraph, makes new blocks the field does not allow plain (ADR 0033), keeps read-only marks out of
+        /// new text and applies the field's normalisation form. Unchanged paragraphs keep their keys (see CarryKeys). Returns true when the field changed.</summary>
         public bool ApplyMarkdown()
         {
             var editor = _active.Field.Editor;
@@ -501,7 +501,14 @@ namespace SIL.TextEditing.Playground
             if (editor.SingleParagraph && paragraphs.Count > 1)
                 return NotApplied("the field holds one paragraph and the Markdown has " + paragraphs.Count + ".", "one paragraph only");
 
-            for (int i = 0; i < paragraphs.Count && i < old.Count; i++) paragraphs[i].Key = old[i].Key;
+            // What the field does to anything inserted: new text cannot bring read-only marks in, and takes the field's normalisation form.
+            foreach (var p in fresh)
+                foreach (var r in p.Runs) r.Props.IntProps.Remove(TextPropertyNumbers.Editable);
+            if (editor.Document.Normalization is System.Text.NormalizationForm form)
+                foreach (var p in paragraphs)
+                    foreach (var r in p.Runs)
+                        if (!r.IsObject) r.Text = TextNormalizer.Normalize(r.Text, form);
+            CarryKeys(old, paragraphs);
             var delta = new EditDelta
             {
                 Start = 0,
@@ -519,6 +526,31 @@ namespace SIL.TextEditing.Playground
             _markdownStatus.Text = "Applied as one undo step." + (flattening.Total > 0 ? " The field does not allow " + flattening + "; they are now plain paragraphs." : string.Empty) + Findings(result);
             Log("markdown: applied as one undo step" + (flattening.Total > 0 ? ", " + flattening + " made plain" : string.Empty));
             return true;
+        }
+
+        /// <summary>Keys go with paragraphs: a new paragraph equivalent to an old one, matched in order, takes its key; a changed paragraph between two
+        /// matches takes the key of the old paragraph at the same place between them when there is one; any other paragraph has none for the host to assign.</summary>
+        static void CarryKeys(IReadOnlyList<Paragraph> old, List<Paragraph> paragraphs)
+        {
+            var taken = new bool[old.Count];
+            var match = new int[paragraphs.Count];
+            int from = 0;
+            for (int i = 0; i < paragraphs.Count; i++)
+            {
+                match[i] = -1;
+                for (int j = from; j < old.Count; j++)
+                    if (MarkdownConverter.AreEquivalent(old[j], paragraphs[i])) { match[i] = j; taken[j] = true; from = j + 1; break; }
+            }
+            int prev = -1;
+            for (int i = 0; i < paragraphs.Count; i++)
+            {
+                if (match[i] >= 0) { paragraphs[i].Key = old[match[i]].Key; prev = match[i]; continue; }
+                int next = old.Count;
+                for (int k = i + 1; k < paragraphs.Count; k++) if (match[k] >= 0) { next = match[k]; break; }
+                int candidate = prev + 1;
+                if (candidate < next && candidate < old.Count && !taken[candidate]) { paragraphs[i].Key = old[candidate].Key; taken[candidate] = true; prev = candidate; }
+                else paragraphs[i].Key = null;
+            }
         }
 
         bool NotApplied(string status, string log)
