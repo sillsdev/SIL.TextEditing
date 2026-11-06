@@ -13,6 +13,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using SIL.TextEditing;
 using SIL.TextEditing.Avalonia;
+using SIL.TextEditing.Markdown;
 
 namespace SIL.TextEditing.Playground
 {
@@ -68,6 +69,13 @@ namespace SIL.TextEditing.Playground
             public const string WsLabel = "WsLabel";
             public const string SelectionLabel = "SelectionLabel";
             public const string Inspector = "Inspector";
+            public const string InspectorTabs = "InspectorTabs";
+            public const string MarkdownTab = "MarkdownTab";
+            public const string ModelTab = "ModelTab";
+            public const string MarkdownSource = "MarkdownSource";
+            public const string MarkdownApply = "MarkdownApplyButton";
+            public const string MarkdownRevert = "MarkdownRevertButton";
+            public const string MarkdownStatus = "MarkdownStatus";
             public const string EventLog = "EventLog";
             public const string ScenarioDescription = "ScenarioDescription";
             public const string FindText = "FindText";
@@ -133,6 +141,12 @@ namespace SIL.TextEditing.Playground
         readonly TextBlock _wsLabel;
         readonly TextBlock _selectionLabel;
         readonly TextBox _inspector;
+        readonly TextBox _markdown;
+        readonly TextBlock _markdownStatus;
+        readonly TabControl _inspectorTabs;
+        readonly SampleMarkdown _markdownHost;
+        bool _markdownEdited;
+        bool _settingMarkdown;
         readonly TextBox _logBox;
         Session _active;
         bool _syncing;
@@ -161,6 +175,18 @@ namespace SIL.TextEditing.Playground
             _inspector = new TextBox { Name = Names.Inspector, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace"), FontSize = 12, IsTabStop = false };
             ScrollViewer.SetHorizontalScrollBarVisibility(_inspector, ScrollBarVisibility.Auto);
             ScrollViewer.SetVerticalScrollBarVisibility(_inspector, ScrollBarVisibility.Auto);
+            _markdownHost = new SampleMarkdown(_registry);
+            _markdownStatus = new TextBlock { Name = Names.MarkdownStatus, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, Margin = new Thickness(2, 4) };
+            _markdown = new TextBox { Name = Names.MarkdownSource, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace"), FontSize = 13 };
+            ScrollViewer.SetVerticalScrollBarVisibility(_markdown, ScrollBarVisibility.Auto);
+            global::Avalonia.Automation.AutomationProperties.SetName(_markdown, "The field as FieldWorks Markdown");
+            _markdown.PropertyChanged += (s, e) =>
+            {
+                if (e.Property != TextBox.TextProperty || _settingMarkdown || _markdownEdited) return;
+                _markdownEdited = true;
+                _markdownStatus.Text = "Edited. Apply puts it in the field as one undo step; Revert shows the field again.";
+            };
+            _inspectorTabs = new TabControl { Name = Names.InspectorTabs };
             _logBox = new TextBox { Name = Names.EventLog, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace"), FontSize = 12, IsTabStop = false };
             ScrollViewer.SetHorizontalScrollBarVisibility(_logBox, ScrollBarVisibility.Auto);
             ScrollViewer.SetVerticalScrollBarVisibility(_logBox, ScrollBarVisibility.Auto);
@@ -189,6 +215,19 @@ namespace SIL.TextEditing.Playground
         public SimpleUndoStack Undo => _active.Undo;
         public string WsLabelText => _wsLabel.Text ?? string.Empty;
         public string InspectorText => _inspector.Text ?? string.Empty;
+        /// <summary>The Markdown tab's text: the active field as FieldWorks Markdown, or what was typed there and not yet applied.</summary>
+        public string MarkdownText
+        {
+            get => _markdown.Text ?? string.Empty;
+            set => _markdown.Text = value;
+        }
+        public string MarkdownStatusText => _markdownStatus.Text ?? string.Empty;
+        /// <summary>True while the Markdown tab (the default) is shown; false while the model dump is.</summary>
+        public bool ShowsMarkdown
+        {
+            get => _inspectorTabs.SelectedIndex == 0;
+            set => _inspectorTabs.SelectedIndex = value ? 0 : 1;
+        }
         public IReadOnlyList<string> EventLog => _log;
         /// <summary>Completes when the last copy, cut or paste started from a button has finished.</summary>
         public Task ClipboardIdle { get; private set; } = Task.CompletedTask;
@@ -340,10 +379,13 @@ namespace SIL.TextEditing.Playground
             right.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             right.RowDefinitions.Add(new RowDefinition(1, GridUnitType.Star));
             var splitter = new GridSplitter { Height = 5, Background = Brushes.LightGray, ResizeDirection = GridResizeDirection.Rows, HorizontalAlignment = HorizontalAlignment.Stretch };
-            Grid.SetRow(_inspector, 0);
+            _inspectorTabs.ItemsSource = new[] { BuildMarkdownTab(), new TabItem { Name = Names.ModelTab, Header = "Model (debug)", FontSize = 14, Content = _inspector } };
+            _inspectorTabs.SelectedIndex = 0;
+            _inspectorTabs.SelectionChanged += (s, e) => { if (ShowsMarkdown) RefreshMarkdown(); };
+            Grid.SetRow(_inspectorTabs, 0);
             Grid.SetRow(splitter, 1);
             Grid.SetRow(_logBox, 2);
-            right.Children.Add(_inspector);
+            right.Children.Add(_inspectorTabs);
             right.Children.Add(splitter);
             right.Children.Add(_logBox);
             var rightBorder = new Border { Margin = new Thickness(4), Child = right };
@@ -370,6 +412,83 @@ namespace SIL.TextEditing.Playground
             root.Children.Add(top);
             root.Children.Add(body);
             return root;
+        }
+
+        /// <summary>The Markdown tab: the active field as FieldWorks Markdown, which a person or an agent edits, with Apply and Revert. A host-side
+        /// sketch of the planned source mode (issue 170): Apply parses the text and replaces the field's paragraphs through the editor, so the change
+        /// is one host undo step, and an error leaves the field as it was.</summary>
+        TabItem BuildMarkdownTab()
+        {
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+            buttons.Children.Add(Tool(Names.MarkdownApply, "Apply", "Read the Markdown and put it in the field as one undo step (nothing changes while it has an error)", () => ApplyMarkdown()));
+            buttons.Children.Add(Tool(Names.MarkdownRevert, "Revert", "Drop the edits and show the field as Markdown again", () => RevertMarkdown()));
+            var intro = new TextBlock
+            {
+                Text = "What a person or an AI agent edits: one line per paragraph. Unmarked text is " + SampleWritingSystems.DefaultAnalysis
+                    + ", [text]{ws=ar} is another writing system and [text]{.v} the vernacular (" + SampleWritingSystems.DefaultVernacular + ").",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brushes.DimGray,
+                Margin = new Thickness(2, 4),
+            };
+            var panel = new DockPanel();
+            DockPanel.SetDock(intro, Dock.Top);
+            DockPanel.SetDock(buttons, Dock.Bottom);
+            DockPanel.SetDock(_markdownStatus, Dock.Bottom);
+            panel.Children.Add(intro);
+            panel.Children.Add(buttons);
+            panel.Children.Add(_markdownStatus);
+            panel.Children.Add(_markdown);
+            return new TabItem { Name = Names.MarkdownTab, Header = "Markdown", FontSize = 14, Content = panel };
+        }
+
+        /// <summary>Shows the active field as Markdown, unless the tab is hidden or holds edits that were neither applied nor reverted.</summary>
+        void RefreshMarkdown()
+        {
+            if (_markdownEdited || !ShowsMarkdown) return;
+            _settingMarkdown = true;
+            try { _markdown.Text = MarkdownConverter.ToMarkdown(_active.Field.Editor.Document, _markdownHost.Options()); }
+            finally { _settingMarkdown = false; }
+            _markdownStatus.Text = string.Empty;
+        }
+
+        /// <summary>Reads the Markdown tab and, when it has no error, replaces the field's paragraphs with what it says as one undo step.
+        /// Returns true when the field changed.</summary>
+        public bool ApplyMarkdown()
+        {
+            var editor = _active.Field.Editor;
+            var result = MarkdownConverter.Parse(MarkdownText, _markdownHost.Options());
+            var errors = result.Diagnostics.Where(d => d.Severity == MarkdownSeverity.Error).ToList();
+            if (errors.Count > 0)
+            {
+                _markdownStatus.Text = "Not applied: " + string.Join("; ", errors.Select(d => d.Id + " at line " + d.Line + ", column " + d.Column + ": " + d.Message));
+                Log("markdown: not applied, " + errors.Count + " error(s): " + string.Join(", ", errors.Select(d => d.Id)));
+                return false;
+            }
+            var paragraphs = result.Document.Paragraphs.ToList();
+            bool changed = !MarkdownConverter.AreEquivalent(editor.Document.Paragraphs, paragraphs);
+            if (changed && _active.Field.IsReadOnly)
+            {
+                _markdownStatus.Text = "Not applied: the field is read-only.";
+                return false;
+            }
+            _markdownEdited = false;
+            if (changed)
+            {
+                int last = editor.Document.Paragraphs.Count - 1;
+                editor.ReplaceRange(new TextPosition(0, 0), new TextPosition(last, editor.Document.Paragraphs[last].Length), paragraphs, "edit as Markdown");
+            }
+            RefreshMarkdown();
+            _markdownStatus.Text = (changed ? "Applied as one undo step." : "No change: the Markdown says what the field already holds.")
+                + (result.Diagnostics.Count > 0 ? " Findings: " + string.Join(", ", result.Diagnostics.Select(d => d.Id)) + "." : string.Empty);
+            Log("markdown: " + (changed ? "applied as one undo step" : "no change"));
+            return changed;
+        }
+
+        /// <summary>Drops edits in the Markdown tab and shows the field again.</summary>
+        public void RevertMarkdown()
+        {
+            _markdownEdited = false;
+            RefreshMarkdown();
         }
 
         // ------------------------------------------------------------ find and replace (the host's dialog, ADR 0021)
@@ -665,6 +784,8 @@ namespace SIL.TextEditing.Playground
             UpdateFindHighlight();
             UpdateWsLabel();
             RefreshInspector();
+            _markdownEdited = false;
+            RefreshMarkdown();
             if (TopLevel.GetTopLevel(this) != null) Dispatcher.UIThread.Post(() => _active.Field.Focus());
         }
 
@@ -680,8 +801,8 @@ namespace SIL.TextEditing.Playground
                 PreferredWidth = many ? 300 : 500,
                 Margin = new Thickness(many ? 2 : 6),
             };
-            // The playground has no liblcm and no Markdown converter, so its one rich clipboard form is the field's debug dump
-            // (a real host registers TsString and FieldWorks Markdown, ADR 0029).
+            // The playground has no liblcm and registers no FieldWorks Markdown clipboard form (issue 168), so its one rich clipboard form is the
+            // field's debug dump (a real host registers TsString and FieldWorks Markdown, ADR 0029). The Markdown tab shows the field as Markdown.
             var dump = new InterchangeClipboardForm();
             field.ClipboardForms.Add(dump).PasteOrder.Insert(0, dump.Id);
             field.WritingSystemsMapped += (o, mapped) => Log("clipboard: notice, writing system(s) " + string.Join(", ", mapped.Missing.Select(m => m.Length == 0 ? "(none)" : m))
@@ -725,7 +846,7 @@ namespace SIL.TextEditing.Playground
                 if (_active == session && d.Label != "type") Log("edit: " + d.Label + " (paragraphs " + d.Start + ".." + (d.Start + Math.Max(d.Before.Count, d.After.Count) - 1) + ")");
             };
             field.Editor.UndoGroupEnded += id => { if (_active == session) Log("undo step " + id + " ended: the host closes its undo task"); };
-            field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) { RefreshInspector(); UpdateEnvironmentButtons(); } };
+            field.Editor.DocumentChanged += (a, b, c) => { if (_active == session) { RefreshInspector(); RefreshMarkdown(); UpdateEnvironmentButtons(); } };
             field.Editor.CaretMoved += () => { if (_active == session) { UpdateWsLabel(); RefreshInspector(); UpdateEnvironmentButtons(); } };
             field.LanguageAnalysisChanged += (o, e) =>
             {
@@ -765,6 +886,8 @@ namespace SIL.TextEditing.Playground
             Log("focus: field " + session.Number);
             UpdateWsLabel();
             RefreshInspector();
+            _markdownEdited = false;
+            RefreshMarkdown();
         }
 
         // ------------------------------------------------------------ spelling

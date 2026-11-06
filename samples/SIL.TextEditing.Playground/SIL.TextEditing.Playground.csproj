@@ -11,5 +11,6 @@
     <PackageReference Include="Avalonia" />
     <ProjectReference Include="..\..\src\SIL.TextEditing\SIL.TextEditing.csproj" />
     <ProjectReference Include="..\..\src\SIL.TextEditing.Avalonia\SIL.TextEditing.Avalonia.csproj" />
+    <ProjectReference Include="..\..\src\SIL.TextEditing.Markdown\SIL.TextEditing.Markdown.csproj" />
   </ItemGroup>
 </Project>

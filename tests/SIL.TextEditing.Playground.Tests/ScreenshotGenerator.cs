@@ -83,7 +83,7 @@ namespace SIL.TextEditing.Playground.Tests
         }
 
         /// <summary>The strip that starts at the field and the inspector beside it (the inspector, because a long field is scrolled and its own top is out of sight).</summary>
-        static Rect FieldStrip(Session s, double height) => From(s, s.Find<TextBox>(PlaygroundView.Names.Inspector), height);
+        static Rect FieldStrip(Session s, double height) => From(s, s.Find<TabControl>(PlaygroundView.Names.InspectorTabs), height);
 
         static void Select(Session s, int paragraph, string from, string to)
         {
@@ -145,6 +145,8 @@ namespace SIL.TextEditing.Playground.Tests
                 var text = s.ParagraphText(1);
                 int at = text.IndexOf("unknown", StringComparison.Ordinal);
                 s.Select(1, at, at + 7);
+                // The model tab: the run dump shows the property numbers the editor carries without understanding them.
+                s.View.ShowsMarkdown = false;
                 Save(s, "unknown-properties-inspector", FieldStrip(s, 345));
             }
         });
