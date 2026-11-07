@@ -1,3 +1,58 @@
+> [!IMPORTANT]
+> **SIL.TextEditing has moved into Motif:** [`sillsdev/motif/textediting`](https://github.com/sillsdev/motif/tree/main/textediting).
+> This repository is archived. Its history up to the move (commit c23cc53) stays here; new work happens in Motif, where the folder
+> keeps its own build, solution, ADRs and CI ([ADR 0034](docs/adr/0034-moves-into-motif-as-a-sealed-folder.md), Motif ADR 0092).
+> It can be pulled out again into its own repository or into FieldWorks. Open issues moved to Motif with the `textediting` label:
+>
+> <details><summary>Old and new issue numbers</summary>
+>
+> | Here | In Motif |
+> |---|---|
+> | [#5](https://github.com/sillsdev/motif/issues/20) | [motif#20](https://github.com/sillsdev/motif/issues/20) |
+> | [#6](https://github.com/sillsdev/motif/issues/21) | [motif#21](https://github.com/sillsdev/motif/issues/21) |
+> | [#8](https://github.com/sillsdev/motif/issues/22) | [motif#22](https://github.com/sillsdev/motif/issues/22) |
+> | [#41](https://github.com/sillsdev/motif/issues/23) | [motif#23](https://github.com/sillsdev/motif/issues/23) |
+> | [#50](https://github.com/sillsdev/motif/issues/24) | [motif#24](https://github.com/sillsdev/motif/issues/24) |
+> | [#51](https://github.com/sillsdev/motif/issues/25) | [motif#25](https://github.com/sillsdev/motif/issues/25) |
+> | [#61](https://github.com/sillsdev/motif/issues/26) | [motif#26](https://github.com/sillsdev/motif/issues/26) |
+> | [#74](https://github.com/sillsdev/motif/issues/27) | [motif#27](https://github.com/sillsdev/motif/issues/27) |
+> | [#82](https://github.com/sillsdev/motif/issues/28) | [motif#28](https://github.com/sillsdev/motif/issues/28) |
+> | [#94](https://github.com/sillsdev/motif/issues/29) | [motif#29](https://github.com/sillsdev/motif/issues/29) |
+> | [#104](https://github.com/sillsdev/motif/issues/30) | [motif#30](https://github.com/sillsdev/motif/issues/30) |
+> | [#119](https://github.com/sillsdev/motif/issues/31) | [motif#31](https://github.com/sillsdev/motif/issues/31) |
+> | [#123](https://github.com/sillsdev/motif/issues/32) | [motif#32](https://github.com/sillsdev/motif/issues/32) |
+> | [#124](https://github.com/sillsdev/motif/issues/33) | [motif#33](https://github.com/sillsdev/motif/issues/33) |
+> | [#125](https://github.com/sillsdev/motif/issues/34) | [motif#34](https://github.com/sillsdev/motif/issues/34) |
+> | [#126](https://github.com/sillsdev/motif/issues/35) | [motif#35](https://github.com/sillsdev/motif/issues/35) |
+> | [#128](https://github.com/sillsdev/motif/issues/36) | [motif#36](https://github.com/sillsdev/motif/issues/36) |
+> | [#129](https://github.com/sillsdev/motif/issues/37) | [motif#37](https://github.com/sillsdev/motif/issues/37) |
+> | [#131](https://github.com/sillsdev/motif/issues/38) | [motif#38](https://github.com/sillsdev/motif/issues/38) |
+> | [#132](https://github.com/sillsdev/motif/issues/39) | [motif#39](https://github.com/sillsdev/motif/issues/39) |
+> | [#133](https://github.com/sillsdev/motif/issues/40) | [motif#40](https://github.com/sillsdev/motif/issues/40) |
+> | [#134](https://github.com/sillsdev/motif/issues/41) | [motif#41](https://github.com/sillsdev/motif/issues/41) |
+> | [#137](https://github.com/sillsdev/motif/issues/42) | [motif#42](https://github.com/sillsdev/motif/issues/42) |
+> | [#144](https://github.com/sillsdev/motif/issues/43) | [motif#43](https://github.com/sillsdev/motif/issues/43) |
+> | [#145](https://github.com/sillsdev/motif/issues/44) | [motif#44](https://github.com/sillsdev/motif/issues/44) |
+> | [#150](https://github.com/sillsdev/motif/issues/45) | [motif#45](https://github.com/sillsdev/motif/issues/45) |
+> | [#152](https://github.com/sillsdev/motif/issues/46) | [motif#46](https://github.com/sillsdev/motif/issues/46) |
+> | [#153](https://github.com/sillsdev/motif/issues/47) | [motif#47](https://github.com/sillsdev/motif/issues/47) |
+> | [#154](https://github.com/sillsdev/motif/issues/48) | [motif#48](https://github.com/sillsdev/motif/issues/48) |
+> | [#155](https://github.com/sillsdev/motif/issues/49) | [motif#49](https://github.com/sillsdev/motif/issues/49) |
+> | [#159](https://github.com/sillsdev/motif/issues/50) | [motif#50](https://github.com/sillsdev/motif/issues/50) |
+> | [#161](https://github.com/sillsdev/motif/issues/51) | [motif#51](https://github.com/sillsdev/motif/issues/51) |
+> | [#162](https://github.com/sillsdev/motif/issues/52) | [motif#52](https://github.com/sillsdev/motif/issues/52) |
+> | [#163](https://github.com/sillsdev/motif/issues/53) | [motif#53](https://github.com/sillsdev/motif/issues/53) |
+> | [#164](https://github.com/sillsdev/motif/issues/54) | [motif#54](https://github.com/sillsdev/motif/issues/54) |
+> | [#167](https://github.com/sillsdev/motif/issues/55) | [motif#55](https://github.com/sillsdev/motif/issues/55) |
+> | [#168](https://github.com/sillsdev/motif/issues/56) | [motif#56](https://github.com/sillsdev/motif/issues/56) |
+> | [#170](https://github.com/sillsdev/motif/issues/57) | [motif#57](https://github.com/sillsdev/motif/issues/57) |
+> | [#172](https://github.com/sillsdev/motif/issues/58) | [motif#58](https://github.com/sillsdev/motif/issues/58) |
+> | [#173](https://github.com/sillsdev/motif/issues/59) | [motif#59](https://github.com/sillsdev/motif/issues/59) |
+> | [#175](https://github.com/sillsdev/motif/issues/60) | [motif#60](https://github.com/sillsdev/motif/issues/60) |
+> | [#177](https://github.com/sillsdev/motif/issues/61) | [motif#61](https://github.com/sillsdev/motif/issues/61) |
+>
+> </details>
+
 # SIL.TextEditing
 
 **Rich text editing for Avalonia in which every run of text knows its writing system.**
